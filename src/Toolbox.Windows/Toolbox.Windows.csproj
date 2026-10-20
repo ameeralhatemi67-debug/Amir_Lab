@@ -1,9 +1,11 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <!-- Windows desktop adapter: activation, native drops, wheel, editors, tray, shell integration. -->
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net9.0-windows</TargetFramework>
+    <!-- Windows 10 SDK projection for Windows.Media.Ocr (via Toolbox.Windows.Ocr). -->
+    <TargetFramework>net9.0-windows10.0.19041.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.17763.0</SupportedOSPlatformVersion>
     <UseWPF>true</UseWPF>
     <UseWindowsForms>true</UseWindowsForms>
     <AssemblyName>FileToolbox</AssemblyName>
@@ -28,6 +30,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Toolbox.Core\Toolbox.Core.csproj" />
     <ProjectReference Include="..\Toolbox.Processing\Toolbox.Processing.csproj" />
+    <ProjectReference Include="..\Toolbox.Windows.Ocr\Toolbox.Windows.Ocr.csproj" />
   </ItemGroup>
 
 </Project>

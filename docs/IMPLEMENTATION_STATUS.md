@@ -3,7 +3,7 @@
 States: **Working** (implemented and verified, with the evidence named), **Partial** (some of it works; the gaps are listed), **Blocked** (cannot proceed without something), **Future** (not started).
 A capability listed in the seed or the capability map is not working until this table says so.
 
-_Last updated: 20 Oct 2026 — M6 complete._
+_Last updated: 20 Oct 2026 — M7 complete._
 
 ## Desktop interaction
 
@@ -14,6 +14,7 @@ _Last updated: 20 Oct 2026 — M6 complete._
 | Multi-file drag | **Working** | DragHarness `two-images-to-pdf` (2 files). |
 | Copy-only drop (source never moved) | **Working** | Every scenario: the effect answered is `Copy`; source SHA-256 is unchanged; no files are moved. |
 | Ring switch on second Shift tap | **Working** | DragHarness `image-tools-ring`. |
+| Text recognition from the Tools ring (8th segment) | **Working** | DragHarness `ocr-scan-to-text`: a real drag of an Arabic-named scan onto Text (OCR); the `.txt` holds both lines in reading order. |
 | Escape cancels | **Working** | DragHarness `escape-cancels`. |
 | Leaving the wheel closes it, so the drag continues elsewhere | **Working** | DragHarness `leave-wheel-closes`. |
 | No wheel without a file drag | **Working** | DragHarness `no-wheel-without-file-drag` (rubber-band selection + Shift). |
@@ -62,12 +63,11 @@ _Last updated: 20 Oct 2026 — M6 complete._
 | Images → DOCX (pictures, no OCR) | **Working** | `Images_to_docx_embeds_pictures`. |
 | Password-protected PDFs | Blocked | Rejected with a clear message; supporting them needs a password prompt (future). |
 | HEIC input | **Working** (desktop app) | The WIC decoder is registered by the Windows adapter; the CLI has no HEIC. |
-| No networking in product code | **Working** | `ArchitectureTests` scan the product assemblies' references. |
+| No networking in product code | **Working** | `ArchitectureTests` scan the product assemblies' references, and their WinRT type references for `Windows.Web*` / `Windows.Networking*`. |
 | Metadata: inspect (location, camera, dates, author, thumbnail, XMP, IPTC, comments, colour profile) | **Working** | `Inspector_groups_sensitive_metadata`; window with plain-language groups and sensitive items flagged. |
 | Metadata removal — JPEG, lossless (compressed picture data byte-identical) | **Working** | `Removing_location_erases_gps_bytes_…` (GPS bytes erased, not just unlinked; camera kept), `Removing_camera_details_erases_serial_numbers`, `Removing_everything_keeps_orientation_…`. Embedded thumbnails and trailing extra images are dropped together with location. |
 | Metadata removal — PNG/TIFF (lossless), WebP/AVIF (re-encoded at quality 95, stated) | **Working** | `Png_location_can_be_removed_losslessly`. |
 | PDF document-information removal | **Working** | `Pdf_document_information_is_removed`. Attachments, form data and annotations are not touched (stated). |
-| Editors (Crop, Background, Adjust, Compress, Annotate, Redact, Metadata) | Future | M4/M5 |
 | Recipes: saved multi-step actions (create, inspect, edit, duplicate, delete, pin to the wheel, import/export JSON) | **Working** | `RecipeTests` (store, import/export, pins); Recipes window screenshot QA. |
 | Recipe execution: consecutive image steps fused into one render; staging folder removed; only final results saved | **Working** | `Consecutive_image_steps_fuse_into_one_render`, `Chain_with_combine_makes_one_pdf_and_no_intermediate_files`. |
 | "Will produce" summary before running | **Working** | `Will_produce_explains_the_plan_before_running`; shown in the palette and the recipe editor. |
@@ -77,4 +77,10 @@ _Last updated: 20 Oct 2026 — M6 complete._
 | Brand styles (background, spacing, logo/watermark position, size and opacity, caption with Arabic shaping, font) | **Working** | `Branding_draws_logo_and_caption`; brand editor with live preview (screenshot QA). Used from Studio → Background → Brand style and from the recipe step "Frame". |
 | Export packs: 1:1 / 4:5 / 9:16 / 16:9 versions from one session, each previewed, framed so nothing is cut off | **Working** | `Export_pack_frames_every_ratio_without_cutting`; Studio Export → "Also save versions" with mini-previews. |
 | "Portal attachment: PDF under 2 MB" | Blocked | PDF compression is not implemented, so a PDF size target cannot be met yet. Image size targets work. |
-| OCR (Arabic/English) | Future | M7 — waiting on the owner's real samples for the evaluation. |
+| OCR engine: Windows built-in (Arabic, English), languages detected at startup, missing ones explained | **Working** | `WindowsOcrTests` (real recogniser, English and Arabic); `Registering_reports_language_availability`; `ftb features`. |
+| Image → text in reading order (Arabic right-to-left, Latin/number runs kept, split lines joined) | **Working** | `OcrTests` (bidi, fragments, mixed merge); DragHarness `ocr-scan-to-text`. |
+| Scanned PDF → text (selected pages; pages with a text layer reuse it) | **Working** | `Text_from_a_pdf_recognises_scans_and_reuses_existing_text`. |
+| Searchable PDF from images or scanned PDFs (original pages kept, text pages copied, rotated pages aligned, read back before saving) | **Working** | `Searchable_pdf_from_an_image_…`, `Searchable_pdf_keeps_original_pages_…` (rendering unchanged, page 2 not re-recognised), `Text_layer_lines_up_on_a_rotated_page`; CLI round trip (searchable PDF → PDF → TXT). |
+| OCR accuracy claims | Partial | Measured on a 75-page generated corpus only ([OCR_EVALUATION.md](OCR_EVALUATION.md)): about 0–1% CER for Arabic and English, 0–5% for mixed lines. **Real scans not yet measured** (waiting on the owner's samples). |
+| Copying text from a searchable PDF in Chromium-based viewers | Partial | PDFium's own bidi reorders letter-and-digit codes inside Arabic lines (`AB1234` → `1234AB`) and swaps the Arabic words of Latin-heavy lines. A reader limitation; the TXT output is exact. |
+| Handwriting, tables, multi-column order, other languages | Future | See ROADMAP "OCR follow-ups". |

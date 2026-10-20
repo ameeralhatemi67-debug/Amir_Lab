@@ -54,6 +54,19 @@ internal static partial class RealInput
     [LibraryImport("user32.dll")]
     public static partial IntPtr GetForegroundWindow();
 
+    [LibraryImport("user32.dll")]
+    private static partial IntPtr WindowFromPoint(POINT point);
+
+    [LibraryImport("user32.dll")]
+    private static partial IntPtr GetAncestor(IntPtr hwnd, uint flags);
+
+    /// <summary>The top-level window that is actually visible at a screen point.</summary>
+    public static IntPtr RootWindowAt(double x, double y) =>
+        GetAncestor(WindowFromPoint(new POINT { X = (int)Math.Round(x), Y = (int)Math.Round(y) }), 2 /* GA_ROOT */);
+
+    /// <summary>A zero-distance mouse move: makes this process the source of the last input event, which Windows requires before it lets SetForegroundWindow succeed.</summary>
+    public static void Nudge() => SendMouse(MOUSEEVENTF_MOVE, 0, 0);
+
     private delegate bool EnumWindowsProc(IntPtr hwnd, IntPtr lParam);
 
     [DllImport("user32.dll")]

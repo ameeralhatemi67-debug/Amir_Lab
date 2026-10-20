@@ -1,4 +1,4 @@
-﻿using System.Windows;
+using System.Windows;
 using System.Windows.Threading;
 using Microsoft.Win32;
 using Toolbox.Core;
@@ -69,6 +69,7 @@ public partial class App : Application
         ThemeResources.Apply(this, settings.Theme);
         SystemEvents.UserPreferenceChanged += (_, _) => Dispatcher.BeginInvoke(() => ThemeResources.Apply(this, _host.Settings.Current.Theme));
         WicHeicDecoder.Register();
+        Ocr.WindowsOcrEngine.Register();
 
         var toasts = new ToastManager(_host, job => new JobDetailsWindow(job, j => _dispatcher.Retry(j)).Show());
         _dispatcher = new ActionDispatcher(_host, toasts);

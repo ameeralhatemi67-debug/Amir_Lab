@@ -101,7 +101,7 @@ internal sealed class PdfTextHandler(string actionId, FileKind target) : IAction
         var empty = texts.Where(t => string.IsNullOrWhiteSpace(t.Text)).Select(t => t.Page).ToList();
         if (empty.Count == texts.Count)
             throw new ProcessingException(
-                "This PDF has no text layer (it is probably a scan), so there is no text to extract. Recognising text in scans is a separate OCR action.");
+                "This PDF has no text layer (it is probably a scan), so there is no text to extract. Use Text (OCR) in the Tools ring to recognise it.");
         if (empty.Count > 0)
             context.Note($"{PageSet.Describe(empty, pdf.PageCount)} {(empty.Count == 1 ? "has" : "have")} no text layer (probably scanned) and came out empty.");
 

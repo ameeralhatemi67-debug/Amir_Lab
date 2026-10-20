@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using System.Text.Json;
 using System.Windows;
 
@@ -95,7 +95,7 @@ internal static class Program
         var root = AppContext.BaseDirectory;
         for (var dir = new DirectoryInfo(root); dir is not null; dir = dir.Parent)
         {
-            var candidate = Path.Combine(dir.FullName, "src", "Toolbox.Windows", "bin", "Debug", "net9.0-windows", "FileToolbox.exe");
+            var candidate = Path.Combine(dir.FullName, "src", "Toolbox.Windows", "bin", "Debug", "net9.0-windows10.0.19041.0", "FileToolbox.exe");
             if (File.Exists(candidate)) return candidate;
         }
         throw new FileNotFoundException("FileToolbox.exe not found; build src/Toolbox.Windows or pass --app.");

@@ -31,6 +31,7 @@ internal sealed class Scenarios
         yield return ("studio-crop-background-save", StudioCropBackgroundSave);
         yield return ("palette-from-second-launch", PaletteFromSecondLaunch);
         yield return ("recipe-ring-website-images", () => DropOnSegment([Fixtures.SecondImageName], ringSwitches: 2, "recipe:builtin-web"));
+        yield return ("ocr-scan-to-text", () => DropOnSegment([Fixtures.ScanName], ringSwitches: 1, "ocr.image-text", verify: VerifyScanText));
         yield return ("escape-cancels", EscapeCancels);
         yield return ("leave-wheel-closes", LeaveWheelCloses);
         yield return ("no-wheel-without-file-drag", NoWheelWithoutFileDrag);
@@ -78,7 +79,15 @@ internal sealed class Scenarios
 
     // ---------------------------------------------------------------------------------------
 
-    private ScenarioResult DropOnSegment(string[] names, int ringSwitches, string actionId, bool expectEditor = false)
+    /// <summary>The recognised text has both lines, in reading order (Arabic is not reversed).</summary>
+    private static string? VerifyScanText(IReadOnlyList<string> outputs)
+    {
+        var text = File.ReadAllText(outputs[0]);
+        return Fixtures.ScanLines.All(text.Contains) ? null : $"Recognised text did not match: \"{text.ReplaceLineEndings(" | ")}\"";
+    }
+
+    private ScenarioResult DropOnSegment(string[] names, int ringSwitches, string actionId, bool expectEditor = false,
+        Func<IReadOnlyList<string>, string?>? verify = null)
     {
         var sources = names.Select(n => Path.Combine(_folder, n)).ToList();
         var before = Snapshot();
@@ -135,7 +144,8 @@ internal sealed class Scenarios
             if (job.State != "Completed") return Fail($"Job ended as {job.State}: {job.Error}");
             var missing = job.Outputs.Where(o => !File.Exists(o)).ToList();
             if (job.Outputs.Count == 0 || missing.Count > 0) return Fail($"Outputs missing: {string.Join(", ", missing)}");
-            outputs = $" Outputs: {string.Join(", ", job.Outputs.Select(Path.GetFileName))}.";
+            if (verify?.Invoke(job.Outputs) is { } problem) return Fail(problem);
+            outputs = $" Outputs: {string.Join(", ", job.Outputs.Select(Path.GetFileName))}{(verify is null ? "" : " (content verified)")}.";
         }
 
         var integrity = CheckSourcesUnchanged(before, allowNewFiles: _expectOutputs);
@@ -381,6 +391,7 @@ internal sealed class Scenarios
         explorer.BringToFront();
         var bounds = explorer.Bounds;
         var start = new Point(bounds.Left + bounds.Width * 0.7, bounds.Top + bounds.Height * 0.6);
+        if (!explorer.IsVisibleAt(start)) return Fail("The empty Explorer window is covered by another window; nothing was clicked.");
         RealInput.MoveTo(start.X, start.Y);
         Thread.Sleep(150);
         RealInput.LeftDown();
@@ -468,6 +479,14 @@ internal sealed class Scenarios
         note = "";
         _explorer.BringToFront();
         var rects = names.Select(n => _explorer.FindItem(n, TimeSpan.FromSeconds(5))).ToList();
+
+        // Never click or drag where another application's window is showing.
+        var covered = rects.Select(ExplorerDriver.GrabPoint).Where(p => !_explorer.IsVisibleAt(p)).ToList();
+        if (covered.Count > 0)
+        {
+            note = "Explorer item is covered by another window; nothing was clicked.";
+            return null;
+        }
 
         // Select: click the first item, Ctrl+click the rest.
         var first = ExplorerDriver.GrabPoint(rects[0]);

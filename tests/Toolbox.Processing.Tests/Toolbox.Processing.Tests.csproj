@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net9.0</TargetFramework>
@@ -19,7 +19,6 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Toolbox.Core\Toolbox.Core.csproj" />
     <ProjectReference Include="..\..\src\Toolbox.Processing\Toolbox.Processing.csproj" />
-    <ProjectReference Include="..\..\src\Toolbox.Cli\Toolbox.Cli.csproj" />
   </ItemGroup>
 
 </Project>

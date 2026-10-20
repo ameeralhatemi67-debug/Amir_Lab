@@ -1,4 +1,4 @@
-﻿using System.Text;
+using System.Text;
 using System.Text.Json;
 using Toolbox.Core;
 using Toolbox.Core.Actions;
@@ -31,6 +31,7 @@ internal static class Program
 
         try
         {
+            Toolbox.Windows.Ocr.WindowsOcrEngine.Register();
             return args[0].ToLowerInvariant() switch
             {
                 "caps" => Caps(args.Contains("--markdown")),
@@ -68,6 +69,7 @@ internal static class Program
         sb.AppendLine("Generated from `Toolbox.Core/Actions/CapabilityMap.cs` with `ftb caps --markdown`. Do not edit by hand.");
         sb.AppendLine("Each entry is a defined operation; the *Meaning* column states exactly what the result contains.");
         sb.AppendLine("HEIC input is accepted only when Windows' HEIF and HEVC codecs are installed (checked at runtime by the desktop app).");
+        sb.AppendLine("Text recognition (OCR) uses the recogniser built into Windows and needs the Arabic and/or English \"Optical character recognition\" language feature installed in Windows; accuracy is measured in OCR_EVALUATION.md.");
         sb.AppendLine("*Status* is the state of the build that generated this file; see IMPLEMENTATION_STATUS.md for evidence.");
         sb.AppendLine();
         foreach (var group in CapabilityMap.All.GroupBy(a => a.Group))

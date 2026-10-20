@@ -72,4 +72,15 @@ internal static unsafe partial class PdfiumNative
 
     [LibraryImport(Lib)]
     public static partial uint FPDF_GetMetaText(IntPtr document, byte* tag, void* buffer, uint bufferLength);
+
+    [LibraryImport(Lib)]
+    public static partial int FPDFText_GetCharBox(IntPtr textPage, int index, double* left, double* right, double* bottom, double* top);
+
+    [LibraryImport(Lib)]
+    public static partial int FPDF_PageToDevice(IntPtr page, int startX, int startY, int sizeX, int sizeY, int rotate,
+        double pageX, double pageY, int* deviceX, int* deviceY);
+
+    [LibraryImport(Lib)]
+    public static partial int FPDF_DeviceToPage(IntPtr page, int startX, int startY, int sizeX, int sizeY, int rotate,
+        int deviceX, int deviceY, double* pageX, double* pageY);
 }

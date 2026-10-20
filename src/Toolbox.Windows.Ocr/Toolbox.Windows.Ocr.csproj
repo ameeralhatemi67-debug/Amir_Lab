@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Text recognition through the OCR engine built into Windows 10/11 (Windows.Media.Ocr).
+       No UI; shared by the app, the CLI and the OCR evaluation tool. -->
+  <PropertyGroup>
+    <TargetFramework>net9.0-windows10.0.19041.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.17763.0</SupportedOSPlatformVersion>
+    <RootNamespace>Toolbox.Windows.Ocr</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Toolbox.Processing\Toolbox.Processing.csproj" />
+  </ItemGroup>
+
+</Project>

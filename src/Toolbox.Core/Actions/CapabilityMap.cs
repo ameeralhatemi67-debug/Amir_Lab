@@ -168,7 +168,7 @@ public static class CapabilityMap
             Options = [PagesOption],
             Limitations =
             [
-                "Scanned pages have no text layer and produce no text; recognising text in scans is a separate OCR action.",
+                "Scanned pages have no text layer and produce no text; use Text (OCR) in the Tools ring to recognise scans.",
                 "Reading order follows the PDF's internal order and may differ from the visual order in complex layouts.",
             ],
         });
@@ -232,7 +232,7 @@ public static class CapabilityMap
             Limitations =
             [
                 "JPEG images are embedded without re-encoding; other formats are embedded losslessly.",
-                "The PDF is not searchable; text recognition is a separate OCR action.",
+                "The PDF is not searchable; use Make a searchable PDF (Tools ring or palette) for that.",
             ],
         });
         list.Add(new ActionDefinition
@@ -277,27 +277,32 @@ public static class CapabilityMap
             "A copy with chosen areas permanently covered with solid colour in the exported pixels. Blur and pixelate are offered as obscuring only, not secure removal.", lossy: true,
             limitations: ["Redacts pictures only. PDF redaction (removing underlying text) is not available.", "Metadata is not changed by redaction; use Metadata to remove it."]));
 
-        // ---- OCR (needs the bundled recognition engine) ------------------------------------
+        // ---- OCR (Windows' built-in recogniser; languages are installed in Windows) ----------
         list.Add(new ActionDefinition
         {
             Id = Ids.OcrImageText,
             Label = "Text (OCR)",
             Title = "Recognise text (Arabic/English)",
-            Meaning = "Text recognised from the picture with the local OCR engine, saved as UTF-8 text. Accuracy depends on scan quality.",
+            Meaning = "Text recognised on this computer from the picture or scanned pages, in reading order (Arabic right-to-left), saved as UTF-8 text. PDF pages that already have selectable text use it as is.",
             Group = ActionGroup.Tools,
             Inputs = new HashSet<FileKind>(ImageInputs.Append(FileKind.Pdf)),
             Output = FileKind.Text,
             Icon = "scan",
             RequiresFeature = RuntimeFeatures.Ocr,
             Options = [new("languages", "Languages", OptionType.Choice, "ara+eng", Choices: ["ara+eng", "eng", "ara"]), PagesOption],
-            Limitations = ["Recognition is not perfect; check important text.", "Tables and multi-column layouts may be read in the wrong order."],
+            Limitations =
+            [
+                "Recognition is not perfect; check names, numbers and codes. Measured accuracy is in docs/OCR_EVALUATION.md.",
+                "Printed text only; handwriting is not supported.",
+                "Tables and multi-column layouts may be read in the wrong order; no layout is reproduced.",
+            ],
         });
         list.Add(new ActionDefinition
         {
             Id = Ids.OcrSearchablePdf,
             Label = "Searchable",
             Title = "Make a searchable PDF",
-            Meaning = "A PDF that looks like the scan but has an invisible recognised-text layer, so it can be searched and copied.",
+            Meaning = "A copy of the PDF (or a new PDF from a picture) with an invisible recognised-text layer, so it can be searched and copied. PDF pages are kept as they are; pages that already have selectable text are not recognised again.",
             Group = ActionGroup.Tools,
             Inputs = new HashSet<FileKind>(ImageInputs.Append(FileKind.Pdf)),
             Output = FileKind.Pdf,
@@ -305,7 +310,12 @@ public static class CapabilityMap
             OutputSuffix = " Searchable",
             RequiresFeature = RuntimeFeatures.Ocr,
             Options = [new("languages", "Languages", OptionType.Choice, "ara+eng", Choices: ["ara+eng", "eng", "ara"]), DpiOption],
-            Limitations = ["Pages are re-rendered as images; existing selectable text is replaced by the recognised layer."],
+            Limitations =
+            [
+                "The visible page is unchanged, so recognition mistakes are only in the hidden text layer; search and copy to check it.",
+                "PDF viewers rebuild right-to-left reading order themselves: some (including Chromium-based ones) reorder codes such as AB1234 inside Arabic lines when copying. The TXT action gives the exact recognised text.",
+                "PDFs whose pages cannot be copied are recreated from page images (noted when it happens). Password-protected PDFs are not supported.",
+            ],
         });
 
         foreach (var (id, arity) in new[] { (Ids.RunRecipe, InputArity.PerFile), (Ids.RunRecipeCombined, InputArity.Combined) })

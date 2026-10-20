@@ -7,6 +7,7 @@ A local Windows desktop utility for converting, editing and preparing files righ
 - Engineering decisions and the drag-and-drop mechanism: [`docs/DECISIONS.md`](docs/DECISIONS.md)
 - Milestones and preserved future ideas: [`docs/ROADMAP.md`](docs/ROADMAP.md)
 - How to test: [`docs/TESTING.md`](docs/TESTING.md)
+- Arabic/English text recognition, measured: [`docs/OCR_EVALUATION.md`](docs/OCR_EVALUATION.md)
 
 ## Layout
 
@@ -16,8 +17,10 @@ A local Windows desktop utility for converting, editing and preparing files righ
 | `src/Toolbox.Processing` | Local engines: libvips, PDFium, Skia, PDFsharp, OpenXML |
 | `src/Toolbox.Cli` | `ftb` command-line runner (tests, scripting, future out-of-process worker) |
 | `src/Toolbox.Windows` | Windows adapter: keyboard hook, OLE drop target, wheel, editors, tray |
+| `src/Toolbox.Windows.Ocr` | Windows' built-in OCR (`Windows.Media.Ocr`) behind the portable `IOcrEngine` |
 | `tests/` | xUnit tests |
 | `tools/DragHarness` | Automated real-Explorer drag test |
+| `tools/OcrEval` | Arabic/English OCR evaluation (generated corpus + your samples, CER/WER) |
 
 ## Build
 
@@ -28,5 +31,5 @@ dotnet build FileToolbox.sln
 ```
 
 ```bash
-src/Toolbox.Windows/bin/Debug/net9.0-windows/FileToolbox.exe
+src/Toolbox.Windows/bin/Debug/net9.0-windows10.0.19041.0/FileToolbox.exe
 ```

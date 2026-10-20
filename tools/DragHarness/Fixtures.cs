@@ -22,6 +22,33 @@ internal static class Fixtures
         WritePdf(Path.Combine(folder, PdfName), pages: 1);
         WritePdf(Path.Combine(folder, "Handbook 3 pages.pdf"), pages: 3);
         TryWriteHeic(Path.Combine(folder, HeicName));
+        WriteScan(Path.Combine(folder, ScanName));
+    }
+
+    /// <summary>A small "scan" with an Arabic and an English line, for the OCR scenario.</summary>
+    public const string ScanName = "Scan ملاحظة.png";
+
+    public static readonly string[] ScanLines = ["يرجى مراجعة الفاتورة المرفقة", "Invoice total 1250 due Friday"];
+
+    private static void WriteScan(string path)
+    {
+        const int width = 1400, height = 360;
+        var typeface = new Typeface("Arial");
+        var visual = new DrawingVisual();
+        using (var dc = visual.RenderOpen())
+        {
+            dc.DrawRectangle(Brushes.White, null, new Rect(0, 0, width, height));
+            var arabic = new FormattedText(ScanLines[0], System.Globalization.CultureInfo.GetCultureInfo("ar-SA"), FlowDirection.RightToLeft, typeface, 56, Brushes.Black, 1.0);
+            dc.DrawText(arabic, new Point(width - 80, 70)); // right-to-left text is drawn from its top-right corner
+            var english = new FormattedText(ScanLines[1], System.Globalization.CultureInfo.GetCultureInfo("en-US"), FlowDirection.LeftToRight, typeface, 56, Brushes.Black, 1.0);
+            dc.DrawText(english, new Point(80, 200));
+        }
+        var bitmap = new RenderTargetBitmap(width, height, 96, 96, PixelFormats.Pbgra32);
+        bitmap.Render(visual);
+        var encoder = new PngBitmapEncoder();
+        encoder.Frames.Add(BitmapFrame.Create(bitmap));
+        using var stream = File.Create(path);
+        encoder.Save(stream);
     }
 
     public const string HeicName = "iPhone photo.heic";

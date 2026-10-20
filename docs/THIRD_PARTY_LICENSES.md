@@ -12,6 +12,7 @@ Everything below runs locally. Versions are pinned in the project files. Re-chec
 | PDFsharp | **6.2.4 (pinned)** | MIT | PDF creation. **6.5.0 and later are AGPL-3.0 with a licence check; do not upgrade without a licensing decision.** |
 | DocumentFormat.OpenXml | 3.5.1 | MIT | DOCX creation |
 | MetadataExtractor | 2.9.3 | Apache-2.0 | Metadata inspection |
+| Windows SDK projection (`Microsoft.Windows.SDK.NET.Ref`, from the .NET SDK) and WinRT.Runtime (C#/WinRT) | 10.0.19041 | MIT | Calls Windows' built-in OCR (`Windows.Media.Ocr`). The recogniser and its language data are part of Windows and are not shipped by us. |
 
 ## Libraries inside the libvips bundle
 
@@ -31,8 +32,6 @@ From `THIRD-PARTY-NOTICES.md` in the NetVips.Native package:
 
 No HEVC/H.265 codec is shipped. HEIC input relies on codecs the user installs from Microsoft.
 
-## Planned (not yet included)
+## Not included
 
-| Component | Licence | Milestone |
-|---|---|---|
-| Tesseract OCR 5 (sidecar) + `eng`/`ara` tessdata | Apache-2.0 | M7 |
+Tesseract OCR (Apache-2.0) was planned for M7 but is not used; Windows' built-in recogniser replaced it ([DECISIONS.md](DECISIONS.md)). Development-only tools (`tools/DragHarness`, `tools/OcrEval`) use the same components as above.

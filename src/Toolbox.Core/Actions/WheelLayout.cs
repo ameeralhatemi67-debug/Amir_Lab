@@ -32,11 +32,14 @@ public static class WheelLayouts
             CapabilityMap.Ids.ImageToAvif, CapabilityMap.Ids.ImageToBmp, CapabilityMap.Ids.ImagesToPdf, CapabilityMap.Ids.ImagesToDocx,
         ]);
 
-    /// <summary>Tools ring: the same seven positions for images and PDFs so muscle memory carries over.</summary>
+    /// <summary>
+    /// Tools ring: the same seven positions for images and PDFs so muscle memory carries over; the
+    /// eighth is text recognition (plain text from a picture, a searchable copy of a PDF).
+    /// </summary>
     public static RingLayout DefaultTools { get; } = new(
         ActionGroup.Tools,
-        ToolOrder,
-        ToolOrder);
+        [.. ToolOrder, CapabilityMap.Ids.OcrSearchablePdf],
+        [.. ToolOrder, CapabilityMap.Ids.OcrImageText]);
 
     private static IReadOnlyList<string> ToolOrder =>
     [

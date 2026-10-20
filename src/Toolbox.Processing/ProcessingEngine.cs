@@ -35,6 +35,8 @@ public static class ProcessingEngine
         new PdfTextHandler(Ids.PdfToDocxText, FileKind.Docx),
         new Studio.StudioExportHandler(),
         new Metadata.MetadataCleanHandler(),
+        new Ocr.OcrTextHandler(),
+        new Ocr.OcrSearchablePdfHandler(),
     ];
 
     public static IOutputVerifier CreateVerifier() => new OutputVerifier();

@@ -45,19 +45,32 @@ internal sealed class ExplorerDriver : IDisposable
         if (Window.TryGetCurrentPattern(WindowPattern.Pattern, out var p) && p is WindowPattern wp
             && wp.Current.WindowVisualState == WindowVisualState.Minimized)
             wp.SetWindowVisualState(WindowVisualState.Normal);
-        var hwnd = new IntPtr(Window.Current.NativeWindowHandle);
-        RealInput.SetForegroundWindow(hwnd);
-        Thread.Sleep(150);
+        var hwnd = Handle;
+        for (int attempt = 0; attempt < 3 && RealInput.GetForegroundWindow() != hwnd; attempt++)
+        {
+            RealInput.Nudge();
+            RealInput.SetForegroundWindow(hwnd);
+            Thread.Sleep(150);
+        }
         if (RealInput.GetForegroundWindow() != hwnd)
         {
-            // A background process may not steal focus; a real click on the empty title area always activates.
+            // Last resort: a real click on the empty title area. Only when that spot really shows
+            // this Explorer window; the harness must never click into another application.
             var b = Window.Current.BoundingRectangle;
-            RealInput.MoveTo(b.Left + b.Width * 0.62, b.Top + 14);
+            double x = b.Left + b.Width * 0.62, y = b.Top + 14;
+            if (RealInput.RootWindowAt(x, y) != hwnd)
+                throw new InvalidOperationException("Explorer is covered by another window and could not be brought to the front; nothing was clicked.");
+            RealInput.MoveTo(x, y);
             Thread.Sleep(80);
             RealInput.Click();
             Thread.Sleep(250);
         }
     }
+
+    public IntPtr Handle => new(Window.Current.NativeWindowHandle);
+
+    /// <summary>True when the point on screen shows this Explorer window (not something covering it).</summary>
+    public bool IsVisibleAt(Point p) => RealInput.RootWindowAt(p.X, p.Y) == Handle;
 
     /// <summary>Screen rectangle (physical pixels) of the item for a file, matching with or without extension.</summary>
     public Rect FindItem(string fileName, TimeSpan timeout)

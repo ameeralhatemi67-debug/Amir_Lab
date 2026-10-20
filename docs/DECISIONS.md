@@ -6,7 +6,7 @@ Product direction lives in [`sead_idea.md`](../sead_idea.md) (the seed). This fi
 
 - Windows first, macOS later. Local processing only: no accounts, no cloud, no telemetry, no payments or licensing. Original files are never modified.
 - **Pacing (20 Oct 2026):** build M0–M8 straight through, committing per milestone. The automated drag harness may drive the real mouse and keyboard without warning first.
-- Real Arabic/English scans for the OCR evaluation will come from the owner later.
+- Real Arabic/English scans for the OCR evaluation will come from the owner later. Until then, OCR is measured on a generated corpus ([OCR_EVALUATION.md](OCR_EVALUATION.md)).
 
 ## Stack
 
@@ -23,7 +23,7 @@ Product direction lives in [`sead_idea.md`](../sead_idea.md) (the seed). This fi
 | Metadata read | MetadataExtractor 2.9 (Apache-2.0) | Broad EXIF/XMP/IPTC/ICC coverage. | — |
 | BMP output | Small managed writer | libvips has no BMP saver. | — |
 | HEIC input | Only through the Windows WIC HEIF+HEVC codec, detected at runtime | Matches the seed's rule to add HEIC once validated. It is not shipped by us. | — |
-| OCR (M7) | Tesseract 5 CLI as a bundled sidecar, with `eng`+`ara` tessdata | Local and current; a crash cannot take the app down; its `pdf` renderer makes searchable PDFs. | Evaluation results are poor on the owner's documents |
+| OCR (M7) | **Windows' built-in recogniser (`Windows.Media.Ocr`)** behind a portable `IOcrEngine` interface (changed from the planned Tesseract sidecar on 20 Oct 2026) | Arabic (ar-SA) and English were already installed on this PC. No engine or language data to download, bundle, license or update. It recognises on-device and measured well (0.1% CER on clean Arabic once reading order was fixed). The cost is the Windows 10 SDK target (`net9.0-windows10.0.19041.0`) and its projection assembly: `Microsoft.Windows.SDK.NET.dll` is 23.7 MB, which M8 can trim. Tesseract with `ara`+`eng` data would have been a similar size. | The owner's real samples score poorly, or more languages or layout analysis are needed (then add a Tesseract or PaddleOCR sidecar as a second `IOcrEngine`). macOS will use Apple Vision. |
 | Storage | JSON settings, JSON-lines history under `%LOCALAPPDATA%\FileToolbox` | Local and inspectable. `FILETOOLBOX_DATA` overrides the location for tests. | — |
 | Processing host | In-process workers behind `IActionHandler` + `JobRunner` | Simple and fast. Risk: a native crash in libvips or PDFium takes the tray app down; `Toolbox.Cli` can become an out-of-process worker. | Crash reports from real use |
 
@@ -47,7 +47,7 @@ Product direction lives in [`sead_idea.md`](../sead_idea.md) (the seed). This fi
 
 ## Product choices made during implementation
 
-- **Wheel ring layouts are pinned:** the Convert ring for PDFs is DOCX/JPG/PNG/TXT (the reference arrangement). The image ring is PNG, WebP, JPG, TIFF, AVIF, BMP, PDF, DOCX: the reference's HEIC slot is taken by JPG, because we cannot encode HEIC and JPG is the most needed target. The Tools ring has the same 7 positions for images and PDFs. Actions that do not apply are shown disabled in place, never rearranged.
+- **Wheel ring layouts are pinned:** the Convert ring for PDFs is DOCX/JPG/PNG/TXT (the reference arrangement). The image ring is PNG, WebP, JPG, TIFF, AVIF, BMP, PDF, DOCX: the reference's HEIC slot is taken by JPG, because we cannot encode HEIC and JPG is the most needed target. The Tools ring has the same 7 positions for images and PDFs, plus an eighth for text recognition: Text (OCR) for pictures, Searchable for PDFs. Actions that do not apply are shown disabled in place, never rearranged.
 - **Ring switching:** each further activation-key tap cycles Convert → Tools (→ Recipes once recipes are pinned).
 - **Editing tools accept PDFs:** a chosen page is rendered first. The result is an image, and the action's meaning says so.
 - **Same-format conversions** (JPG → JPG) are disabled ("Already JPG") rather than re-encoding silently. Compression is its own tool.
@@ -87,3 +87,45 @@ Product direction lives in [`sead_idea.md`](../sead_idea.md) (the seed). This fi
 - **Interactive recipes** open the Studio on the crop step with the recipe's framing and export applied. Export-pack ratios from the recipe preselect "Also save versions".
 - **Brand styles** live in `…\presets\brand-*.json`. Logo and caption are drawn by the same renderer after framing; logo size is relative to the canvas, so every variant stays consistent.
 - **Export packs reframe and never crop:** each ratio is a background frame around the full content, so text at the edges is never cut off silently.
+
+## OCR (M7)
+
+- **Engine:** `Toolbox.Windows.Ocr.WindowsOcrEngine` adapts `Windows.Media.Ocr`. Pixels go in as BGRA `SoftwareBitmap`s and words come back with boxes. Languages are whatever the user installed in Windows ("Optical character recognition" under a language's options). Missing languages are reported in the feature status and in job notes, with instructions. The app downloads nothing.
+- **Pipeline (`OcrService`):**
+  1. Flatten, then greyscale.
+  2. Enlarge to a 1600 px long edge (at most ×4).
+  3. Recognise once per language.
+  4. Map the boxes back to source pixels.
+  5. Restore reading order (`OcrLayout`).
+  6. Merge the languages.
+
+  Each setting was chosen from the evaluation; [OCR_EVALUATION.md](OCR_EVALUATION.md) has the numbers.
+- **Reading order is our job:**
+  - Windows returns Arabic words in visual (left-to-right) order.
+  - `OcrLayout` orders words by position, then applies word-level bidi:
+    - An RTL line is reversed.
+    - Runs of Latin words or numbers inside it keep their order.
+    - Neutral tokens take their neighbours' direction.
+    - A line that mixes both scripts follows the page's majority script.
+  - Fragments of one visual line (split at wide gaps) are joined when the gap is under 1.5 line heights.
+- **Mixed Arabic/English = per word:**
+  - Latin-dominant lines come from the English model.
+  - In Arabic lines, Latin/number runs are replaced by the English reading, but only if it covers the same extent, has no more words, and has at least 80% of the characters.
+  - This fixes hyphenated codes, which the Arabic model scrambles, without letting the English model split codes like `AB1234`.
+- **Searchable PDF:**
+  - Text layer:
+    - A Tesseract-style invisible layer: a Type0/Identity-H "GlyphLessFont" (each UTF-16 unit is its own CID, DW 500, identity ToUnicode in 256 compliant ranges), drawn in text render mode 3.
+    - One text object per word, stretched by its text matrix over the recognised box. The box comes through PDFium's `FPDF_DeviceToPage`, so rotated pages and offset boxes line up; a test checks a `/Rotate 90` page.
+    - The font is not embedded. Nothing is painted, and PDFium, PDFsharp and the verifier need no font program. PDF/A would need an embedded glyphless font (roadmap).
+  - Word order inside the layer:
+    - Words are written in visual order, with Arabic characters reversed and digit runs kept. That is how Word and browsers write Arabic, and what PDF readers expect when they rebuild reading order.
+    - An experiment showed PDFium orders by position anyway: content order is irrelevant, character order within a word matters.
+    - PDFium's own bidi still reorders `AB1234`-style codes in Arabic lines and Latin-heavy RTL lines. That is documented as a reader limitation, and TXT is the exact output.
+  - Pages:
+    - **PDF pages are copied, not re-rendered** (PDFsharp import). The original content stream is wrapped in `q … Q` so its graphics state cannot leak into the text layer.
+    - Pages that already have selectable text (3 or more letters or digits) are copied unchanged and not recognised again.
+    - If PDFsharp cannot import a PDF, its pages are recreated from images at the chosen DPI, and the note says so.
+    - Image inputs become one page at the image's DPI. Images without a usable DPI are sized to an A4 long edge.
+  - **Verification:** the saved PDF is reopened with PDFium, and every page that received words must return text. Otherwise nothing is saved.
+- **Text output:** UTF-8 without BOM, lines in reading order, a blank line between blocks that are far apart, and a form feed between PDF pages (the same convention as PDF → TXT). For PDFs, pages that already have a text layer use it instead of recognition, and the note says which pages.
+- **Target framework:** the Windows adapter, CLI, Windows tests and `OcrEval` target `net9.0-windows10.0.19041.0` (supported from 10.0.17763). Core and Processing stay `net9.0`. An architecture test forbids product code from using WinRT networking namespaces (`Windows.Web*`, `Windows.Networking*`) as well as `System.Net.*`.

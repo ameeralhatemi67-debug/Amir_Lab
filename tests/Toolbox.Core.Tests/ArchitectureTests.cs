@@ -28,6 +28,7 @@ public class ArchitectureTests
             Path.Combine("src", "Toolbox.Processing", "bin"),
             Path.Combine("src", "Toolbox.Cli", "bin"),
             Path.Combine("src", "Toolbox.Windows", "bin"),
+            Path.Combine("src", "Toolbox.Windows.Ocr", "bin"),
         })
         {
             var bin = Path.Combine(root, pattern);
@@ -36,7 +37,7 @@ public class ArchitectureTests
                          .Concat(Directory.EnumerateFiles(bin, "*.exe", SearchOption.AllDirectories)))
             {
                 var fileName = Path.GetFileName(file);
-                if (fileName is "Toolbox.Processing.dll" or "ftb.dll" or "FileToolbox.dll")
+                if (fileName is "Toolbox.Processing.dll" or "ftb.dll" or "FileToolbox.dll" or "Toolbox.Windows.Ocr.dll")
                     yield return [file];
             }
         }
@@ -51,6 +52,25 @@ public class ArchitectureTests
             : [];
         var offending = references.Where(r => ForbiddenAssemblies.Contains(r, StringComparer.OrdinalIgnoreCase)).ToList();
         Assert.True(offending.Count == 0, $"{Path.GetFileName(assemblyPath)} references {string.Join(", ", offending)}");
+    }
+
+    /// <summary>
+    /// The Windows SDK projection exposes all of WinRT, including its HTTP and socket APIs; product
+    /// code may only use the parts it needs (OCR, imaging, globalisation), never the networking ones.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(ProductAssemblies))]
+    public void Product_assemblies_do_not_use_WinRT_networking(string assemblyPath)
+    {
+        using var stream = File.OpenRead(assemblyPath);
+        using var pe = new System.Reflection.PortableExecutable.PEReader(stream);
+        var md = System.Reflection.Metadata.PEReaderExtensions.GetMetadataReader(pe);
+        var offending = md.TypeReferences
+            .Select(h => md.GetString(md.GetTypeReference(h).Namespace))
+            .Where(ns => ns.StartsWith("Windows.Web", StringComparison.Ordinal) || ns.StartsWith("Windows.Networking", StringComparison.Ordinal))
+            .Distinct()
+            .ToList();
+        Assert.True(offending.Count == 0, $"{Path.GetFileName(assemblyPath)} uses {string.Join(", ", offending)}");
     }
 
     private static List<string> LoadReferences(string path)

@@ -31,22 +31,7 @@ public static class PdfComposer
             for (int i = 0; i < images.Count; i++)
             {
                 cancellation.ThrowIfCancellationRequested();
-                var (stream, widthPx, heightPx, dpi) = PrepareImage(images[i], notes);
-                streams.Add(stream);
-                XImage xImage;
-                try
-                {
-                    xImage = XImage.FromStream(stream);
-                }
-                catch (Exception) when (images[i].Kind == FileKind.Jpeg)
-                {
-                    // PDFsharp's JPEG reader refuses some valid variants (no JFIF/EXIF header, some progressive files):
-                    // embed losslessly instead of failing.
-                    (stream, widthPx, heightPx, dpi) = PrepareImage(images[i], notes, forceLossless: true);
-                    streams.Add(stream);
-                    xImage = XImage.FromStream(stream);
-                }
-                using var _ = xImage;
+                using var xImage = LoadForEmbedding(images[i], notes, streams, out int widthPx, out int heightPx, out double dpi);
 
                 // Natural size at the image's DPI (96 if unknown), in points.
                 double naturalW = widthPx * 72.0 / dpi, naturalH = heightPx * 72.0 / dpi;
@@ -86,6 +71,33 @@ public static class PdfComposer
         finally
         {
             foreach (var s in streams) s.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// Loads an image for embedding: an unchanged JPEG when possible, otherwise lossless PNG data.
+    /// The streams must stay open until the document is saved, so they are added to <paramref name="keepAlive"/>.
+    /// </summary>
+    internal static XImage LoadForEmbedding(ProbedFile file, ICollection<string>? notes, List<MemoryStream> keepAlive,
+        out int widthPx, out int heightPx, out double dpi)
+    {
+        var (stream, w, h, d) = PrepareImage(file, notes);
+        keepAlive.Add(stream);
+        try
+        {
+            var image = XImage.FromStream(stream);
+            (widthPx, heightPx, dpi) = (w, h, d);
+            return image;
+        }
+        catch (Exception) when (file.Kind == FileKind.Jpeg)
+        {
+            // PDFsharp's JPEG reader refuses some valid variants (no JFIF/EXIF header, some progressive files):
+            // embed losslessly instead of failing.
+            (stream, w, h, d) = PrepareImage(file, null, forceLossless: true);
+            keepAlive.Add(stream);
+            var image = XImage.FromStream(stream);
+            (widthPx, heightPx, dpi) = (w, h, d);
+            return image;
         }
     }
 

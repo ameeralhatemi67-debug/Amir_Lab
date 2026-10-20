@@ -13,7 +13,7 @@ Milestones for the Windows build (from the approved plan). Every item from the s
 | M4 | Studio editors | Crop, Adjust/Resize, Background, Compress (target size), Export panel; non-destructive multi-step session from the original-quality source. |
 | M5 | Remaining tools & access | Metadata, Annotate, raster Redact, drop zone, command palette, clipboard, tray, settings, history, Explorer context menu (opt-in), single-instance forwarding. |
 | M6 | Recipes & presets | Saved multi-step actions with a preview of what they will produce, result-oriented presets (email/web/portal), brand presets, export packs. |
-| M7 | Arabic/English OCR | Tesseract sidecar; image → text, scanned PDF → searchable PDF; evaluation corpus with CER/WER; claim only the tested cases. |
+| M7 | Arabic/English OCR | Windows' built-in recogniser (instead of the planned Tesseract sidecar); image/scanned PDF → text, → searchable PDF; generated evaluation corpus with CER/WER; claims limited to measured cases. **Done.** Follow-ups below. |
 | M8 | Hardening & packaging | Performance measurements, temp cleanup, permission/disk-space handling, multi-monitor maths tests, self-contained publish, per-user installer. |
 
 ## Planned improvements preserved from the seed (§8)
@@ -50,3 +50,12 @@ Milestones for the Windows build (from the approved plan). Every item from the s
 | Windows 11 modern context-menu entry | Needs package identity (MSIX / sparse package). |
 | macOS application | Reuse Core and Processing; native drag destination and permissions. |
 | Commercial release | No payments, accounts, quotas or licence activation until the owner decides. |
+
+## OCR follow-ups (after M7)
+
+- Measure the owner's real Arabic/English scans (`tools/OcrEval --samples`) and revise the claims in OCR_EVALUATION.md.
+- OCR → Word (editable paragraphs, RTL), and recognised text straight to the clipboard.
+- Embed a glyphless font program in searchable PDFs for PDF/A-style consumers.
+- Deskew and orientation detection for photos rotated by more than a few degrees.
+- Table and multi-column reading order.
+- A second engine behind `IOcrEngine` (Tesseract or PaddleOCR sidecar) if real samples need more languages, layout analysis or better accuracy; Apple Vision for the macOS adapter.

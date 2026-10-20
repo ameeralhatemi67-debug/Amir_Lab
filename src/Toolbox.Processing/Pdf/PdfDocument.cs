@@ -171,6 +171,73 @@ public sealed unsafe class PdfDocument : IDisposable
         }
     }
 
+    /// <summary>
+    /// Maps pixels of a <paramref name="width"/>×<paramref name="height"/> render of the page (as
+    /// produced by <see cref="RenderPage"/>) to PDF user space, including page rotation and box offsets.
+    /// </summary>
+    public Ocr.PageTransform GetRenderTransform(int pageNumber, int width, int height)
+    {
+        lock (Lock)
+        {
+            var page = LoadPage(pageNumber);
+            try
+            {
+                (double X, double Y) Map(int x, int y)
+                {
+                    double px, py;
+                    FPDF_DeviceToPage(page, 0, 0, width, height, 0, x, y, &px, &py);
+                    return (px, py);
+                }
+                return Ocr.PageTransform.FromCorners(Map(0, 0), Map(width, 0), Map(0, height), width, height);
+            }
+            finally
+            {
+                FPDF_ClosePage(page);
+            }
+        }
+    }
+
+    /// <summary>Box of one character of the page's text layer, in PDF user space.</summary>
+    public (double Left, double Right, double Bottom, double Top) GetTextBox(int pageNumber, int charIndex)
+    {
+        lock (Lock)
+        {
+            var page = LoadPage(pageNumber);
+            var text = FPDFText_LoadPage(page);
+            try
+            {
+                double l, r, b, t;
+                if (text == IntPtr.Zero || FPDFText_GetCharBox(text, charIndex, &l, &r, &b, &t) == 0)
+                    throw new ProcessingException($"Character {charIndex} on page {pageNumber} has no box.");
+                return (l, r, b, t);
+            }
+            finally
+            {
+                if (text != IntPtr.Zero) FPDFText_ClosePage(text);
+                FPDF_ClosePage(page);
+            }
+        }
+    }
+
+    /// <summary>Where a user-space point appears in a <paramref name="width"/>×<paramref name="height"/> render of the page.</summary>
+    public (int X, int Y) PageToDisplay(int pageNumber, double x, double y, int width, int height)
+    {
+        lock (Lock)
+        {
+            var page = LoadPage(pageNumber);
+            try
+            {
+                int dx, dy;
+                FPDF_PageToDevice(page, 0, 0, width, height, 0, x, y, &dx, &dy);
+                return (dx, dy);
+            }
+            finally
+            {
+                FPDF_ClosePage(page);
+            }
+        }
+    }
+
     /// <summary>Document-information value such as "Title", "Author", "Creator", "Producer", "CreationDate".</summary>
     public string GetMetaText(string tag)
     {

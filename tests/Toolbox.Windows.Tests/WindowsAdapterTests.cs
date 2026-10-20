@@ -83,7 +83,8 @@ public class WheelModelTests
         var files = new[] { new ProbedFile(@"C:\a.pdf", FileKind.Pdf, 2048, null) };
         var rings = WheelModels.Build(files, new AppSettings());
         Assert.Equal(["DOCX", "JPG", "PNG", "TXT"], rings[0].Segments.Select(s => s.Label));
-        Assert.Equal(7, rings[1].Segments.Count);
+        Assert.Equal(8, rings[1].Segments.Count);
+        Assert.Equal(CapabilityMap.Ids.OcrSearchablePdf, rings[1].Segments[^1].ActionId); // the same seven tools, then OCR
         Assert.False(rings[1].Segments.Single(s => s.ActionId == CapabilityMap.Ids.Compress).Enabled); // PDF compression not available
         Assert.True(rings[1].Segments.Single(s => s.ActionId == CapabilityMap.Ids.Crop).Enabled);
     }
