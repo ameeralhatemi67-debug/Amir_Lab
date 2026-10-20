@@ -33,7 +33,20 @@ public static class PdfComposer
                 cancellation.ThrowIfCancellationRequested();
                 var (stream, widthPx, heightPx, dpi) = PrepareImage(images[i], notes);
                 streams.Add(stream);
-                using var xImage = XImage.FromStream(stream);
+                XImage xImage;
+                try
+                {
+                    xImage = XImage.FromStream(stream);
+                }
+                catch (Exception) when (images[i].Kind == FileKind.Jpeg)
+                {
+                    // PDFsharp's JPEG reader refuses some valid variants (no JFIF/EXIF header, some progressive files):
+                    // embed losslessly instead of failing.
+                    (stream, widthPx, heightPx, dpi) = PrepareImage(images[i], notes, forceLossless: true);
+                    streams.Add(stream);
+                    xImage = XImage.FromStream(stream);
+                }
+                using var _ = xImage;
 
                 // Natural size at the image's DPI (96 if unknown), in points.
                 double naturalW = widthPx * 72.0 / dpi, naturalH = heightPx * 72.0 / dpi;
@@ -76,7 +89,7 @@ public static class PdfComposer
         }
     }
 
-    private static (MemoryStream Stream, int Width, int Height, double Dpi) PrepareImage(ProbedFile file, ICollection<string>? notes)
+    private static (MemoryStream Stream, int Width, int Height, double Dpi) PrepareImage(ProbedFile file, ICollection<string>? notes, bool forceLossless = false)
     {
         using var loaded = ImageLoader.Load(file);
         if (notes is not null) foreach (var n in loaded.Notes) notes.Add($"{file.Name}: {n}");
@@ -86,7 +99,7 @@ public static class PdfComposer
 
         // Unchanged JPEG pass-through when nothing needs fixing; a rotated (EXIF) or CMYK JPEG is re-encoded losslessly instead.
         bool rotated = file.Kind == FileKind.Jpeg && HasOrientation(file);
-        if (file.Kind == FileKind.Jpeg && !rotated && image.Interpretation is Enums.Interpretation.Srgb or Enums.Interpretation.Bw)
+        if (!forceLossless && file.Kind == FileKind.Jpeg && !rotated && image.Interpretation is Enums.Interpretation.Srgb or Enums.Interpretation.Bw)
             return (new MemoryStream(File.ReadAllBytes(file.Path)), image.Width, image.Height, dpi);
 
         // Everything else: lossless 8-bit PNG (with alpha when present), which PDFsharp Core embeds directly.

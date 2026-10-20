@@ -46,10 +46,8 @@ public static class StudioRenderer
         if (stage == RenderStage.Uncropped)
             return Adjust(img, doc.Adjust, scale);
 
-        if (doc.Crop.Rect is { } rect)
+        if (EffectiveCrop(doc, source) is { } r)
         {
-            var (ow, oh) = OrientedSize(source.Width, source.Height, doc.Crop.Rotation);
-            var r = rect.ClampTo(ow, oh);
             int x = (int)Math.Round(r.X * scale), y = (int)Math.Round(r.Y * scale);
             int w = Math.Max(1, (int)Math.Round(r.Width * scale)), h = Math.Max(1, (int)Math.Round(r.Height * scale));
             x = Math.Clamp(x, 0, img.Width - 1);
@@ -61,16 +59,33 @@ public static class StudioRenderer
         img = Adjust(img, doc.Adjust, scale);
         img = ApplyRedactions(img, doc.Redactions, scale);
 
-        if (doc.Annotations.Count == 0 && (stage == RenderStage.Content || !doc.Background.Enabled))
+        bool branded = doc.Brand is { IsEmpty: false };
+        if (doc.Annotations.Count == 0 && (stage == RenderStage.Content || (!doc.Background.Enabled && !branded)))
             return img;
 
         using var content = ToSkBitmap(img);
         img.Dispose();
         using var annotated = doc.Annotations.Count > 0 ? DrawAnnotations(content, doc.Annotations, scale) : null;
         var current = annotated ?? content;
-        if (stage == RenderStage.Content || !doc.Background.Enabled) return FromSkBitmap(current);
-        using var framed = Frame(current, doc.Background, scale);
+        if (stage == RenderStage.Content || (!doc.Background.Enabled && !branded)) return FromSkBitmap(current);
+        var background = doc.Background.Enabled
+            ? doc.Background
+            : new BackgroundSettings { Enabled = false, Padding = 0, Corner = 0, Shadow = 0, Ratio = "auto" };
+        using var framed = Frame(current, background, scale, doc.Brand);
         return FromSkBitmap(framed);
+    }
+
+    /// <summary>The crop actually applied: the explicit rectangle, or a centred one for an aspect without a rectangle.</summary>
+    public static PixelRect? EffectiveCrop(EditDocument doc, StudioSource source)
+    {
+        var (ow, oh) = OrientedSize(source.Width, source.Height, doc.Crop.Rotation);
+        if (doc.Crop.Rect is { } rect) return rect.ClampTo(ow, oh);
+        if (BackgroundPresets.Ratio(doc.Crop.Aspect) is not { } ratio) return null;
+        double w = ow, h = oh;
+        if (w / h > ratio) w = h * ratio;
+        else h = w / ratio;
+        int iw = Math.Max(1, (int)Math.Round(w)), ih = Math.Max(1, (int)Math.Round(h));
+        return new PixelRect((ow - iw) / 2, (oh - ih) / 2, iw, ih);
     }
 
     /// <summary>Preview pixels for WPF: premultiplied BGRA, plus the size.</summary>
@@ -95,11 +110,7 @@ public static class StudioRenderer
     public static (int Width, int Height) FinalSize(EditDocument doc, StudioSource source)
     {
         var (w, h) = OrientedSize(source.Width, source.Height, doc.Crop.Rotation);
-        if (doc.Crop.Rect is { } r)
-        {
-            var c = r.ClampTo(w, h);
-            (w, h) = (c.Width, c.Height);
-        }
+        if (EffectiveCrop(doc, source) is { } c) (w, h) = (c.Width, c.Height);
         if (doc.Background.Enabled)
         {
             var (cw, ch) = CanvasSize(w, h, doc.Background, 1);
@@ -312,14 +323,15 @@ public static class StudioRenderer
         return result;
     }
 
-    /// <summary>Places the content on a styled canvas with padding, rounded corners and a soft shadow.</summary>
-    private static SKBitmap Frame(SKBitmap content, BackgroundSettings bg, double scale)
+    /// <summary>Places the content on a styled canvas with padding, rounded corners and a soft shadow, then adds branding.</summary>
+    private static SKBitmap Frame(SKBitmap content, BackgroundSettings bg, double scale, BrandingSettings? brand = null)
     {
         var (width, height) = CanvasSize(content.Width, content.Height, bg, scale);
         var info = new SKImageInfo(width, height, SKColorType.Rgba8888, SKAlphaType.Premul);
         using var surface = SKSurface.Create(info) ?? throw new Toolbox.Core.ProcessingException("Not enough memory for the background canvas.");
         var canvas = surface.Canvas;
-        DrawFill(canvas, width, height, bg, scale);
+        if (bg.Enabled) DrawFill(canvas, width, height, bg, scale);
+        else canvas.Clear(SKColors.Transparent);
 
         float x = (width - content.Width) / 2f, y = (height - content.Height) / 2f;
         var rect = SKRect.Create(x, y, content.Width, content.Height);
@@ -347,9 +359,58 @@ public static class StudioRenderer
             canvas.Restore();
         }
 
+        if (brand is { IsEmpty: false }) DrawBranding(canvas, width, height, rect, brand);
+
         var result = new SKBitmap(new SKImageInfo(width, height, SKColorType.Rgba8888, SKAlphaType.Premul));
         surface.ReadPixels(result.Info, result.GetPixels(), result.RowBytes, 0, 0);
         return result;
+    }
+
+    /// <summary>Logo in a corner and a caption in the top or bottom padding (on the content when there is no padding).</summary>
+    private static void DrawBranding(SKCanvas canvas, int width, int height, SKRect content, BrandingSettings brand)
+    {
+        float margin = Math.Max(4f, Math.Min(width, height) * 0.025f);
+        if (!string.IsNullOrWhiteSpace(brand.LogoPath) && File.Exists(brand.LogoPath))
+        {
+            try
+            {
+                using var loaded = ImageLoader.Load(Toolbox.Core.Inputs.FileProbe.Probe(brand.LogoPath), svgDpi: 300);
+                using var normal = StudioSource.Normalize(loaded.Image);
+                float logoW = (float)(width * Math.Clamp(brand.LogoScale, 0.02, 0.6));
+                float logoH = logoW * normal.Height / normal.Width;
+                using var scaled = normal.Resize(logoW / normal.Width);
+                using var bitmap = ToSkBitmap(scaled);
+                using var logo = SKImage.FromBitmap(bitmap);
+                float x = brand.LogoPosition.EndsWith("left", StringComparison.OrdinalIgnoreCase) ? margin
+                    : brand.LogoPosition.EndsWith("center", StringComparison.OrdinalIgnoreCase) ? (width - logoW) / 2
+                    : width - logoW - margin;
+                float y = brand.LogoPosition.StartsWith("top", StringComparison.OrdinalIgnoreCase) ? margin : height - logoH - margin;
+                using var paint = new SKPaint { Color = SKColors.White.WithAlpha((byte)(Math.Clamp(brand.LogoOpacity, 0, 1) * 255)) };
+                canvas.DrawImage(logo, SKRect.Create(x, y, logoW, logoH), new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.None), paint);
+            }
+            catch (Exception ex) when (ex is Toolbox.Core.ProcessingException or VipsException)
+            {
+                // A missing or broken logo must not stop the export; the caption still draws.
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(brand.Caption))
+        {
+            using var typeface = SKTypeface.FromFamilyName(brand.FontFamily, SKFontStyle.Bold) ?? SKTypeface.Default;
+            float size = (float)Math.Max(8, height * Math.Clamp(brand.CaptionScale, 0.01, 0.15));
+            using var font = new SKFont(typeface, size);
+            using var shaper = new SKShaper(typeface);
+            using var paint = new SKPaint { IsAntialias = true, Color = SKColor.Parse(brand.CaptionColor) };
+            var shaped = shaper.Shape(brand.Caption, font);
+            float textWidth = shaped.Width;
+            float x = (width - textWidth) / 2;
+            bool top = brand.CaptionPosition.Equals("top", StringComparison.OrdinalIgnoreCase);
+            float band = top ? content.Top : height - content.Bottom;
+            float baseline = band >= size * 1.6f
+                ? (top ? content.Top / 2 + size / 3 : content.Bottom + band / 2 + size / 3)
+                : (top ? margin + size : height - margin);
+            canvas.DrawShapedText(shaper, brand.Caption, x, baseline, SKTextAlign.Left, font, paint);
+        }
     }
 
     private static void DrawFill(SKCanvas canvas, int width, int height, BackgroundSettings bg, double scale)

@@ -1,6 +1,7 @@
 using Toolbox.Core;
 using Toolbox.Core.Actions;
 using Toolbox.Core.Inputs;
+using Toolbox.Core.Recipes;
 using Toolbox.Core.Settings;
 
 namespace Toolbox.Windows.Wheel;
@@ -8,7 +9,7 @@ namespace Toolbox.Windows.Wheel;
 /// <summary>Builds the ring models for a concrete payload from the capability map and pinned layouts.</summary>
 internal static class WheelModels
 {
-    public static IReadOnlyList<WheelRingModel> Build(IReadOnlyList<ProbedFile> files, AppSettings settings, IReadOnlyList<WheelSegmentModel>? recipes = null)
+    public static IReadOnlyList<WheelRingModel> Build(IReadOnlyList<ProbedFile> files, AppSettings settings, IReadOnlyList<Recipe>? recipes = null)
     {
         var inputClass = WheelLayouts.Classify(files);
         var convert = WheelLayouts.DefaultConvert;
@@ -23,7 +24,7 @@ internal static class WheelModels
             new(ActionGroup.Tools, "Tools", Segments(toolIds, files), ShowIcons: true),
         };
         if (recipes is { Count: > 0 })
-            rings.Add(new WheelRingModel(ActionGroup.Recipes, "Recipes", recipes.Take(RingLayout.MaxSegments).ToList(), ShowIcons: true));
+            rings.Add(new WheelRingModel(ActionGroup.Recipes, "Recipes", RecipeSegments(recipes, files), ShowIcons: true));
         return rings;
     }
 
@@ -39,6 +40,19 @@ internal static class WheelModels
         }
         var secondary = usable.Count == files.Count ? $"{files.Count} files" : $"{usable.Count} of {files.Count} supported";
         return ($"{files.Count} files · {Bytes.Format(total)}", secondary);
+    }
+
+    /// <summary>Pinned recipes, in their saved order; ones that do not apply are disabled in place.</summary>
+    private static List<WheelSegmentModel> RecipeSegments(IReadOnlyList<Recipe> recipes, IReadOnlyList<ProbedFile> files)
+    {
+        var usable = files.Where(f => f.IsUsable).ToList();
+        return recipes.Take(RingLayout.MaxSegments).Select(r =>
+        {
+            int ok = usable.Count(f => r.Accepts.Contains(f.Kind));
+            bool enabled = ok > 0;
+            var detail = !enabled ? "Does not apply to these files" : r.Interactive ? "Opens editor" : ok < files.Count ? $"Applies to {ok} of {files.Count} files" : null;
+            return new WheelSegmentModel("recipe:" + r.Id, r.WheelLabel, r.Name, "recipe", enabled, detail);
+        }).ToList();
     }
 
     private static List<WheelSegmentModel> Segments(IEnumerable<string> ids, IReadOnlyList<ProbedFile> files)

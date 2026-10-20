@@ -21,6 +21,7 @@ internal static class Program
         var only = Arg(args, "--only")?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToHashSet(StringComparer.OrdinalIgnoreCase);
         bool desktop = args.Contains("--desktop");
         bool expectOutputs = args.Contains("--expect-outputs");
+        Scenarios.IncludeQa = args.Contains("--qa");
 
         var run = Path.Combine(Path.GetTempPath(), "ftb-harness", DateTime.Now.ToString("yyyyMMdd-HHmmss"));
         var files = Path.Combine(run, "Drag Test ملفات");

@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Threading;
 using Toolbox.Core.Diagnostics;
 using Toolbox.Core.Inputs;
+using Toolbox.Core.Recipes;
 using Toolbox.Core.Settings;
 using Toolbox.Windows.Diagnostics;
 using Toolbox.Windows.Interop;
@@ -30,7 +31,7 @@ internal sealed class DragActivationService : IDisposable
     private readonly KeyboardHook _hook = new();
     private readonly WheelOverlayWindow _overlay;
     private readonly Func<AppSettings> _settings;
-    private readonly Func<IReadOnlyList<WheelSegmentModel>> _recipes;
+    private readonly Func<IReadOnlyList<Recipe>> _recipes;
     private readonly DiagnosticsChannel _diagnostics;
     private readonly DispatcherTimer _probeTimer = new() { Interval = TimeSpan.FromMilliseconds(1200) };
     private readonly DispatcherTimer _leaveTimer = new() { Interval = TimeSpan.FromMilliseconds(320) };
@@ -47,7 +48,7 @@ internal sealed class DragActivationService : IDisposable
     private bool _reducedMotion;
 
     public DragActivationService(WheelOverlayWindow overlay, Func<AppSettings> settings,
-        Func<IReadOnlyList<WheelSegmentModel>> recipes, DiagnosticsChannel diagnostics)
+        Func<IReadOnlyList<Recipe>> recipes, DiagnosticsChannel diagnostics)
     {
         _overlay = overlay;
         _settings = settings;

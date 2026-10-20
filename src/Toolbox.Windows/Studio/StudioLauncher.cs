@@ -1,6 +1,8 @@
 using Toolbox.Core;
 using Toolbox.Core.Actions;
 using Toolbox.Core.Diagnostics;
+using Toolbox.Core.Recipes;
+using Toolbox.Processing.Recipes;
 using Toolbox.Processing.Studio;
 using Toolbox.Windows.Interop;
 using Toolbox.Windows.Shell;
@@ -8,7 +10,7 @@ using Ids = Toolbox.Core.Actions.CapabilityMap.Ids;
 
 namespace Toolbox.Windows.Studio;
 
-/// <summary>Opens the Studio for the editing tools on the wheel.</summary>
+/// <summary>Opens the Studio for the editing tools on the wheel and for interactive recipes.</summary>
 internal sealed class StudioLauncher : IEditorLauncher
 {
     private static readonly StudioStep[] AllSteps =
@@ -27,31 +29,57 @@ internal sealed class StudioLauncher : IEditorLauncher
     {
         var entry = EntryFor(action.Id)!;
         if (paths.Count == 0) return;
-        var path = paths[0];
-        if (paths.Count > 1)
-            _dispatcher.Notice(entry.Title, $"The editor works on one file at a time; opened {IOPath.GetFileName(path)}.", anchor, warning: false);
-
-        var window = new StudioWindow(entry, IOPath.GetFileName(path), anchor, (doc, suffix) => Save(entry, path, doc, suffix, anchor));
-        window.Show();
-        Foreground.Activate(window);
-        _ = LoadAsync(window, entry, action, path);
+        var path = First(paths, entry.Title, anchor);
+        var settings = App.Host.Settings.Current;
+        Show(entry, path, anchor, [], source => new EditDocument
+        {
+            SourcePath = path,
+            Page = source.Page,
+            Dpi = source.Dpi > 0 ? source.Dpi : settings.PdfDpi,
+            Background = new BackgroundSettings { Enabled = action.Id == Ids.Background },
+            Export = action.Id == Ids.Compress ? new ExportSettings { Quality = 75 } : new ExportSettings { Quality = settings.JpegQuality },
+        });
     }
 
-    private static async Task LoadAsync(StudioWindow window, StudioEntry entry, ActionDefinition action, string path)
+    /// <summary>Interactive recipe: the editor opens on the crop step with the recipe's framing and export applied.</summary>
+    public void OpenRecipe(Recipe recipe, IReadOnlyList<string> paths, Native.POINT? anchor)
+    {
+        if (paths.Count == 0) return;
+        var path = First(paths, recipe.Name, anchor);
+        var entry = new StudioEntry(StudioStep.Crop, recipe.Name, AllSteps, recipe.Suffix.Length > 0 ? recipe.Suffix : null);
+        var variants = recipe.Steps.Where(s => s.Op == RecipeOp.Frame).Select(s => s.Get("ratios", ""))
+            .SelectMany(r => r.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)).ToList();
+        var settings = App.Host.Settings.Current;
+        Show(entry, path, anchor, variants, source =>
+        {
+            var template = RecipeCompiler.InteractiveTemplate(recipe, path, id => App.Host.Brands.Find(id));
+            return template with { Page = source.Page, Dpi = source.Dpi > 0 ? source.Dpi : settings.PdfDpi };
+        });
+    }
+
+    private string First(IReadOnlyList<string> paths, string title, Native.POINT? anchor)
+    {
+        if (paths.Count > 1)
+            _dispatcher.Notice(title, $"The editor works on one file at a time; opened {IOPath.GetFileName(paths[0])}.", anchor, warning: false);
+        return paths[0];
+    }
+
+    private void Show(StudioEntry entry, string path, Native.POINT? anchor, IReadOnlyList<string> variants, Func<StudioSource, EditDocument> makeDocument)
+    {
+        var window = new StudioWindow(entry, IOPath.GetFileName(path), anchor,
+            (doc, suffix, chosenVariants) => Save(entry, path, doc, suffix, chosenVariants, anchor), variants);
+        window.Show();
+        Foreground.Activate(window);
+        _ = LoadAsync(window, path, makeDocument);
+    }
+
+    private static async Task LoadAsync(StudioWindow window, string path, Func<StudioSource, EditDocument> makeDocument)
     {
         try
         {
             var settings = App.Host.Settings.Current;
             var source = await Task.Run(() => StudioSource.Open(path, 1, settings.PdfDpi));
-            var doc = new EditDocument
-            {
-                SourcePath = path,
-                Page = source.Page,
-                Dpi = source.Dpi > 0 ? source.Dpi : settings.PdfDpi,
-                Background = new BackgroundSettings { Enabled = action.Id == Ids.Background },
-                Export = action.Id == Ids.Compress ? new ExportSettings { Quality = 75 } : new ExportSettings { Quality = settings.JpegQuality },
-            };
-            window.Attach(new StudioSession(doc, source));
+            window.Attach(new StudioSession(makeDocument(source), source));
         }
         catch (ProcessingException ex)
         {
@@ -64,10 +92,11 @@ internal sealed class StudioLauncher : IEditorLauncher
         }
     }
 
-    private void Save(StudioEntry entry, string path, EditDocument doc, string? suffix, Native.POINT? anchor)
+    private void Save(StudioEntry entry, string path, EditDocument doc, string? suffix, IReadOnlyList<string> variants, Native.POINT? anchor)
     {
         var options = new ActionOptions { ["document"] = doc.ToJson() };
         if (suffix is not null) options["suffix"] = suffix;
+        if (variants.Count > 0) options["variants"] = string.Join(",", variants);
         _dispatcher.Start(CapabilityMap.Get(Ids.StudioExport), [path], options, anchor ?? ScreenGeometry.CursorPosition(), entry.Title);
     }
 

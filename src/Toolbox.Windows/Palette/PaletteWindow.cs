@@ -85,7 +85,10 @@ internal sealed class PaletteWindow : GlassWindow
         settings.Click += (_, _) => App.ShowSettings();
         var history = new Button { Style = StudioWindow.Res("Toolbox.Button.Subtle"), Content = "History", Margin = new Thickness(0, 0, 4, 0) };
         history.Click += (_, _) => App.ShowHistory();
+        var recipes = new Button { Style = StudioWindow.Res("Toolbox.Button.Subtle"), Content = "Recipes", Margin = new Thickness(0, 0, 4, 0) };
+        recipes.Click += (_, _) => App.ShowRecipes();
         var right = new StackPanel { Orientation = Orientation.Horizontal };
+        right.Children.Add(recipes);
         right.Children.Add(history);
         right.Children.Add(settings);
         right.Children.Add(close);
@@ -167,21 +170,32 @@ internal sealed class PaletteWindow : GlassWindow
 
         var query = _search.Text.Trim();
         var rows = new List<(ActionDefinition Action, Applicability Verdict)>();
-        foreach (var action in CapabilityMap.All.Where(a => a.Id != CapabilityMap.Ids.StudioExport))
+        foreach (var action in CapabilityMap.All.Where(a => a.Id != CapabilityMap.Ids.StudioExport && a.Group != ActionGroup.Recipes))
         {
             if (query.Length > 0 && !Matches(action, query)) continue;
             var verdict = _files.Count == 0 ? new Applicability(action, 0, 0, "Add files first") : CapabilityMap.Evaluate(action, probed);
             rows.Add((action, verdict));
         }
-        var ordered = rows
-            .OrderByDescending(r => r.Action.Id == _preselect)
-            .ThenByDescending(r => r.Action.Id == _host.LastAction?.ActionId)
-            .ThenByDescending(r => r.Verdict.IsEnabled)
-            .ThenBy(r => r.Action.Group)
-            .ToList();
+        // One ordered list: chosen/last action, then actions that apply, then recipes that apply, then the rest.
+        var entries = new List<(ListBoxItem Item, int Rank)>();
+        foreach (var (action, verdict) in rows)
+        {
+            int rank = action.Id == _preselect ? 0 : action.Id == _host.LastAction?.ActionId ? 1 : verdict.IsEnabled ? 2 : 4;
+            entries.Add((Row(action, verdict), rank * 10 + (int)action.Group));
+        }
+        foreach (var recipe in _host.Recipes.All())
+        {
+            // Recipes match on their name, so "webp" finds the conversion rather than a recipe that mentions WebP.
+            if (query.Length > 0 && !$"{recipe.Name} {recipe.Label} recipe".Contains(query, StringComparison.OrdinalIgnoreCase)) continue;
+            int ok = probed.Count(f => f.IsUsable && recipe.Accepts.Contains(f.Kind));
+            bool enabled = _files.Count > 0 && ok > 0;
+            var id = ActionDispatcher.RecipePrefix + recipe.Id;
+            int rank = id == _preselect ? 0 : enabled ? 3 : 4;
+            entries.Add((RecipeRow(recipe, enabled, _files.Count == 0 ? recipe.Description : enabled ? recipe.WillProduce(ok) : "Does not apply to these files"), rank * 10 + 5));
+        }
 
         _list.Items.Clear();
-        foreach (var (action, verdict) in ordered) _list.Items.Add(Row(action, verdict));
+        foreach (var (item, _) in entries.OrderBy(e => e.Rank)) _list.Items.Add(item);
         var firstEnabled = _list.Items.Cast<ListBoxItem>().FirstOrDefault(i => i.IsEnabled);
         if (firstEnabled is not null) _list.SelectedItem = firstEnabled;
     }
@@ -238,6 +252,30 @@ internal sealed class PaletteWindow : GlassWindow
         grid.Children.Add(tag);
         var item = new ListBoxItem { Content = grid, Tag = action.Id, IsEnabled = verdict.IsEnabled, ToolTip = action.Limitations.Count > 0 ? string.Join("\n", action.Limitations) : null };
         System.Windows.Automation.AutomationProperties.SetName(item, action.Title);
+        return item;
+    }
+
+    private ListBoxItem RecipeRow(Toolbox.Core.Recipes.Recipe recipe, bool enabled, string detail)
+    {
+        var grid = new Grid();
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(30) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition());
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        var icon = new Path { Data = Icons.Get("recipe"), Width = 16, Height = 16, Stretch = Stretch.Uniform, StrokeThickness = 1.6, StrokeLineJoin = PenLineJoin.Round, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, 2, 0, 0) };
+        icon.SetResourceReference(Shape.StrokeProperty, enabled ? "Brush.Accent" : "Brush.TextDisabled");
+        grid.Children.Add(icon);
+        var text = new StackPanel();
+        var title = new TextBlock { Text = recipe.Name, FontWeight = FontWeights.SemiBold };
+        if (!enabled) title.SetResourceReference(TextBlock.ForegroundProperty, "Brush.TextDisabled");
+        text.Children.Add(title);
+        text.Children.Add(new TextBlock { Text = detail, Style = StudioWindow.Res("Text.Caption"), TextWrapping = TextWrapping.Wrap, MaxHeight = 34, TextTrimming = TextTrimming.CharacterEllipsis });
+        Grid.SetColumn(text, 1);
+        grid.Children.Add(text);
+        var tag = new TextBlock { Text = recipe.Interactive ? "Recipe · editor" : "Recipe", Style = StudioWindow.Res("Text.Caption"), Margin = new Thickness(10, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
+        Grid.SetColumn(tag, 2);
+        grid.Children.Add(tag);
+        var item = new ListBoxItem { Content = grid, Tag = ActionDispatcher.RecipePrefix + recipe.Id, IsEnabled = enabled };
+        System.Windows.Automation.AutomationProperties.SetName(item, "Recipe: " + recipe.Name);
         return item;
     }
 

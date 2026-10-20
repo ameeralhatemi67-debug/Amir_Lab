@@ -32,6 +32,7 @@ public partial class App : Application
     private PaletteWindow? _palette;
     private SettingsWindow? _settingsWindow;
     private HistoryWindow? _historyWindow;
+    private Recipes.RecipesWindow? _recipesWindow;
     private readonly List<string> _pendingPaths = [];
     private DispatcherTimer? _pathBatch;
 
@@ -77,7 +78,7 @@ public partial class App : Application
         _overlay.Show();
         _overlay.MoveOffscreen();
 
-        _drag = new DragActivationService(_overlay, () => _host.Settings.Current, () => [], diagnostics);
+        _drag = new DragActivationService(_overlay, () => _host.Settings.Current, () => _host.Recipes.All().Where(r => r.Pinned).ToList(), diagnostics);
         _drag.Dropped += request => _dispatcher.Dispatch(request.ActionId, request.Paths, request.ScreenPoint);
         _drag.Start();
         _drag.WarmUp();
@@ -171,6 +172,18 @@ public partial class App : Application
         Foreground.Activate(app._historyWindow);
     }
 
+    internal static void ShowRecipes()
+    {
+        var app = (App)Current;
+        if (app._recipesWindow is null)
+        {
+            app._recipesWindow = new Recipes.RecipesWindow(app._host);
+            app._recipesWindow.Closed += (_, _) => app._recipesWindow = null;
+            app._recipesWindow.Show();
+        }
+        Foreground.Activate(app._recipesWindow);
+    }
+
     private void RefreshTrayMenu()
     {
         if (_tray is null) return;
@@ -179,6 +192,7 @@ public partial class App : Application
         [
             ("Open File Toolbox" + (_hotkey?.Registered == true ? "\tCtrl+Alt+F" : ""), () => ShowPalette()),
             (last is null ? "Repeat last action" : $"Repeat: {last.Title}…", last is null ? null : () => ShowPalette(preselect: last.Id)),
+            ("Recipes", ShowRecipes),
             ("History", ShowHistory),
             ("Settings", ShowSettings),
             ("-", null),

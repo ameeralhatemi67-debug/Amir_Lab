@@ -92,15 +92,31 @@ internal sealed class StudioExportHandler : IActionHandler
 
         using var source = StudioSource.Open(context.Input.Path, doc.Page, doc.Dpi);
         context.Report(0.2);
-        var format = StudioExporter.ResolveFormat(doc, source);
         var suffix = context.Options.TryGetValue("suffix", out var s) && s.Length > 0 ? s : doc.Suffix();
-        var slot = context.CreateOutput(new OutputSpec(context.Input.BaseName, suffix, format,
-            source.PageCount > 1 ? source.Page : null, source.PageCount));
-        var result = StudioExporter.Export(doc, source, format, slot.TempPath, context.Cancellation);
-        foreach (var note in result.Notes) context.Note(note);
+
+        // Export pack: the same edit framed at several ratios. Framing never cuts content.
+        var variants = context.Options.GetString("variants", "")
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(v => BackgroundPresets.Ratio(v) is not null).ToList();
+        var docs = variants.Count == 0
+            ? [(Doc: doc, Suffix: suffix)]
+            : variants.Select(v => (Doc: doc with { Background = doc.Background with { Enabled = true, Ratio = v } }, Suffix: $"{suffix} {v.Replace(':', 'x')}")).ToList();
+        if (variants.Count > 0 && !doc.Background.Enabled)
+            context.Note("Variants are framed on the background so nothing is cut off.");
+
+        for (int i = 0; i < docs.Count; i++)
+        {
+            context.Cancellation.ThrowIfCancellationRequested();
+            var (variant, variantSuffix) = docs[i];
+            var format = StudioExporter.ResolveFormat(variant, source);
+            var slot = context.CreateOutput(new OutputSpec(context.Input.BaseName, variantSuffix, format,
+                source.PageCount > 1 ? source.Page : null, source.PageCount));
+            var result = StudioExporter.Export(variant, source, format, slot.TempPath, context.Cancellation);
+            foreach (var note in result.Notes) context.Note(note);
+            slot.Expected = new ExpectedOutput(format, result.Width, result.Height);
+            context.Report(0.2 + 0.8 * (i + 1) / docs.Count);
+        }
         context.Note("Exported from the original-quality source; metadata (camera, location) is not included.");
-        slot.Expected = new ExpectedOutput(format, result.Width, result.Height);
-        context.Report(1);
         return Task.CompletedTask;
     }
 }

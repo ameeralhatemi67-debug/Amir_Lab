@@ -30,10 +30,50 @@ internal sealed class Scenarios
             yield return ("heic-to-jpg-via-windows-codec", () => DropOnSegment([Fixtures.HeicName], ringSwitches: 0, "image.to-jpg"));
         yield return ("studio-crop-background-save", StudioCropBackgroundSave);
         yield return ("palette-from-second-launch", PaletteFromSecondLaunch);
+        yield return ("recipe-ring-website-images", () => DropOnSegment([Fixtures.SecondImageName], ringSwitches: 2, "recipe:builtin-web"));
         yield return ("escape-cancels", EscapeCancels);
         yield return ("leave-wheel-closes", LeaveWheelCloses);
         yield return ("no-wheel-without-file-drag", NoWheelWithoutFileDrag);
         if (includeDesktop) yield return ("desktop-source", DesktopSource);
+        if (IncludeQa) yield return ("qa-windows", QaWindows);
+    }
+
+    /// <summary>Visual QA only (--qa): opens the palette, Recipes and Settings windows and screenshots them.</summary>
+    public static bool IncludeQa { get; set; }
+
+    private ScenarioResult QaWindows()
+    {
+        var launch = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(_app.ExePath) { UseShellExecute = false });
+        launch?.WaitForExit(8000);
+        var palette = WaitFor(() => AutomationElement.RootElement.FindFirst(TreeScope.Children, new AndCondition(
+            new PropertyCondition(AutomationElement.ProcessIdProperty, _app.ProcessId),
+            new PropertyCondition(AutomationElement.NameProperty, "File Toolbox"))), TimeSpan.FromSeconds(6));
+        if (palette is null) return Fail("Palette did not open.");
+        Thread.Sleep(800);
+        Snapshots.Capture("qa-palette-empty");
+        foreach (var (button, title, tab) in new[] { ("Recipes", "File Toolbox recipes", "Brand styles"), ("Settings", "File Toolbox settings", (string?)null) })
+        {
+            if (!Select(palette, button)) return Fail($"{button} button not found.");
+            var window = WaitFor(() => AutomationElement.RootElement.FindFirst(TreeScope.Children, new PropertyCondition(AutomationElement.NameProperty, title)), TimeSpan.FromSeconds(5));
+            if (window is null) return Fail($"{title} did not open.");
+            Thread.Sleep(1200);
+            Snapshots.Capture("qa-" + button);
+            if (tab is not null && Select(window, tab))
+            {
+                Thread.Sleep(800);
+                var create = window.FindFirst(TreeScope.Descendants, new AndCondition(
+                    new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Button),
+                    new PropertyCondition(AutomationElement.NameProperty, "New style")));
+                if (create is null) return Fail("\"New style\" button not found in the Brand styles tab.");
+                var r = create.Current.BoundingRectangle;
+                RealInput.MoveTo(r.Left + r.Width / 2, r.Top + r.Height / 2);
+                Thread.Sleep(100);
+                RealInput.Click();
+                Thread.Sleep(2000);
+                Snapshots.Capture("qa-" + button + "-brand");
+            }
+        }
+        return new ScenarioResult("", true, "Screenshots captured for visual review.", null);
     }
 
     // ---------------------------------------------------------------------------------------
@@ -260,8 +300,16 @@ internal sealed class Scenarios
     /// <summary>Selects a radio/segment (or invokes a button) by its visible name inside a window.</summary>
     private static bool Select(AutomationElement window, string name)
     {
-        var element = window.FindFirst(TreeScope.Descendants, new PropertyCondition(AutomationElement.NameProperty, name))
-                      ?? window.FindFirst(TreeScope.Descendants, new PropertyCondition(AutomationElement.NameProperty, name + " •"));
+        // Prefer real controls (buttons, radios, tabs) over the text elements inside them.
+        AutomationElement? element = null;
+        foreach (var type in new[] { ControlType.Button, ControlType.RadioButton, ControlType.TabItem, ControlType.ListItem })
+        {
+            element = window.FindFirst(TreeScope.Descendants, new AndCondition(
+                new PropertyCondition(AutomationElement.ControlTypeProperty, type),
+                new OrCondition(new PropertyCondition(AutomationElement.NameProperty, name), new PropertyCondition(AutomationElement.NameProperty, name + " •"))));
+            if (element is not null) break;
+        }
+        element ??= window.FindFirst(TreeScope.Descendants, new PropertyCondition(AutomationElement.NameProperty, name));
         if (element is null) return false;
         if (element.TryGetCurrentPattern(SelectionItemPattern.Pattern, out var sel)) { ((SelectionItemPattern)sel).Select(); return true; }
         if (element.TryGetCurrentPattern(InvokePattern.Pattern, out var inv)) { ((InvokePattern)inv).Invoke(); return true; }

@@ -44,6 +44,12 @@ public static class CapabilityMap
 
         /// <summary>Final render of a Studio editing session (crop/adjust/background/annotate/redact stack).</summary>
         public const string StudioExport = "studio.export";
+
+        /// <summary>Runs a saved recipe on each file (option "recipe" holds the recipe JSON).</summary>
+        public const string RunRecipe = "recipe.run";
+
+        /// <summary>Runs a saved recipe that combines all files into one result.</summary>
+        public const string RunRecipeCombined = "recipe.run-combined";
     }
 
     public static readonly IReadOnlySet<FileKind> ImageInputs = new HashSet<FileKind>
@@ -301,6 +307,21 @@ public static class CapabilityMap
             Options = [new("languages", "Languages", OptionType.Choice, "ara+eng", Choices: ["ara+eng", "eng", "ara"]), DpiOption],
             Limitations = ["Pages are re-rendered as images; existing selectable text is replaced by the recognised layer."],
         });
+
+        foreach (var (id, arity) in new[] { (Ids.RunRecipe, InputArity.PerFile), (Ids.RunRecipeCombined, InputArity.Combined) })
+        {
+            list.Add(new ActionDefinition
+            {
+                Id = id,
+                Label = "Recipe",
+                Title = "Run recipe",
+                Meaning = "Runs a saved sequence of steps. Intermediate files are temporary and removed; only the final results are saved, then checked against the recipe's requirements.",
+                Group = ActionGroup.Recipes,
+                Inputs = new HashSet<FileKind>(ImageInputs.Append(FileKind.Pdf)),
+                Arity = arity,
+                Icon = "recipe",
+            });
+        }
 
         list.Add(new ActionDefinition
         {

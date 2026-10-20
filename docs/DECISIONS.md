@@ -76,3 +76,14 @@ Product direction lives in [`sead_idea.md`](../sead_idea.md) (the seed). This fi
 - **One window for keyboard and drop-zone access** (the File Toolbox palette). It lists every action with its meaning or the reason it does not apply. A clipboard image is saved as `Pictures\File Toolbox\Clipboard <time>.png`, so its results have a real, visible home.
 - **Single instance:** a per-user named pipe (`PipeOptions.CurrentUserOnly`). Further launches forward their arguments and exit.
 - **Shell integration is opt-in and per-user** (HKCU `SystemFileAssociations\<ext>\shell\FileToolbox`, a SendTo shortcut, the HKCU Run value). The build does not switch any of it on.
+- **Accessibility:** the custom TabControl template must name its content presenter `PART_SelectedContentHost`, or screen readers cannot see tab contents. The harness found this when its UI Automation could not reach the "New style" button.
+
+## Recipes (M6)
+
+- **User-facing steps** (`RecipeOp`): PDF pages → images, centred crop to a ratio, resize, frame/brand, format, fit under a size, remove metadata, combine into one PDF. They are stored as JSON in `%LOCALAPPDATA%\FileToolbox\recipes`. Built-in recipes are code, read-only, and can be pinned.
+- **The compiler fuses consecutive image steps** into one Studio render, so a recipe decodes and encodes each picture once (no generation loss). A format change straight after rendering PDF pages is folded into the render itself. Metadata removal is implicit for rendered images; it becomes a separate lossless stage only when nothing else re-renders the pictures.
+- **Execution is a normal job** (`recipe.run`, or `recipe.run-combined` when the recipe combines files into one result). Intermediate files go to `…\FileToolbox\staging\<id>`, which is always deleted afterwards and swept at startup. The final stage writes through the ordinary verified output pipeline, using the original name plus the recipe's suffix.
+- **Requirements** (max size, formats, max dimensions) are checked on the real results and reported per file. A result that misses a requirement is still saved (it is the best effort) but clearly flagged ✗, which avoids both a silent failure and a false success.
+- **Interactive recipes** open the Studio on the crop step with the recipe's framing and export applied. Export-pack ratios from the recipe preselect "Also save versions".
+- **Brand styles** live in `…\presets\brand-*.json`. Logo and caption are drawn by the same renderer after framing; logo size is relative to the canvas, so every variant stays consistent.
+- **Export packs reframe and never crop:** each ratio is a background frame around the full content, so text at the edges is never cut off silently.

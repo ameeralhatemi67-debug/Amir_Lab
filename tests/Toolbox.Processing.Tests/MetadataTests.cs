@@ -35,7 +35,7 @@ public sealed class MetadataTests : IDisposable
         var dirs = ImageMetadataReader.ReadMetadata(output);
         Assert.True(dirs.OfType<GpsDirectory>().All(d => d.TagCount == 0));
         Assert.Equal("TestCam", dirs.OfType<ExifIfd0Directory>().Single().GetDescription(ExifDirectoryBase.TagMake));
-        Assert.Empty(dirs.OfType<ExifThumbnailDirectory>().Where(d => d.TagCount > 0));
+        Assert.DoesNotContain(dirs.OfType<ExifThumbnailDirectory>(), d => d.TagCount > 0);
         Assert.Empty(dirs.OfType<XmpDirectory>());
         Assert.True(SameScanData(File.ReadAllBytes(src), bytes), "compressed picture data must be byte-identical");
     }

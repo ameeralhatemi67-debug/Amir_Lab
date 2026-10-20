@@ -134,8 +134,41 @@ public sealed record ExportSettings
 /// A complete, non-destructive editing session. All geometry is stored in full-resolution units,
 /// so the same document renders the small live preview and the final export identically.
 /// </summary>
+/// <summary>Logo and caption drawn on the final canvas (resolved from a brand preset).</summary>
+public sealed record BrandingSettings
+{
+    public string? LogoPath { get; init; }
+    public string LogoPosition { get; init; } = "bottom-right";
+    public double LogoScale { get; init; } = 0.14;
+    public double LogoOpacity { get; init; } = 0.9;
+    public string? Caption { get; init; }
+    public string CaptionPosition { get; init; } = "bottom";
+    public string CaptionColor { get; init; } = "#1F2937";
+    public double CaptionScale { get; init; } = 0.035;
+    public string FontFamily { get; init; } = "Segoe UI";
+
+    [JsonIgnore]
+    public bool IsEmpty => string.IsNullOrWhiteSpace(LogoPath) && string.IsNullOrWhiteSpace(Caption);
+
+    public static BrandingSettings From(Toolbox.Core.Presets.BrandPreset p) => new()
+    {
+        LogoPath = p.LogoPath,
+        LogoPosition = p.LogoPosition,
+        LogoScale = p.LogoScale,
+        LogoOpacity = p.LogoOpacity,
+        Caption = p.Caption,
+        CaptionPosition = p.CaptionPosition,
+        CaptionColor = p.CaptionColor,
+        CaptionScale = p.CaptionScale,
+        FontFamily = p.FontFamily,
+    };
+}
+
 public sealed record EditDocument
 {
+    /// <summary>Logo and caption; null for none.</summary>
+    public BrandingSettings? Brand { get; init; }
+
     private static readonly JsonSerializerOptions Json = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,

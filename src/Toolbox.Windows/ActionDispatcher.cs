@@ -3,6 +3,7 @@ using Toolbox.Core.Actions;
 using Toolbox.Core.Diagnostics;
 using Toolbox.Core.Inputs;
 using Toolbox.Core.Jobs;
+using Toolbox.Core.Recipes;
 using Toolbox.Processing.Pdf;
 using Toolbox.Windows.Interop;
 using Toolbox.Windows.Jobs;
@@ -35,10 +36,47 @@ internal sealed class ActionDispatcher
 
     public IEditorLauncher? Editors { get; set; }
 
+    /// <summary>Wheel and palette ids for recipes look like "recipe:&lt;id&gt;".</summary>
+    public const string RecipePrefix = "recipe:";
+
+    /// <summary>Runs a recipe: interactive recipes open the editor with their settings; others run as one job.</summary>
+    public void RunRecipe(Recipe recipe, IReadOnlyList<string> paths, Native.POINT? anchor)
+    {
+        if (recipe.Interactive)
+        {
+            if (RecipeEditor is { } open) open(recipe, paths, anchor);
+            else Notice(recipe.Name, "The editor is not available.", anchor, warning: true);
+            return;
+        }
+        var accepted = FileProbe.ProbeAll(paths).Where(f => f.IsUsable && recipe.Accepts.Contains(f.Kind)).Select(f => f.Path).ToList();
+        if (accepted.Count == 0)
+        {
+            Notice(recipe.Name, "This recipe does not apply to these files.", anchor, warning: true);
+            return;
+        }
+        if (accepted.Count < paths.Count)
+            Notice(recipe.Name, $"{paths.Count - accepted.Count} of {paths.Count} files do not apply to this recipe and were skipped.", anchor, warning: true);
+        var combined = recipe.Steps.Any(s => s.Op == RecipeOp.CombineToPdf);
+        var action = CapabilityMap.Get(combined ? CapabilityMap.Ids.RunRecipeCombined : CapabilityMap.Ids.RunRecipe);
+        var options = new ActionOptions { ["recipe"] = RecipeStore.ToJson(recipe) };
+        if (recipe.Destination is not null && !Directory.Exists(recipe.Destination)) Directory.CreateDirectory(recipe.Destination);
+        Start(action, accepted, options, anchor, recipe.Name, recipe.Destination);
+    }
+
+    /// <summary>Opens the Studio for an interactive recipe (set by the editor launcher).</summary>
+    public Action<Recipe, IReadOnlyList<string>, Native.POINT?>? RecipeEditor { get; set; }
+
     public async void Dispatch(string actionId, IReadOnlyList<string> paths, Native.POINT? anchor, ActionOptions? overrides = null)
     {
         try
         {
+            if (actionId.StartsWith(RecipePrefix, StringComparison.Ordinal))
+            {
+                var recipe = _host.Recipes.Find(actionId[RecipePrefix.Length..]);
+                if (recipe is null) Notice("Recipe not found", "It may have been deleted.", anchor, warning: true);
+                else RunRecipe(recipe, paths, anchor);
+                return;
+            }
             if (!CapabilityMap.TryGet(actionId, out var action))
             {
                 Notice("Unknown action", actionId, anchor, warning: true);
@@ -85,11 +123,12 @@ internal sealed class ActionDispatcher
         }
     }
 
-    public Job? Start(ActionDefinition action, IReadOnlyList<string> paths, ActionOptions options, Native.POINT? anchor, string? title = null)
+    public Job? Start(ActionDefinition action, IReadOnlyList<string> paths, ActionOptions options, Native.POINT? anchor, string? title = null, string? destination = null)
     {
         try
         {
-            var job = _host.Runner.Start(new JobRequest(action.Id, paths, options, Title: title));
+            var runner = destination is null ? _host.Runner : _host.RunnerFor(destination);
+            var job = runner.Start(new JobRequest(action.Id, paths, options, Title: title));
             _host.LastAction = (action.Id, options);
             _toasts.Show(job, anchor);
             return job;

@@ -138,6 +138,32 @@ internal sealed partial class StudioWindow
         enabled.Unchecked += (_, _) => Apply(d => d with { Background = d.Background with { Enabled = false } });
         panel.Children.Add(enabled);
 
+        var brands = App.Host.Brands.All();
+        if (brands.Count > 0)
+        {
+            panel.Children.Add(Heading("Brand style"));
+            var brandBox = new ComboBox { Width = 240, HorizontalAlignment = HorizontalAlignment.Left };
+            brandBox.Items.Add("(none)");
+            foreach (var b in brands) brandBox.Items.Add(b.Name);
+            var current = _session.Document.Brand;
+            brandBox.SelectedIndex = 0;
+            brandBox.SelectionChanged += (_, _) =>
+            {
+                var chosen = brandBox.SelectedIndex > 0 ? brands[brandBox.SelectedIndex - 1] : null;
+                Apply(d => chosen is null
+                    ? d with { Brand = null }
+                    : d with
+                    {
+                        Brand = BrandingSettings.From(chosen),
+                        Background = d.Background with { Enabled = true, Fill = chosen.Fill, Padding = chosen.Padding, Corner = chosen.Corner, Shadow = chosen.Shadow },
+                    });
+                RebuildPanel();
+            };
+            if (current is not null)
+                brandBox.SelectedIndex = Math.Max(0, brands.ToList().FindIndex(b => b.LogoPath == current.LogoPath && b.Caption == current.Caption) + 1);
+            panel.Children.Add(brandBox);
+        }
+
         panel.Children.Add(Heading("Background"));
         var gradients = new WrapPanel();
         foreach (var preset in BackgroundPresets.Gradients)
@@ -336,7 +362,11 @@ internal sealed partial class StudioWindow
             chips.Children.Add(SmallButton(preset.ToString(CultureInfo.InvariantCulture), () => { edge.Text = preset.ToString(CultureInfo.InvariantCulture); limit.IsChecked = true; SetEdge(); }));
         panel.Children.Add(chips);
 
-        if (_entry.SuffixOverride != " Compressed") panel.Children.Add(TargetSection(ex));
+        if (_entry.SuffixOverride != " Compressed")
+        {
+            panel.Children.Add(TargetSection(ex));
+            panel.Children.Add(VariantsSection());
+        }
 
         var card = new Border { Style = (Style)Application.Current.Resources["Toolbox.Card"], Margin = new Thickness(0, 12, 0, 0) };
         var info = new StackPanel();
@@ -385,6 +415,50 @@ internal sealed partial class StudioWindow
         section.Children.Add(shrink);
         section.Children.Add(Caption($"Lowers quality first (not below {ex.MinQuality}), then size. A target is a request: the result reports whether it was met."));
         return section;
+    }
+
+    /// <summary>Export pack: the same edit framed at several ratios, each with a live preview. Nothing is cut off.</summary>
+    private UIElement VariantsSection()
+    {
+        var section = Column();
+        section.Children.Add(Heading("Also save versions"));
+        var grid = new WrapPanel();
+        foreach (var ratio in new[] { "1:1", "4:5", "9:16", "16:9" })
+        {
+            var preview = new Image { Width = 56, Height = 56, Stretch = Stretch.Uniform, Margin = new Thickness(0, 0, 0, 4) };
+            var check = new CheckBox { IsChecked = _variants.Contains(ratio) };
+            var stack = new StackPanel { Margin = new Thickness(0, 0, 10, 6), Width = 62 };
+            stack.Children.Add(new Border { Width = 58, Height = 58, Child = preview, CornerRadius = new CornerRadius(4) });
+            var row = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center };
+            row.Children.Add(check);
+            row.Children.Add(new TextBlock { Text = ratio, FontSize = 11.5, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(-2, 0, 0, 0) });
+            stack.Children.Add(row);
+            check.Checked += (_, _) => _variants.Add(ratio);
+            check.Unchecked += (_, _) => _variants.Remove(ratio);
+            grid.Children.Add(stack);
+            _ = RenderVariantPreviewAsync(preview, ratio);
+        }
+        section.Children.Add(grid);
+        section.Children.Add(Caption("Each version is framed on the background at that shape, so nothing is cut off. Saved as \"… 1x1.png\", \"… 9x16.png\"…"));
+        return section;
+    }
+
+    private async Task RenderVariantPreviewAsync(Image target, string ratio)
+    {
+        if (_session is null) return;
+        var doc = _session.Document with { Background = _session.Document.Background with { Enabled = true, Ratio = ratio } };
+        var source = _session.Source;
+        try
+        {
+            var frame = await Task.Run(() => StudioRenderer.RenderPreview(doc, source, RenderStage.Final, 160));
+            var bitmap = System.Windows.Media.Imaging.BitmapSource.Create(frame.Width, frame.Height, 96, 96, PixelFormats.Pbgra32, null, frame.Bgra, frame.Width * 4);
+            bitmap.Freeze();
+            target.Source = bitmap;
+        }
+        catch
+        {
+            // Previews are a convenience; the export itself is unaffected.
+        }
     }
 
     private async void RefreshEstimate()

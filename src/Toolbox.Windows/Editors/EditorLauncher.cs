@@ -15,6 +15,7 @@ internal sealed class EditorLauncher : IEditorLauncher
     {
         _dispatcher = dispatcher;
         _studio = new StudioLauncher(dispatcher);
+        dispatcher.RecipeEditor = _studio.OpenRecipe;
     }
 
     public bool CanOpen(ActionDefinition action) => action.Id == CapabilityMap.Ids.Metadata || _studio.CanOpen(action);

@@ -18,7 +18,9 @@ internal static class Snapshots
             using (var g = Graphics.FromImage(bitmap))
                 g.CopyFromScreen(bounds.Location, Point.Empty, bounds.Size);
             Directory.CreateDirectory(Folder);
-            var path = System.IO.Path.Combine(Folder, $"{DateTime.Now:HHmmss-fff} {name}.png");
+            // ":" in a name would create an NTFS alternate data stream instead of a file.
+            var safe = string.Concat(name.Select(c => System.IO.Path.GetInvalidFileNameChars().Contains(c) ? '_' : c));
+            var path = System.IO.Path.Combine(Folder, $"{DateTime.Now:HHmmss-fff} {safe}.png");
             bitmap.Save(path, ImageFormat.Png);
             return path;
         }

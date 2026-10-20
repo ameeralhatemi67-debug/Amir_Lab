@@ -5,6 +5,8 @@ using Toolbox.Core.Diagnostics;
 using Toolbox.Core.History;
 using Toolbox.Core.Jobs;
 using Toolbox.Core.Output;
+using Toolbox.Core.Presets;
+using Toolbox.Core.Recipes;
 using Toolbox.Core.Settings;
 using Toolbox.Processing;
 using Toolbox.Windows.Diagnostics;
@@ -23,9 +25,39 @@ internal sealed class ToolboxHost
         int orphans = Journal.CleanupOrphans();
         if (orphans > 0) Log.Info($"Removed {orphans} temporary file(s) left by an earlier session.");
 
+        Recipes = new RecipeStore();
+        Brands = new BrandStore();
+        ProcessingEngine.Brands = id => Brands.Find(id);
+
         Outputs = new OutputManager(() => Settings.Current.ToOutputPolicy(), Journal);
         Runner = ProcessingEngine.CreateRunner(Outputs);
         Runner.JobFinished += OnJobFinished;
+        CleanupStaging();
+    }
+
+    public RecipeStore Recipes { get; }
+    public BrandStore Brands { get; }
+
+    /// <summary>A runner that saves into a specific folder (recipes with their own destination). Shares history.</summary>
+    public JobRunner RunnerFor(string folder)
+    {
+        var outputs = new OutputManager(() => Settings.Current.ToOutputPolicy() with { Location = OutputLocation.Folder, Folder = folder }, Journal);
+        var runner = ProcessingEngine.CreateRunner(outputs);
+        runner.JobFinished += OnJobFinished;
+        return runner;
+    }
+
+    /// <summary>Removes recipe staging folders left by a crash (they only ever hold intermediates).</summary>
+    private static void CleanupStaging()
+    {
+        var staging = System.IO.Path.Combine(AppPaths.DataDir, "staging");
+        if (!System.IO.Directory.Exists(staging)) return;
+        foreach (var dir in System.IO.Directory.GetDirectories(staging))
+        {
+            try { System.IO.Directory.Delete(dir, recursive: true); }
+            catch (System.IO.IOException) { }
+            catch (UnauthorizedAccessException) { }
+        }
     }
 
     public DiagnosticsChannel Diagnostics { get; }

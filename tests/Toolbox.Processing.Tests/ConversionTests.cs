@@ -253,7 +253,7 @@ public sealed class PdfTests : IDisposable
         Assert.True(item.State == JobItemState.Completed, item.Error);
         Assert.Contains(item.Notes, n => n.Contains("Text only"));
         using var doc = WordprocessingDocument.Open(item.Outputs[0].Path, false);
-        var body = doc.MainDocumentPart!.Document.Body!.InnerText;
+        var body = doc.MainDocumentPart!.Document!.Body!.InnerText;
         Assert.Contains("Marker for page 2", body);
     }
 

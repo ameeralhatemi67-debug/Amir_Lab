@@ -14,8 +14,13 @@ public static class ProcessingEngine
 {
     public static void Initialize() => VipsRuntime.EnsureInitialized();
 
+    /// <summary>Resolves brand presets for recipes (set by the host; defaults to the local preset store).</summary>
+    public static Func<string, Toolbox.Core.Presets.BrandPreset?> Brands { get; set; } = id => new Toolbox.Core.Presets.BrandStore().Find(id);
+
     public static IReadOnlyList<IActionHandler> CreateHandlers() =>
     [
+        new Recipes.RecipeHandler(Ids.RunRecipe, id => Brands(id)),
+        new Recipes.RecipeHandler(Ids.RunRecipeCombined, id => Brands(id)),
         new ImageConvertHandler(Ids.ImageToJpg, FileKind.Jpeg, 90),
         new ImageConvertHandler(Ids.ImageToPng, FileKind.Png, 90),
         new ImageConvertHandler(Ids.ImageToWebp, FileKind.WebP, 85),

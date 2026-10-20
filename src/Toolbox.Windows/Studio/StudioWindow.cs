@@ -35,7 +35,8 @@ internal sealed record StudioEntry(StudioStep Start, string Title, IReadOnlyList
 internal sealed partial class StudioWindow : GlassWindow
 {
     private readonly StudioEntry _entry;
-    private readonly Action<EditDocument, string?> _save;
+    private readonly Action<EditDocument, string?, IReadOnlyList<string>> _save;
+    private readonly HashSet<string> _variants;
     private StudioSession? _session;
     private PreviewEngine? _engine;
     private StudioStep _step;
@@ -63,10 +64,11 @@ internal sealed partial class StudioWindow : GlassWindow
     private readonly ComboBox _pagePicker = new() { MinWidth = 120, Visibility = Visibility.Collapsed };
     private BitmapSource? _originalPreview;
 
-    public StudioWindow(StudioEntry entry, string fileName, Native.POINT? anchor, Action<EditDocument, string?> save)
+    public StudioWindow(StudioEntry entry, string fileName, Native.POINT? anchor, Action<EditDocument, string?, IReadOnlyList<string>> save, IReadOnlyList<string>? variants = null)
     {
         _entry = entry;
         _save = save;
+        _variants = new HashSet<string>(variants ?? []);
         _step = entry.Start;
         Title = entry.Title;
         Resizable = true;
@@ -410,7 +412,7 @@ internal sealed partial class StudioWindow : GlassWindow
     private void Save()
     {
         if (_session is null) return;
-        _save(_session.Document, _entry.SuffixOverride);
+        _save(_session.Document, _entry.SuffixOverride, _variants.ToList());
         Close();
     }
 

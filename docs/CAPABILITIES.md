@@ -37,3 +37,10 @@ HEIC input is accepted only when Windows' HEIF and HEVC codecs are installed (ch
 | **Make a searchable PDF**<br>`ocr.searchable-pdf` | PDF, JPG, PNG, WebP, AVIF, HEIC, TIFF, GIF, BMP, SVG | PDF | A PDF that looks like the scan but has an invisible recognised-text layer, so it can be searched and copied. | Pages are re-rendered as images; existing selectable text is replaced by the recognised layer. | Needs ocr |
 | **Export edited image**<br>`studio.export` | PDF, JPG, PNG, WebP, AVIF, HEIC, TIFF, GIF, BMP, SVG | PNG | Renders the editing session (crop, adjustments, background, annotations, redactions) from the original-quality source. | — | Working |
 
+## Recipes
+
+| Action | Accepts | Produces | Meaning | Limitations | Status |
+|---|---|---|---|---|---|
+| **Run recipe**<br>`recipe.run` | PDF, JPG, PNG, WebP, AVIF, HEIC, TIFF, GIF, BMP, SVG | same as input | Runs a saved sequence of steps. Intermediate files are temporary and removed; only the final results are saved, then checked against the recipe's requirements. | — | Working |
+| **Run recipe**<br>`recipe.run-combined` | PDF, JPG, PNG, WebP, AVIF, HEIC, TIFF, GIF, BMP, SVG | same as input | Runs a saved sequence of steps. Intermediate files are temporary and removed; only the final results are saved, then checked against the recipe's requirements. | — | Working |
+

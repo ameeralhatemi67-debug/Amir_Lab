@@ -16,7 +16,7 @@ public static class Bytes
             value /= 1024;
             unit++;
         }
-        var format = value >= 100 ? "0" : value >= 10 ? "0.#" : "0.0#";
+        var format = value >= 100 ? "0" : value >= 10 ? "0.#" : "0.##";
         return value.ToString(format, CultureInfo.InvariantCulture) + " " + units[unit];
     }
 

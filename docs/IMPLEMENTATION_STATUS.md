@@ -3,7 +3,7 @@
 States: **Working** (implemented and verified, with the evidence named), **Partial** (some of it works; the gaps are listed), **Blocked** (cannot proceed without something), **Future** (not started).
 A capability listed in the seed or the capability map is not working until this table says so.
 
-_Last updated: 20 Oct 2026 — M5 complete._
+_Last updated: 20 Oct 2026 — M6 complete._
 
 ## Desktop interaction
 
@@ -68,5 +68,13 @@ _Last updated: 20 Oct 2026 — M5 complete._
 | Metadata removal — PNG/TIFF (lossless), WebP/AVIF (re-encoded at quality 95, stated) | **Working** | `Png_location_can_be_removed_losslessly`. |
 | PDF document-information removal | **Working** | `Pdf_document_information_is_removed`. Attachments, form data and annotations are not touched (stated). |
 | Editors (Crop, Background, Adjust, Compress, Annotate, Redact, Metadata) | Future | M4/M5 |
-| Recipes, presets, brand packs | Future | M6 |
+| Recipes: saved multi-step actions (create, inspect, edit, duplicate, delete, pin to the wheel, import/export JSON) | **Working** | `RecipeTests` (store, import/export, pins); Recipes window screenshot QA. |
+| Recipe execution: consecutive image steps fused into one render; staging folder removed; only final results saved | **Working** | `Consecutive_image_steps_fuse_into_one_render`, `Chain_with_combine_makes_one_pdf_and_no_intermediate_files`. |
+| "Will produce" summary before running | **Working** | `Will_produce_explains_the_plan_before_running`; shown in the palette and the recipe editor. |
+| Result-oriented presets: website images, email (under 2 MB), report graphic, document pages, presentation screenshot, remove location/camera | **Working** | `Website_images_recipe_…`, `Share_pages_recipe_…`; DragHarness `recipe-ring-website-images` (third ring, real drag). |
+| Requirements check (size, format, dimensions) reported as met or not met | **Working** | `Email_recipe_reports_when_the_size_cannot_be_met`: the best effort is saved and flagged "✗ Requirement not met". |
+| Interactive recipes (editor opens with the recipe's framing and export applied) | **Working** (manual) | Report graphic, presentation screenshot. |
+| Brand styles (background, spacing, logo/watermark position, size and opacity, caption with Arabic shaping, font) | **Working** | `Branding_draws_logo_and_caption`; brand editor with live preview (screenshot QA). Used from Studio → Background → Brand style and from the recipe step "Frame". |
+| Export packs: 1:1 / 4:5 / 9:16 / 16:9 versions from one session, each previewed, framed so nothing is cut off | **Working** | `Export_pack_frames_every_ratio_without_cutting`; Studio Export → "Also save versions" with mini-previews. |
+| "Portal attachment: PDF under 2 MB" | Blocked | PDF compression is not implemented, so a PDF size target cannot be met yet. Image size targets work. |
 | OCR (Arabic/English) | Future | M7 — waiting on the owner's real samples for the evaluation. |
