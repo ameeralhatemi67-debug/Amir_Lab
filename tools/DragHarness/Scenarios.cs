@@ -28,6 +28,7 @@ internal sealed class Scenarios
         yield return ("multipage-pdf-asks-for-pages", MultipagePdfAsksForPages);
         if (File.Exists(Path.Combine(_folder, Fixtures.HeicName)))
             yield return ("heic-to-jpg-via-windows-codec", () => DropOnSegment([Fixtures.HeicName], ringSwitches: 0, "image.to-jpg"));
+        yield return ("studio-crop-background-save", StudioCropBackgroundSave);
         yield return ("escape-cancels", EscapeCancels);
         yield return ("leave-wheel-closes", LeaveWheelCloses);
         yield return ("no-wheel-without-file-drag", NoWheelWithoutFileDrag);
@@ -72,6 +73,18 @@ internal sealed class Scenarios
         if (drop.Effect != "Copy") return Fail($"Drop answered '{drop.Effect}', expected Copy.");
         if (!sources.OrderBy(s => s).SequenceEqual(drop.Paths.OrderBy(s => s), StringComparer.OrdinalIgnoreCase))
             return Fail($"Payload mismatch: got [{string.Join(" | ", drop.Paths)}].");
+
+        if (expectEditor)
+        {
+            // The editor opens; close it so it does not cover Explorer for later scenarios.
+            var editor = WaitFor(() => AutomationElement.RootElement.FindFirst(TreeScope.Children, new AndCondition(
+                new PropertyCondition(AutomationElement.ProcessIdProperty, _app.ProcessId),
+                new PropertyCondition(AutomationElement.NameProperty, "Crop Image"))), TimeSpan.FromSeconds(6));
+            if (editor is null) return Fail("The editor did not open.");
+            Thread.Sleep(1200);
+            Snapshots.Capture("editor-opened");
+            CloseOurWindows();
+        }
 
         string outputs = "";
         if (_expectOutputs && !expectEditor)
@@ -127,6 +140,95 @@ internal sealed class Scenarios
         return integrity is null
             ? new ScenarioResult("", true, $"Picker appeared; all 3 pages exported: {string.Join(", ", job.Outputs.Select(Path.GetFileName))}.", wheel.RevealLatencyMs)
             : Fail(integrity);
+    }
+
+    private ScenarioResult StudioCropBackgroundSave()
+    {
+        var before = Snapshot();
+        int jobsBefore = _app.ReadJobs().Count;
+        var wheel = StartDragAndOpenWheel([Fixtures.ImageName], out var note);
+        if (wheel is null) return Fail($"Wheel did not appear. {note}");
+        RealInput.Tap(RealInput.VK_LSHIFT);
+        wheel = _app.WaitForWheel(w => w.Visible && w.Ring == "Tools", TimeSpan.FromSeconds(2));
+        if (wheel is null) { Abort(); return Fail("Tools ring did not appear."); }
+        var crop = wheel.Segments.First(s => s.ActionId == "tool.crop");
+        RealInput.Glide(crop.X, crop.Y, 240, 14);
+        Thread.Sleep(200);
+        RealInput.LeftUp();
+
+        var studio = WaitFor(() => AutomationElement.RootElement.FindFirst(TreeScope.Children,
+            new PropertyCondition(AutomationElement.NameProperty, "Crop Image")), TimeSpan.FromSeconds(6));
+        if (studio is null) return Fail("The Crop Image editor did not open.");
+        Thread.Sleep(1800);
+        Snapshots.Capture("studio-crop");
+
+        if (!Select(studio, "1:1")) return Fail("Aspect 1:1 not found.");
+        Thread.Sleep(900);
+        Snapshots.Capture("studio-crop-1x1");
+        if (!Select(studio, "Background")) return Fail("Background step not found.");
+        Thread.Sleep(1600);
+        Snapshots.Capture("studio-background");
+        if (!Select(studio, "Annotate")) return Fail("Annotate step not found.");
+        Thread.Sleep(900);
+        // Draw an arrow across the picture with the real mouse.
+        var bounds = studio.Current.BoundingRectangle;
+        RealInput.MoveTo(bounds.Left + bounds.Width * 0.25, bounds.Top + bounds.Height * 0.35);
+        Thread.Sleep(100);
+        RealInput.LeftDown();
+        RealInput.Glide(bounds.Left + bounds.Width * 0.45, bounds.Top + bounds.Height * 0.55, 250, 12);
+        RealInput.LeftUp();
+        Thread.Sleep(1200);
+        Snapshots.Capture("studio-annotate");
+        if (!Select(studio, "Export")) return Fail("Export step not found.");
+        Thread.Sleep(1200);
+        Snapshots.Capture("studio-export");
+
+        var save = studio.FindFirst(TreeScope.Descendants, new AndCondition(
+            new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Button),
+            new PropertyCondition(AutomationElement.NameProperty, "Save")));
+        if (save is null || !save.TryGetCurrentPattern(InvokePattern.Pattern, out var invoke)) return Fail("Save button not found.");
+        ((InvokePattern)invoke).Invoke();
+
+        var job = WaitFor(() => _app.ReadJobs().Skip(jobsBefore).FirstOrDefault(), TimeSpan.FromSeconds(40));
+        if (job is null) return Fail("No export job ran.");
+        if (job.State != "Completed" || job.Outputs.Count != 1) return Fail($"Export ended as {job.State}: {job.Error}");
+        var name = Path.GetFileName(job.Outputs[0]);
+        if (name != "صورة اختبار Cropped Annotated With Background.png") return Fail($"Unexpected output name {name}.");
+        using var img = NetVips.Image.NewFromFile(job.Outputs[0]);
+        // 1200×800 source → 1:1 crop of 800×800 → +120 px padding on each side.
+        if (img.Width != 1040 || img.Height != 1040) return Fail($"Unexpected size {img.Width}×{img.Height}.");
+        Thread.Sleep(400);
+        Snapshots.Capture("studio-saved");
+        var integrity = CheckSourcesUnchanged(before, allowNewFiles: true);
+        return integrity is null
+            ? new ScenarioResult("", true, $"Studio: 1:1 crop + arrow + background saved as \"{name}\" (1040×1040).", wheel.RevealLatencyMs)
+            : Fail(integrity);
+    }
+
+    /// <summary>Closes editors, pickers and toasts left by a scenario.</summary>
+    public void Cleanup() => CloseOurWindows();
+
+    /// <summary>Closes every visible top-level window of the app (editors, pickers, toasts) except the wheel overlay.</summary>
+    private void CloseOurWindows()
+    {
+        foreach (var hwnd in RealInput.TopLevelWindows(_app.ProcessId))
+        {
+            var title = RealInput.WindowTitle(hwnd);
+            if (title == "File Toolbox wheel" || !RealInput.IsVisible(hwnd)) continue;
+            RealInput.PostClose(hwnd);
+        }
+        Thread.Sleep(500);
+    }
+
+    /// <summary>Selects a radio/segment (or invokes a button) by its visible name inside a window.</summary>
+    private static bool Select(AutomationElement window, string name)
+    {
+        var element = window.FindFirst(TreeScope.Descendants, new PropertyCondition(AutomationElement.NameProperty, name))
+                      ?? window.FindFirst(TreeScope.Descendants, new PropertyCondition(AutomationElement.NameProperty, name + " •"));
+        if (element is null) return false;
+        if (element.TryGetCurrentPattern(SelectionItemPattern.Pattern, out var sel)) { ((SelectionItemPattern)sel).Select(); return true; }
+        if (element.TryGetCurrentPattern(InvokePattern.Pattern, out var inv)) { ((InvokePattern)inv).Invoke(); return true; }
+        return false;
     }
 
     private ScenarioResult EscapeCancels()
@@ -186,21 +288,24 @@ internal sealed class Scenarios
 
     private ScenarioResult NoWheelWithoutFileDrag()
     {
-        // Rubber-band selection in empty space: mouse button down + Shift, but no OLE file drag.
-        _explorer.BringToFront();
-        var bounds = _explorer.Bounds;
-        var start = new Point(bounds.Right - 120, bounds.Bottom - 110);
+        // Rubber-band selection in an empty folder: mouse button down + Shift, but no OLE file drag.
+        var empty = Path.Combine(Path.GetDirectoryName(_folder)!, "Empty folder");
+        Directory.CreateDirectory(empty);
+        using var explorer = new ExplorerDriver(empty);
+        explorer.Open(TimeSpan.FromSeconds(15));
+        explorer.BringToFront();
+        var bounds = explorer.Bounds;
+        var start = new Point(bounds.Left + bounds.Width * 0.7, bounds.Top + bounds.Height * 0.6);
         RealInput.MoveTo(start.X, start.Y);
         Thread.Sleep(150);
         RealInput.LeftDown();
-        RealInput.Glide(start.X - 60, start.Y - 30, 160, 8);
+        RealInput.Glide(start.X - 80, start.Y - 50, 160, 8);
         RealInput.Tap(RealInput.VK_LSHIFT);
         var shown = _app.WaitForWheel(w => w.Visible, TimeSpan.FromSeconds(1.6));
         RealInput.LeftUp();
         Thread.Sleep(300);
-        // Click empty space again to clear the selection the rubber band may have made.
         return shown is null
-            ? new ScenarioResult("", true, "No wheel appeared for a non-file drag.", null)
+            ? new ScenarioResult("", true, "No wheel appeared for a non-file drag (rubber band in an empty folder).", null)
             : Fail("The wheel appeared although no file was being dragged.");
     }
 

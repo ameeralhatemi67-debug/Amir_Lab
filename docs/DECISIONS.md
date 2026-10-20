@@ -57,3 +57,13 @@ Product direction lives in [`sead_idea.md`](../sead_idea.md) (the seed). This fi
 - **HEIC detection:** the app checks the user's package repository for `Microsoft.HEIFImageExtension` + `Microsoft.HEVCVideoExtension`. If a decode still fails, the feature is switched off for the session with an explanation. HEIF rotation and mirroring are applied by the Windows codec; EXIF orientation is not applied again on top.
 - **PDF page choice:** dropping a multi-page PDF on JPG/PNG opens a picker (thumbnails, ranges such as `1-3, 7`, resolution) with "All pages" preselected. Single-page PDFs run immediately. Several PDFs at once offer "All pages" or "First page of each".
 - **Remove output:** the files a job created go to the Recycle Bin (recoverable), and only if they are unchanged since they were saved (same size and write time). It never touches sources.
+
+## Studio (M4)
+
+- **One renderer, two scales:** `EditDocument` stores every distance in full-resolution pixels. The preview renders the same pipeline from a ≤1600 px proxy, multiplying by the proxy scale. Export renders once from the original-quality source (or the PDF page re-rendered at the chosen DPI), so repeated previews never cause repeated lossy saves. A test checks that the preview and a downscaled export agree within 3 levels on average.
+- **Pipeline order:** orient → crop → adjust → redact → annotate → background → resize → encode. libvips handles pixel operations; SkiaSharp handles annotations and framing (HarfBuzz shapes Arabic text).
+- **Colour:** sources are converted to sRGB through their ICC profile when loading, because the Skia composite carries no profile. Studio exports never carry metadata, which is stated in the UI.
+- **Saving goes through the job pipeline** (`studio.export` with the document as JSON). Studio results therefore get the same verification, collision-safe naming, history and toast as conversions. Names follow the reference's pattern: `Page 001 Cropped With Background.png`.
+- **Format "auto":** PNG when framed; otherwise the source format where it can be written; JPG when a size target is set.
+- **Target size:** quality is reduced first (binary search, never below the minimum quality, default 40), then dimensions are reduced in steps if allowed (never below 480 px on the long edge). The note says whether the target was met.
+- **The source is decoded into memory once** when the Studio opens, so the file is not locked while editing.

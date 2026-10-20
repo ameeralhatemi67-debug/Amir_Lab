@@ -27,6 +27,8 @@ internal sealed class AppDriver : IDisposable
 
     private string DiagDir => Path.Combine(_dataDir, "diagnostics");
 
+    public int ProcessId => _process?.Id ?? 0;
+
     public void Start(TimeSpan timeout)
     {
         foreach (var existing in Process.GetProcessesByName(Path.GetFileNameWithoutExtension(_exe)))

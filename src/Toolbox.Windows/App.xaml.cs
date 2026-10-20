@@ -58,6 +58,7 @@ public partial class App : Application
 
         var toasts = new ToastManager(_host, job => new JobDetailsWindow(job, j => _dispatcher.Retry(j)).Show());
         _dispatcher = new ActionDispatcher(_host, toasts);
+        _dispatcher.Editors = new Studio.StudioLauncher(_dispatcher);
 
         _overlay = new WheelOverlayWindow(WheelDiameter(settings.WheelSize));
         _overlay.Show();

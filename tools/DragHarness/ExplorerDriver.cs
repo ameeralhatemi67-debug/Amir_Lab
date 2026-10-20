@@ -42,12 +42,21 @@ internal sealed class ExplorerDriver : IDisposable
 
     public void BringToFront()
     {
-        var hwnd = new IntPtr(Window.Current.NativeWindowHandle);
-        RealInput.SetForegroundWindow(hwnd);
         if (Window.TryGetCurrentPattern(WindowPattern.Pattern, out var p) && p is WindowPattern wp
             && wp.Current.WindowVisualState == WindowVisualState.Minimized)
             wp.SetWindowVisualState(WindowVisualState.Normal);
-        Thread.Sleep(200);
+        var hwnd = new IntPtr(Window.Current.NativeWindowHandle);
+        RealInput.SetForegroundWindow(hwnd);
+        Thread.Sleep(150);
+        if (RealInput.GetForegroundWindow() != hwnd)
+        {
+            // A background process may not steal focus; a real click on the empty title area always activates.
+            var b = Window.Current.BoundingRectangle;
+            RealInput.MoveTo(b.Left + b.Width * 0.62, b.Top + 14);
+            Thread.Sleep(80);
+            RealInput.Click();
+            Thread.Sleep(250);
+        }
     }
 
     /// <summary>Screen rectangle (physical pixels) of the item for a file, matching with or without extension.</summary>
@@ -64,8 +73,13 @@ internal sealed class ExplorerDriver : IDisposable
                     new PropertyCondition(AutomationElement.NameProperty, candidate)));
                 if (item is not null)
                 {
+                    if (item.TryGetCurrentPattern(ScrollItemPattern.Pattern, out var scroll))
+                    {
+                        ((ScrollItemPattern)scroll).ScrollIntoView();
+                        Thread.Sleep(250);
+                    }
                     var rect = item.Current.BoundingRectangle;
-                    if (!rect.IsEmpty && rect.Width > 0) return rect;
+                    if (!rect.IsEmpty && rect.Width > 0 && !item.Current.IsOffscreen) return rect;
                 }
             }
             Thread.Sleep(200);

@@ -57,6 +57,7 @@ internal static class Program
                 finally
                 {
                     RealInput.ReleaseAll();
+                    harness.Cleanup();
                 }
                 result = result with { Seconds = Math.Round(sw.Elapsed.TotalSeconds, 1) };
                 Console.WriteLine($"    {(result.Passed ? "PASS" : "FAIL")} — {result.Detail}");

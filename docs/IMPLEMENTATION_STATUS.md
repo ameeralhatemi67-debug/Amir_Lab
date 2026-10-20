@@ -3,7 +3,7 @@
 States: **Working** (implemented and verified, with the evidence named), **Partial** (some of it works; the gaps are listed), **Blocked** (cannot proceed without something), **Future** (not started).
 A capability listed in the seed or the capability map is not working until this table says so.
 
-_Last updated: 20 Oct 2026 — M3 complete._
+_Last updated: 20 Oct 2026 — M4 complete._
 
 ## Desktop interaction
 
@@ -27,7 +27,14 @@ _Last updated: 20 Oct 2026 — M3 complete._
 | Drag a finished output onward from the toast | **Working** (manual) | The toast's file chip starts a real file drag (Copy). Tapping Shift during it opens the wheel again, so you can chain the next step. |
 | Job details window (per-file state, outputs, notes, retry failed) | **Working** (manual) | `JobDetailsWindow`. |
 | HEIC input | **Working** on computers with Microsoft's HEIF + HEVC extensions | DragHarness `heic-to-jpg-via-windows-codec`, using a real HEIC encoded by Windows. Elsewhere the input is disabled with an explanation. |
-| Editors (Crop, Add BG, …) from the Tools ring | Future | M4: currently shows "not available in this build yet". |
+| Studio: Crop / Adjust / Background / Annotate / Redact / Export in one non-destructive session | **Working** | DragHarness `studio-crop-background-save`: a real drag onto Crop, 1:1, background and a real-mouse arrow saved `… Cropped Annotated With Background.png` at the exact expected 1040×1040. `StudioTests` (16) cover geometry, framing, the preview matching the export, redaction, annotations and naming. |
+| Crop editor (8 handles, shaded outside, Free/Original/1:1/16:9/9:16/4:3/3:4, W/H px fields, rotate/flip, arrow-key nudge) | **Working** | Screenshot QA plus the harness. |
+| Background (10 original gradients, 10 solids + custom colour, picture background with blur, padding/corners/shadow, Auto/1:1/16:9/4:5/9:16) | **Working** | `Background_*` tests and screenshot QA. |
+| Compress (format, quality, max edge, target size with met/not-met report) | **Working** | `Compress_with_target_reports_the_outcome`, `Target_size_*`. Opened from the Tools ring as a compact Export-only editor. |
+| Annotate (arrow, box, ellipse, line, pen, highlight, text with Arabic shaping, numbered steps) | **Working** | `Annotations_draw_into_the_pixels` (includes Arabic text). Marks can be removed (last or all) but not moved after placing. |
+| Redact (image) — solid boxes flattened into the pixels; pixelate/blur labelled "obscure, not secure" | **Working** | `Solid_redaction_replaces_the_pixels`. PDF redaction remains out of scope; a PDF page is redacted as an image. |
+| Undo/redo, hold-to-compare, unsaved-changes guard, PDF page switcher | **Working** (manual) | |
+| Edit a PDF page (render → crop → background) without intermediate files | **Working** | `Pdf_page_can_be_edited_and_saved_as_an_image`. |
 | Tray presence | Partial | Icon with Quit only; the full menu arrives in M5. |
 
 ## Processing (engines + `ftb` CLI)
