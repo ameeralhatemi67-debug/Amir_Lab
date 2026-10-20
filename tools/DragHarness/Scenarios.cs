@@ -29,6 +29,7 @@ internal sealed class Scenarios
         if (File.Exists(Path.Combine(_folder, Fixtures.HeicName)))
             yield return ("heic-to-jpg-via-windows-codec", () => DropOnSegment([Fixtures.HeicName], ringSwitches: 0, "image.to-jpg"));
         yield return ("studio-crop-background-save", StudioCropBackgroundSave);
+        yield return ("palette-from-second-launch", PaletteFromSecondLaunch);
         yield return ("escape-cancels", EscapeCancels);
         yield return ("leave-wheel-closes", LeaveWheelCloses);
         yield return ("no-wheel-without-file-drag", NoWheelWithoutFileDrag);
@@ -202,6 +203,42 @@ internal sealed class Scenarios
         var integrity = CheckSourcesUnchanged(before, allowNewFiles: true);
         return integrity is null
             ? new ScenarioResult("", true, $"Studio: 1:1 crop + arrow + background saved as \"{name}\" (1040×1040).", wheel.RevealLatencyMs)
+            : Fail(integrity);
+    }
+
+    /// <summary>
+    /// Keyboard path: a second launch with --open (what Explorer's menu and "Send to" do) hands the file to the
+    /// running app, which opens the palette; typing "webp" and Enter runs the conversion.
+    /// </summary>
+    private ScenarioResult PaletteFromSecondLaunch()
+    {
+        var before = Snapshot();
+        int jobsBefore = _app.ReadJobs().Count;
+        var source = Path.Combine(_folder, Fixtures.SecondImageName);
+        var second = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(_app.ExePath, $"--open \"{source}\"") { UseShellExecute = false });
+        second?.WaitForExit(8000);
+        if (second is { HasExited: false }) return Fail("The second launch did not exit (single-instance hand-off failed).");
+
+        var palette = WaitFor(() => AutomationElement.RootElement.FindFirst(TreeScope.Children, new AndCondition(
+            new PropertyCondition(AutomationElement.ProcessIdProperty, _app.ProcessId),
+            new PropertyCondition(AutomationElement.NameProperty, "File Toolbox"))), TimeSpan.FromSeconds(6));
+        if (palette is null) return Fail("The palette did not open for the forwarded file.");
+        Thread.Sleep(700);
+        var search = palette.FindFirst(TreeScope.Descendants, new PropertyCondition(AutomationElement.NameProperty, "Search actions"));
+        if (search is null || !search.TryGetCurrentPattern(ValuePattern.Pattern, out var value)) return Fail("Search box not found.");
+        ((ValuePattern)value).SetValue("webp");
+        Thread.Sleep(400);
+        Snapshots.Capture("palette");
+        search.SetFocus();
+        Thread.Sleep(150);
+        RealInput.Tap(0x0D);
+
+        var job = WaitFor(() => _app.ReadJobs().Skip(jobsBefore).FirstOrDefault(), TimeSpan.FromSeconds(20));
+        if (job is null) return Fail("No job ran from the palette.");
+        if (job.State != "Completed" || job.Outputs.Count != 1 || !job.Outputs[0].EndsWith(".webp")) return Fail($"Unexpected result: {job.State} {string.Join(",", job.Outputs)} {job.Error}");
+        var integrity = CheckSourcesUnchanged(before, allowNewFiles: true);
+        return integrity is null
+            ? new ScenarioResult("", true, $"Second launch forwarded the file; palette ran WebP → {Path.GetFileName(job.Outputs[0])}.", null)
             : Fail(integrity);
     }
 

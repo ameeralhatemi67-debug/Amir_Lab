@@ -22,6 +22,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="Toolbox.Windows.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\Toolbox.Core\Toolbox.Core.csproj" />
     <ProjectReference Include="..\Toolbox.Processing\Toolbox.Processing.csproj" />
   </ItemGroup>

@@ -67,3 +67,12 @@ Product direction lives in [`sead_idea.md`](../sead_idea.md) (the seed). This fi
 - **Format "auto":** PNG when framed; otherwise the source format where it can be written; JPG when a size target is set.
 - **Target size:** quality is reduced first (binary search, never below the minimum quality, default 40), then dimensions are reduced in steps if allowed (never below 480 px on the long edge). The note says whether the target was met.
 - **The source is decoded into memory once** when the Studio opens, so the file is not locked while editing.
+
+## Metadata and access (M5)
+
+- **JPEG metadata is removed at segment level:** APP1 EXIF/XMP, APP13 IPTC, COM and vendor APPn are rewritten; the scans are copied byte for byte. Inside EXIF, GPS/camera/date/author entries are unlinked and their bytes overwritten with zeros (`ExifEditor`), and the IFD1 thumbnail is erased. "Remove everything" keeps a minimal EXIF holding only Orientation, so photos stay upright.
+- **Other image formats:** libvips re-serialises EXIF from its `exif-ifdN-*` fields and drops entries whose field was removed. That is used for selective removal; the output is re-encoded (lossless for PNG/TIFF; quality 95 for WebP/AVIF, and the note says so).
+- **PDF:** PDFsharp rewrites the file without the Info dictionary and the catalog's `/Metadata`. Earlier incremental revisions are not carried over.
+- **One window for keyboard and drop-zone access** (the File Toolbox palette). It lists every action with its meaning or the reason it does not apply. A clipboard image is saved as `Pictures\File Toolbox\Clipboard <time>.png`, so its results have a real, visible home.
+- **Single instance:** a per-user named pipe (`PipeOptions.CurrentUserOnly`). Further launches forward their arguments and exit.
+- **Shell integration is opt-in and per-user** (HKCU `SystemFileAssociations\<ext>\shell\FileToolbox`, a SendTo shortcut, the HKCU Run value). The build does not switch any of it on.

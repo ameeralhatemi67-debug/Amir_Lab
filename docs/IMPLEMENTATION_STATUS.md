@@ -3,7 +3,7 @@
 States: **Working** (implemented and verified, with the evidence named), **Partial** (some of it works; the gaps are listed), **Blocked** (cannot proceed without something), **Future** (not started).
 A capability listed in the seed or the capability map is not working until this table says so.
 
-_Last updated: 20 Oct 2026 — M4 complete._
+_Last updated: 20 Oct 2026 — M5 complete._
 
 ## Desktop interaction
 
@@ -35,7 +35,14 @@ _Last updated: 20 Oct 2026 — M4 complete._
 | Redact (image) — solid boxes flattened into the pixels; pixelate/blur labelled "obscure, not secure" | **Working** | `Solid_redaction_replaces_the_pixels`. PDF redaction remains out of scope; a PDF page is redacted as an image. |
 | Undo/redo, hold-to-compare, unsaved-changes guard, PDF page switcher | **Working** (manual) | |
 | Edit a PDF page (render → crop → background) without intermediate files | **Working** | `Pdf_page_can_be_edited_and_saved_as_an_image`. |
-| Tray presence | Partial | Icon with Quit only; the full menu arrives in M5. |
+| Tray presence (open, repeat last action, history, settings, quit) | **Working** (manual) | Left click opens the File Toolbox window. |
+| Keyboard palette + drop zone (drop, Browse, Ctrl+V files or image, type to filter, Enter to run) | **Working** | DragHarness `palette-from-second-launch` (search "webp", Enter, output verified). |
+| Single instance; Explorer menu / Send to / second launch hand files to the running app | **Working** | `InstanceChannelTests`, harness `palette-from-second-launch`. Explorer's one-process-per-file launches are batched within 450 ms. |
+| Explorer context menu (opt-in, HKCU, supported types only) | **Working** (registration) | `ShellIntegrationTests` against a throwaway registry root. Not enabled on this PC by the build; switch it on in Settings. Windows 11 shows it under "Show more options". |
+| "Send to" entry and start with Windows (opt-in) | Partial | Implemented; switching them on and off has not been tested automatically. |
+| Global shortcut Ctrl+Alt+F for the palette | **Working** (manual) | Reported in Settings if another program owns it. |
+| Settings (activation key, wheel size, theme, motion, destination, naming pattern with preview, quality defaults, PDF DPI, history retention, integrations, privacy) | **Working** (manual) | Saved immediately to `settings.json`. A wheel size change needs a restart. |
+| History (recent jobs, show results, run again, clear) | **Working** (manual) | JSON lines, retention by days and count (`HistoryStore`). |
 
 ## Processing (engines + `ftb` CLI)
 
@@ -56,6 +63,10 @@ _Last updated: 20 Oct 2026 — M4 complete._
 | Password-protected PDFs | Blocked | Rejected with a clear message; supporting them needs a password prompt (future). |
 | HEIC input | **Working** (desktop app) | The WIC decoder is registered by the Windows adapter; the CLI has no HEIC. |
 | No networking in product code | **Working** | `ArchitectureTests` scan the product assemblies' references. |
+| Metadata: inspect (location, camera, dates, author, thumbnail, XMP, IPTC, comments, colour profile) | **Working** | `Inspector_groups_sensitive_metadata`; window with plain-language groups and sensitive items flagged. |
+| Metadata removal — JPEG, lossless (compressed picture data byte-identical) | **Working** | `Removing_location_erases_gps_bytes_…` (GPS bytes erased, not just unlinked; camera kept), `Removing_camera_details_erases_serial_numbers`, `Removing_everything_keeps_orientation_…`. Embedded thumbnails and trailing extra images are dropped together with location. |
+| Metadata removal — PNG/TIFF (lossless), WebP/AVIF (re-encoded at quality 95, stated) | **Working** | `Png_location_can_be_removed_losslessly`. |
+| PDF document-information removal | **Working** | `Pdf_document_information_is_removed`. Attachments, form data and annotations are not touched (stated). |
 | Editors (Crop, Background, Adjust, Compress, Annotate, Redact, Metadata) | Future | M4/M5 |
 | Recipes, presets, brand packs | Future | M6 |
 | OCR (Arabic/English) | Future | M7 — waiting on the owner's real samples for the evaluation. |

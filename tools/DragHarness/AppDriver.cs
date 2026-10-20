@@ -29,6 +29,8 @@ internal sealed class AppDriver : IDisposable
 
     public int ProcessId => _process?.Id ?? 0;
 
+    public string ExePath => _exe;
+
     public void Start(TimeSpan timeout)
     {
         foreach (var existing in Process.GetProcessesByName(Path.GetFileNameWithoutExtension(_exe)))
