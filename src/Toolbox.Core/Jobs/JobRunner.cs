@@ -17,6 +17,7 @@ public sealed class JobRunner
     private readonly OutputManager _outputs;
     private readonly IOutputVerifier _verifier;
     private readonly SemaphoreSlim _slots;
+    private readonly HashSet<Job> _active = [];
 
     public JobRunner(IEnumerable<IActionHandler> handlers, OutputManager outputs, IOutputVerifier verifier, int? maxConcurrency = null)
     {
@@ -34,6 +35,23 @@ public sealed class JobRunner
 
     public bool CanRun(string actionId) => _handlers.ContainsKey(actionId);
 
+    /// <summary>Jobs that have not finished yet.</summary>
+    public IReadOnlyList<Job> Active
+    {
+        get { lock (_active) return _active.ToList(); }
+    }
+
+    /// <summary>
+    /// Cancels every running job and waits (up to <paramref name="wait"/>) for them to stop, so their
+    /// temporary files are discarded. Finished outputs are kept. Returns false if some did not stop in time.
+    /// </summary>
+    public bool CancelAll(TimeSpan wait)
+    {
+        var jobs = Active;
+        foreach (var job in jobs) job.Cancel();
+        return jobs.Count == 0 || Task.WaitAll(jobs.Select(j => j.Completion).ToArray(), wait);
+    }
+
     public Job Start(JobRequest request)
     {
         var action = CapabilityMap.Get(request.ActionId);
@@ -44,6 +62,7 @@ public sealed class JobRunner
         var probed = FileProbe.ProbeAll(request.InputPaths);
         var items = BuildItems(action, options, probed);
         var job = new Job(request, action, options, items);
+        lock (_active) _active.Add(job);
 
         _ = RunAsync(job, handler);
         return job;
@@ -96,6 +115,7 @@ public sealed class JobRunner
         }
         finally
         {
+            lock (_active) _active.Remove(job);
             job.MarkFinished();
             JobFinished?.Invoke(job);
         }
@@ -139,8 +159,11 @@ public sealed class JobRunner
                 committed.Add(_outputs.Commit(slot, result));
 
             item.SetOutputs(committed);
-            if (committed.Any(o => o.UsedFallbackFolder))
-                item.AddNote($"The source folder could not be written to; saved in \"{committed.First(o => o.UsedFallbackFolder).Path}\".");
+            if (slots.FirstOrDefault(s => s.UsedFallback) is { } fallback)
+            {
+                var reason = fallback.FallbackReason ?? "the destination folder could not be written to";
+                item.AddNote($"Saved in \"{Path.GetDirectoryName(committed.First(o => o.UsedFallbackFolder).Path)}\" instead because {reason}.");
+            }
             item.Progress = 1;
             item.State = JobItemState.Completed;
         }
@@ -166,7 +189,7 @@ public sealed class JobRunner
     {
         ProcessingException p => p.Message,
         UnauthorizedAccessException => "Access was denied. Check that the file is not open elsewhere and that you can write to the destination.",
-        IOException io when io.HResult is DiskFullHResult or HandleDiskFullHResult => "There is not enough free disk space to save the result.",
+        IOException io when io.HResult is DiskFullHResult or HandleDiskFullHResult => "The destination drive ran out of free space while saving. Nothing was kept; free up space and try again.",
         FileNotFoundException => "The file could not be found. It may have been moved or deleted.",
         IOException io => $"A file error occurred: {io.Message}",
         OutOfMemoryException => "The file is too large to process with the available memory.",

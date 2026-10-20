@@ -11,6 +11,9 @@ public sealed class OutputManager
 {
     private const int MaxCollisionIndex = 9999;
 
+    /// <summary>Below this much free space a result is not started: encoders would fail half-way.</summary>
+    public const long MinimumFreeBytes = 32L * 1024 * 1024;
+
     private readonly Func<OutputPolicy> _policy;
     private readonly TempJournal _journal;
 
@@ -32,15 +35,21 @@ public sealed class OutputManager
         var preferred = policy.Location == OutputLocation.Folder && !string.IsNullOrWhiteSpace(policy.Folder)
             ? policy.Folder!
             : sourceDirectory;
-
-        if (TryCreateTemp(preferred, out var temp, out _))
+        // A nearly full drive is treated like an unwritable folder: try the fallback folder, which is
+        // usually on another drive, and say why.
+        var spaceProblem = FreeSpaceProblem(preferred);
+        string? writeError = null;
+        if (spaceProblem is null && TryCreateTemp(preferred, out var temp, out writeError))
             return Track(new OutputSlot(temp, preferred, spec, usedFallback: false));
 
+        var reason = spaceProblem ?? "the destination folder could not be written to (read-only, missing or not permitted)";
+        if (FreeSpaceProblem(policy.FallbackFolder) is { } fallbackSpace)
+            throw new ProcessingException(Sentence(spaceProblem ?? fallbackSpace) + " Free up some space and try again.");
         if (TryCreateTemp(policy.FallbackFolder, out temp, out var fallbackError))
-            return Track(new OutputSlot(temp, policy.FallbackFolder, spec, usedFallback: true));
+            return Track(new OutputSlot(temp, policy.FallbackFolder, spec, usedFallback: true) { FallbackReason = reason });
 
         throw new ProcessingException(
-            $"Could not save into \"{preferred}\" or the fallback folder \"{policy.FallbackFolder}\": {fallbackError}");
+            $"Could not save into \"{preferred}\" ({spaceProblem ?? writeError}) or the fallback folder \"{policy.FallbackFolder}\": {fallbackError}");
     }
 
     /// <summary>Moves a verified temp file to its final, collision-safe name and returns the record.</summary>
@@ -102,6 +111,39 @@ public sealed class OutputManager
         catch (IOException) { }
         catch (UnauthorizedAccessException) { }
         _journal.Remove(slot.TempPath);
+    }
+
+    /// <summary>Free-space figure used instead of the real one (tests only).</summary>
+    internal static Func<string, long?>? FreeSpaceOverride { get; set; }
+
+    private static string Sentence(string text) => char.ToUpperInvariant(text[0]) + text[1..] + ".";
+
+    /// <summary>
+    /// A description such as "only 3 MB is free on D:" when the folder's drive is nearly full, else null.
+    /// Network paths and drives that cannot be queried are not checked.
+    /// </summary>
+    internal static string? FreeSpaceProblem(string directory)
+    {
+        long available;
+        string drive;
+        try
+        {
+            var root = Path.GetPathRoot(Path.GetFullPath(directory));
+            if (string.IsNullOrEmpty(root) || root.StartsWith(@"\\", StringComparison.Ordinal)) return null;
+            drive = root.TrimEnd('\\');
+            if (FreeSpaceOverride?.Invoke(directory) is { } fake) available = fake;
+            else
+            {
+                var info = new DriveInfo(root);
+                if (!info.IsReady) return null;
+                available = info.AvailableFreeSpace;
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        {
+            return null;
+        }
+        return available < MinimumFreeBytes ? $"only {Bytes.Format(available)} is free on {drive}" : null;
     }
 
     private OutputSlot Track(OutputSlot slot)

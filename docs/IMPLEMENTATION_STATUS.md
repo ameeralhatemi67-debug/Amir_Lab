@@ -3,7 +3,7 @@
 States: **Working** (implemented and verified, with the evidence named), **Partial** (some of it works; the gaps are listed), **Blocked** (cannot proceed without something), **Future** (not started).
 A capability listed in the seed or the capability map is not working until this table says so.
 
-_Last updated: 20 Oct 2026 — M7 complete._
+_Last updated: 20 Oct 2026 — M7 complete; M8 (hardening and packaging) in progress. Done so far: exit cleanup, low-disk fallback, `--quit`, multi-monitor placement maths, the `tools/Bench` measurement tool (not yet run). Still to do: run the measurements, `publish.ps1` / `install.ps1` / `uninstall.ps1`, app icon, final README/TESTING._
 
 ## Desktop interaction
 
@@ -20,7 +20,7 @@ _Last updated: 20 Oct 2026 — M7 complete._
 | No wheel without a file drag | **Working** | DragHarness `no-wheel-without-file-drag` (rubber-band selection + Shift). |
 | Wheel stays inside the monitor's work area | Partial | The clamping code is in place; the screen-edge case is not exercised by the harness yet. |
 | Display scaling | Partial | Tested at 125% (the dev machine). Other scales are untested. |
-| Multiple monitors | Partial | Per-monitor DPI handling is coded; **untested** (only one display is available). |
+| Multiple monitors | Partial | Placement maths tested on simulated layouts: negative coordinates, mixed scaling, offset monitors, side taskbars, gaps (`MultiMonitorTests`). **Real multi-monitor use is untested** (only one display is available). |
 | Reveal latency ≤ 200 ms | **Working** | Measured 27–129 ms (see DECISIONS.md). |
 | Drop on a segment runs the real conversion | **Working** | DragHarness `--expect-outputs`: `Report 001.jpg`, an Arabic-named `.webp` and a 2-page PDF were produced from real Explorer drags and verified. |
 | Multi-page PDF asks which pages (never silently page 1) | **Working** | DragHarness `multipage-pdf-asks-for-pages`: the picker appears with PDFium thumbnails; confirming exported all 3 pages. |
@@ -53,7 +53,8 @@ _Last updated: 20 Oct 2026 — M7 complete._
 | Content sniffing by magic bytes | **Working** | `FileProbeTests` (JPEG named .png, AVIF vs HEIC brands, RIFF/WAVE vs WebP, PDF after junk). |
 | Collision-safe, verified, temp-then-rename outputs | **Working** | `OutputManagerTests`, `Repeated_conversion_never_overwrites`, `Corrupt_input_fails_clearly_and_leaves_nothing_behind`. Every output is re-decoded by an independent verifier before it gets its final name. |
 | Read-only destination → fallback folder, reported | **Working** | `Read_only_destination_falls_back_and_says_so` (real ACL deny). |
-| Crash-orphaned temp cleanup | **Working** | `Journal_cleanup_removes_orphaned_temp_files_only`. |
+| Crash-orphaned temp cleanup | **Working** | `Journal_cleanup_removes_orphaned_temp_files_only`. On exit, running jobs are cancelled (finished outputs kept) and leftover temp/staging files are removed (`CancelAll_stops_running_jobs_…`). |
+| Nearly full drive | **Working** | Under 32 MB free, results go to the fallback folder with the reason in the note; if that drive is also full, the job fails early naming the drive (`Nearly_full_drive_falls_back_…`, `Full_drives_fail_early_…`). |
 | Batch: per-file states, skipped-with-reason, cancel keeps finished outputs | **Working** | `Mixed_batch_reports_skipped_files`, `Cancelled_batch_keeps_finished_outputs_and_cleans_up`. |
 | PDF → JPG / PNG (selected pages, 300 DPI default, page-numbered names) | **Working** | `PdfTests` (order, numbering, all pages by default, invalid selection message). Pages above 60 MP are rendered at a lower, reported DPI. |
 | PDF → TXT (existing text layer) | **Working** | `Digital_pdf_text_is_extracted_with_page_separators`. Scans fail with an explanation (`Scanned_pdf_without_text_layer_is_explained_not_faked`). |

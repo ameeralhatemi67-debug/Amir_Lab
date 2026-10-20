@@ -65,6 +65,9 @@ public sealed class OutputSlot
     public OutputSpec Spec { get; }
     public bool UsedFallback { get; }
 
+    /// <summary>Why the fallback folder was used, for the job's note.</summary>
+    public string? FallbackReason { get; internal init; }
+
     /// <summary>Handlers refine this (dimensions, page count) once they know what they wrote.</summary>
     public ExpectedOutput Expected { get; set; }
 

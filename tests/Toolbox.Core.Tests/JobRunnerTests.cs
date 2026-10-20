@@ -98,6 +98,68 @@ public class JobRunnerTests : IDisposable
     }
 
     [Fact]
+    public async Task CancelAll_stops_running_jobs_and_removes_their_temp_files()
+    {
+        var gate = new TaskCompletionSource();
+        var files = Enumerable.Range(1, 3).Select(i => Jpeg($"exit{i}.jpg")).ToList();
+        var runner = Runner(new FakePngHandler(gate), concurrency: 1);
+        var job = runner.Start(new JobRequest(CapabilityMap.Ids.ImageToPng, files));
+        await Task.Delay(100);
+        Assert.Single(runner.Active);
+
+        Assert.True(runner.CancelAll(TimeSpan.FromSeconds(5)));
+        await job.Completion;
+        Assert.Empty(runner.Active);
+        Assert.All(job.Items, i => Assert.Equal(JobItemState.Cancelled, i.State));
+        Assert.Empty(Directory.GetFiles(_dir.FullName, "*" + TempJournal.TempExtension));
+    }
+
+    [Fact]
+    public async Task Nearly_full_drive_falls_back_and_says_why()
+    {
+        var fallback = Path.Combine(_dir.FullName, "fallback");
+        var a = Jpeg("a.jpg");
+        OutputManager.FreeSpaceOverride = dir => dir.StartsWith(fallback, StringComparison.OrdinalIgnoreCase) ? null
+            : dir.StartsWith(_dir.FullName, StringComparison.OrdinalIgnoreCase) ? 1024 * 1024 : null;
+        try
+        {
+            var outputs = new OutputManager(() => new OutputPolicy { FallbackFolder = fallback }, new TempJournal(Path.Combine(_dir.FullName, "j.txt")));
+            var job = new JobRunner([new FakePngHandler()], outputs, new AcceptAll(), 1).Start(new JobRequest(CapabilityMap.Ids.ImageToPng, [a]));
+            await job.Completion;
+
+            Assert.Equal(JobItemState.Completed, job.Items[0].State);
+            Assert.True(File.Exists(Path.Combine(fallback, "a.png")));
+            Assert.Contains(job.Items[0].Notes, n => n.Contains("instead because only 1 MB is free on"));
+        }
+        finally
+        {
+            OutputManager.FreeSpaceOverride = null;
+        }
+    }
+
+    [Fact]
+    public async Task Full_drives_fail_early_naming_the_drive()
+    {
+        var a = Jpeg("b.jpg");
+        OutputManager.FreeSpaceOverride = dir => dir.StartsWith(_dir.FullName, StringComparison.OrdinalIgnoreCase) ? 2 * 1024 * 1024 : null;
+        try
+        {
+            var outputs = new OutputManager(() => new OutputPolicy { FallbackFolder = Path.Combine(_dir.FullName, "fb") }, new TempJournal(Path.Combine(_dir.FullName, "j.txt")));
+            var job = new JobRunner([new FakePngHandler()], outputs, new AcceptAll(), 1).Start(new JobRequest(CapabilityMap.Ids.ImageToPng, [a]));
+            await job.Completion;
+
+            Assert.Equal(JobItemState.Failed, job.Items[0].State);
+            Assert.StartsWith("Only 2 MB is free on", job.Items[0].Error);
+            Assert.Contains("Free up some space", job.Items[0].Error);
+            Assert.Empty(Directory.GetFiles(_dir.FullName, "*" + TempJournal.TempExtension, SearchOption.AllDirectories));
+        }
+        finally
+        {
+            OutputManager.FreeSpaceOverride = null;
+        }
+    }
+
+    [Fact]
     public async Task Same_format_conversion_is_skipped_as_redundant()
     {
         var png = Path.Combine(_dir.FullName, "already.png");

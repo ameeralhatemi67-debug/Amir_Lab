@@ -51,6 +51,11 @@ public partial class App : Application
             Shutdown();
             return;
         }
+        if (e.Args.Contains("--quit", StringComparer.OrdinalIgnoreCase))
+        {
+            Shutdown(); // nothing was running
+            return;
+        }
 
         bool diag = e.Args.Contains("--diag", StringComparer.OrdinalIgnoreCase)
                     || Environment.GetEnvironmentVariable("FILETOOLBOX_DIAG") == "1";
@@ -103,6 +108,7 @@ public partial class App : Application
         _tray?.Dispose();
         _channel?.Dispose();
         _hotkey?.Dispose();
+        _host?.Shutdown();
         Log.Info("File Toolbox exiting.");
         _instanceMutex?.Dispose();
         base.OnExit(e);
@@ -116,6 +122,12 @@ public partial class App : Application
     /// </summary>
     private void HandleArguments(string[] args, bool fromAnotherInstance)
     {
+        // "FileToolbox.exe --quit" (used by the uninstaller and scripts): finish like the tray's Quit.
+        if (args.Contains("--quit", StringComparer.OrdinalIgnoreCase))
+        {
+            Shutdown();
+            return;
+        }
         var paths = args.Where(a => !a.StartsWith("--", StringComparison.Ordinal) && (File.Exists(a) || Directory.Exists(a))).ToList();
         if (paths.Count > 0)
         {

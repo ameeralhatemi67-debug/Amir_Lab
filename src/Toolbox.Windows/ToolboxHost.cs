@@ -47,6 +47,19 @@ internal sealed class ToolboxHost
         return runner;
     }
 
+    /// <summary>
+    /// On exit: cancels running jobs (finished outputs are kept), waits briefly so their temporary
+    /// files are discarded, then removes any temp file or staging folder that is still listed.
+    /// </summary>
+    public void Shutdown()
+    {
+        if (!Runner.CancelAll(TimeSpan.FromSeconds(4)))
+            Log.Warn("Some jobs did not stop within 4 s; their temporary files will be removed at next start.");
+        int left = Journal.CleanupOrphans();
+        if (left > 0) Log.Info($"Removed {left} temporary file(s) at exit.");
+        CleanupStaging();
+    }
+
     /// <summary>Removes recipe staging folders left by a crash (they only ever hold intermediates).</summary>
     private static void CleanupStaging()
     {

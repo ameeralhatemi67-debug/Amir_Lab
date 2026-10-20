@@ -126,12 +126,7 @@ internal class GlassWindow : Window
         var hwnd = new WindowInteropHelper(this).Handle;
         if (hwnd == IntPtr.Zero || !Native.GetWindowRect(hwnd, out var rect)) return;
         var monitor = ScreenGeometry.MonitorAt(p.Anchor);
-        var work = monitor.WorkArea;
-        int w = rect.Width, h = rect.Height, margin = (int)(8 * monitor.Scale);
-        int left = p.Anchor.X - w / 2;
-        int top = p.Anchor.Y + (int)(p.OffsetDip * monitor.Scale);
-        left = Math.Clamp(left, work.Left + margin, Math.Max(work.Left + margin, work.Right - w - margin));
-        top = Math.Clamp(top, work.Top + margin, Math.Max(work.Top + margin, work.Bottom - h - margin));
+        var (left, top) = ScreenGeometry.PlaceNear(p.Anchor, rect.Width, rect.Height, p.OffsetDip, monitor);
         Native.SetWindowPos(hwnd, IntPtr.Zero, left, top, 0, 0, Native.SWP_NOSIZE | Native.SWP_NOZORDER | Native.SWP_NOACTIVATE);
     }
 

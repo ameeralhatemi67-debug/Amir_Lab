@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Resource measurements: idle cost of the desktop app, and time/peak memory of heavy operations
+       (each run in its own process so peaks do not mix). Results feed docs/PERFORMANCE.md. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0-windows10.0.19041.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.17763.0</SupportedOSPlatformVersion>
+    <RootNamespace>Bench</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Using Include="System.IO" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Toolbox.Core\Toolbox.Core.csproj" />
+    <ProjectReference Include="..\..\src\Toolbox.Processing\Toolbox.Processing.csproj" />
+    <ProjectReference Include="..\..\src\Toolbox.Windows.Ocr\Toolbox.Windows.Ocr.csproj" />
+  </ItemGroup>
+
+</Project>

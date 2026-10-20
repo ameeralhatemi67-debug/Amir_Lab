@@ -144,8 +144,7 @@ internal sealed class WheelOverlayWindow : Window
 
     private void PlaceOnce(Native.POINT point, MonitorArea monitor)
     {
-        int sizePx = (int)Math.Round(SizeDip * monitor.Scale);
-        var (left, top) = ScreenGeometry.ClampCentered(point, sizePx, monitor.WorkArea);
+        var (left, top, _) = ScreenGeometry.PlaceWheel(point, monitor, SizeDip);
         Native.SetWindowPos(_hwnd, Native.HWND_TOPMOST, left, top, 0, 0,
             Native.SWP_NOSIZE | Native.SWP_NOACTIVATE | Native.SWP_SHOWWINDOW);
     }
