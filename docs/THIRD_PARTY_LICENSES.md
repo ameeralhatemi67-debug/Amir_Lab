@@ -2,6 +2,8 @@
 
 Everything below runs locally. Versions are pinned in the project files. Re-check this list whenever a dependency changes.
 
+The published package (`tools/publish.ps1`) carries this file, the libvips bundle's `THIRD-PARTY-NOTICES.md` and SkiaSharp's licence in `FileToolbox\licences\`. The libvips DLLs sit next to the program and can be replaced, as LGPL requires. **Before giving the package to anyone else,** add the full LGPL-3.0, GPL-3.0 and MPL-1.1 licence texts and the remaining packages' licence files to that folder. They are not in the NuGet packages, and this build is for the owner's own use.
+
 | Component | Version | Licence | How it is used |
 |---|---|---|---|
 | .NET 9 runtime, WPF, WinForms | 9.0 | MIT | Application runtime and UI |

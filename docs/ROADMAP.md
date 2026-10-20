@@ -14,7 +14,7 @@ Milestones for the Windows build (from the approved plan). Every item from the s
 | M5 | Remaining tools & access | Metadata, Annotate, raster Redact, drop zone, command palette, clipboard, tray, settings, history, Explorer context menu (opt-in), single-instance forwarding. |
 | M6 | Recipes & presets | Saved multi-step actions with a preview of what they will produce, result-oriented presets (email/web/portal), brand presets, export packs. |
 | M7 | Arabic/English OCR | Windows' built-in recogniser (instead of the planned Tesseract sidecar); image/scanned PDF → text, → searchable PDF; generated evaluation corpus with CER/WER; claims limited to measured cases. **Done.** Follow-ups below. |
-| M8 | Hardening & packaging | Performance measurements, temp cleanup, permission/disk-space handling, multi-monitor maths tests, self-contained publish, per-user installer. |
+| M8 | Hardening & packaging | Performance measurements, temp cleanup, permission/disk-space handling, multi-monitor maths tests, self-contained publish, per-user installer. **Done.** Follow-ups below. |
 
 ## Planned improvements preserved from the seed (§8)
 
@@ -59,3 +59,11 @@ Milestones for the Windows build (from the approved plan). Every item from the s
 - Deskew and orientation detection for photos rotated by more than a few degrees.
 - Table and multi-column reading order.
 - A second engine behind `IOcrEngine` (Tesseract or PaddleOCR sidecar) if real samples need more languages, layout analysis or better accuracy; Apple Vision for the macOS adapter.
+
+## After M8
+
+- Code signing (the build is unsigned, so SmartScreen may warn), and MSIX or a signed installer when there is a distribution channel.
+- Load libvips and the Windows SDK projection lazily, using cached feature checks, to cut idle memory.
+- Faster WebP for very large images (lower effort above about 24 MP), or a warning before starting.
+- Test on Windows 10, other display scalings, real multiple monitors, and ARM64 (no ARM64 build yet).
+- Crash isolation: run heavy jobs in `ftb` as an out-of-process worker, so a native crash cannot take the tray app down.

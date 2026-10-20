@@ -108,8 +108,12 @@ public partial class App : Application
         _tray?.Dispose();
         _channel?.Dispose();
         _hotkey?.Dispose();
-        _host?.Shutdown();
-        Log.Info("File Toolbox exiting.");
+        // A second launch that only forwarded its arguments never started, so it does not log an exit.
+        if (_host is not null)
+        {
+            _host.Shutdown();
+            Log.Info("File Toolbox exiting.");
+        }
         _instanceMutex?.Dispose();
         base.OnExit(e);
     }

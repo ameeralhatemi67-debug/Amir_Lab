@@ -10,6 +10,14 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- ReadyToRun would triple these large assemblies for no start-up gain: the 24 MB Windows SDK
+         projection (only OCR uses it) and OpenXML (only Word export uses it). -->
+    <PublishReadyToRunExclude Include="Microsoft.Windows.SDK.NET.dll" />
+    <PublishReadyToRunExclude Include="DocumentFormat.OpenXml.dll" />
+    <PublishReadyToRunExclude Include="DocumentFormat.OpenXml.Framework.dll" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\Toolbox.Core\Toolbox.Core.csproj" />
     <ProjectReference Include="..\Toolbox.Processing\Toolbox.Processing.csproj" />
     <ProjectReference Include="..\Toolbox.Windows.Ocr\Toolbox.Windows.Ocr.csproj" />
