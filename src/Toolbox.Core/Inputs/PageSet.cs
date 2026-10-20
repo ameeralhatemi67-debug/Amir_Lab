@@ -51,6 +51,20 @@ public static class PageSet
         return (pages.Count == 1 ? "page " : "pages ") + string.Join(", ", parts);
     }
 
+    /// <summary>Formats pages back into the editable syntax, e.g. [1,2,3,7] → "1-3, 7".</summary>
+    public static string ToSpec(IEnumerable<int> pages)
+    {
+        var sorted = pages.Distinct().OrderBy(p => p).ToList();
+        var parts = new List<string>();
+        for (int i = 0; i < sorted.Count; i++)
+        {
+            int start = sorted[i];
+            while (i + 1 < sorted.Count && sorted[i + 1] == sorted[i] + 1) i++;
+            parts.Add(start == sorted[i] ? $"{start}" : $"{start}-{sorted[i]}");
+        }
+        return string.Join(", ", parts);
+    }
+
     private static int ParseNumber(string s)
     {
         if (!int.TryParse(s.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var n))

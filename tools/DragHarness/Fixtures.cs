@@ -21,6 +21,25 @@ internal static class Fixtures
         WritePng(Path.Combine(folder, SecondImageName), 1600, 900, Colors.IndianRed, transparentCorner: false);
         WritePdf(Path.Combine(folder, PdfName), pages: 1);
         WritePdf(Path.Combine(folder, "Handbook 3 pages.pdf"), pages: 3);
+        TryWriteHeic(Path.Combine(folder, HeicName));
+    }
+
+    public const string HeicName = "iPhone photo.heic";
+
+    /// <summary>Encodes a real HEIC with Windows' own HEIF encoder (needs the HEVC extension); skipped when unavailable.</summary>
+    private static void TryWriteHeic(string path)
+    {
+        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
+        {
+            var script = Path.Combine(dir.FullName, "tools", "fixtures", "make-heic-sample.ps1");
+            if (!File.Exists(script)) continue;
+            var psi = new System.Diagnostics.ProcessStartInfo("powershell.exe",
+                $"-NoProfile -ExecutionPolicy Bypass -File \"{script}\" -OutPath \"{path}\" -Width 640 -Height 480")
+            { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true };
+            using var p = System.Diagnostics.Process.Start(psi);
+            p?.WaitForExit(30000);
+            return;
+        }
     }
 
     public static string Sha256(string path)

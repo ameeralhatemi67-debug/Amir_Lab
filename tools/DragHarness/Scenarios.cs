@@ -25,6 +25,9 @@ internal sealed class Scenarios
         yield return ("image-tools-ring", () => DropOnSegment([Fixtures.ImageName], ringSwitches: 1, "tool.crop", expectEditor: true));
         yield return ("image-to-webp-arabic-name", () => DropOnSegment([Fixtures.ImageName], ringSwitches: 0, "image.to-webp"));
         yield return ("two-images-to-pdf", () => DropOnSegment([Fixtures.ImageName, Fixtures.SecondImageName], ringSwitches: 0, "image.to-pdf"));
+        yield return ("multipage-pdf-asks-for-pages", MultipagePdfAsksForPages);
+        if (File.Exists(Path.Combine(_folder, Fixtures.HeicName)))
+            yield return ("heic-to-jpg-via-windows-codec", () => DropOnSegment([Fixtures.HeicName], ringSwitches: 0, "image.to-jpg"));
         yield return ("escape-cancels", EscapeCancels);
         yield return ("leave-wheel-closes", LeaveWheelCloses);
         yield return ("no-wheel-without-file-drag", NoWheelWithoutFileDrag);
@@ -85,7 +88,45 @@ internal sealed class Scenarios
         if (integrity is not null) return Fail(integrity);
 
         WaitFor(() => _app.ReadWheel() is { Visible: false } ? "" : null, TimeSpan.FromSeconds(2));
+        Thread.Sleep(350);
+        Snapshots.Capture($"after-drop {actionId}");
         return new ScenarioResult("", true, $"Dropped on {actionId} (Copy), payload exact, sources unchanged.{outputs} {note}".Trim(), latency);
+    }
+
+    private ScenarioResult MultipagePdfAsksForPages()
+    {
+        const string name = "Handbook 3 pages.pdf";
+        var before = Snapshot();
+        int jobsBefore = _app.ReadJobs().Count;
+        var wheel = StartDragAndOpenWheel([name], out var note);
+        if (wheel is null) return Fail($"Wheel did not appear. {note}");
+        var segment = wheel.Segments.First(s => s.ActionId == "pdf.render-jpg");
+        RealInput.Glide(segment.X, segment.Y, 240, 14);
+        Thread.Sleep(200);
+        RealInput.LeftUp();
+
+        // The page picker must appear instead of silently exporting only page 1.
+        var picker = WaitFor(() => AutomationElement.RootElement.FindFirst(TreeScope.Children,
+            new PropertyCondition(AutomationElement.NameProperty, "Render pages as JPG")), TimeSpan.FromSeconds(4));
+        if (picker is null) return Fail("No page picker appeared for a 3-page PDF.");
+        Thread.Sleep(600);
+        Snapshots.Capture("page-picker");
+        // Confirm with Enter (Export is the default button; "All pages" is preselected).
+        var hwnd = new IntPtr(picker.Current.NativeWindowHandle);
+        RealInput.SetForegroundWindow(hwnd);
+        Thread.Sleep(150);
+        RealInput.Tap(0x0D);
+
+        var job = WaitFor(() => _app.ReadJobs().Skip(jobsBefore).FirstOrDefault(), TimeSpan.FromSeconds(30));
+        if (job is null) return Fail("No job ran after confirming the picker.");
+        if (job.State != "Completed" || job.Outputs.Count != 3)
+            return Fail($"Expected 3 page images, got {job.Outputs.Count} ({job.State} {job.Error}).");
+        var integrity = CheckSourcesUnchanged(before, allowNewFiles: true);
+        Thread.Sleep(300);
+        Snapshots.Capture("after-picker-job");
+        return integrity is null
+            ? new ScenarioResult("", true, $"Picker appeared; all 3 pages exported: {string.Join(", ", job.Outputs.Select(Path.GetFileName))}.", wheel.RevealLatencyMs)
+            : Fail(integrity);
     }
 
     private ScenarioResult EscapeCancels()

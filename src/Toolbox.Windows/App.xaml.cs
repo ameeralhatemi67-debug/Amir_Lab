@@ -1,9 +1,11 @@
 ﻿using System.Windows;
+using Microsoft.Win32;
 using Toolbox.Core;
 using Toolbox.Core.Diagnostics;
-using Toolbox.Core.Settings;
 using Toolbox.Windows.Diagnostics;
 using Toolbox.Windows.Drag;
+using Toolbox.Windows.Imaging;
+using Toolbox.Windows.Jobs;
 using Toolbox.Windows.Shell;
 using Toolbox.Windows.Theme;
 using Toolbox.Windows.Wheel;
@@ -15,11 +17,14 @@ public partial class App : Application
     private const string InstanceMutexName = "Local\\FileToolbox.SingleInstance";
 
     private Mutex? _instanceMutex;
-    private SettingsStore _settings = null!;
+    private ToolboxHost _host = null!;
     private WheelOverlayWindow _overlay = null!;
     private DragActivationService _drag = null!;
+    private ActionDispatcher _dispatcher = null!;
     private TrayIcon? _tray;
-    private DiagnosticsChannel _diagnostics = null!;
+
+    internal static ToolboxHost Host => ((App)Current)._host;
+    internal static ActionDispatcher Actions => ((App)Current)._dispatcher;
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -35,7 +40,7 @@ public partial class App : Application
 
         bool diag = e.Args.Contains("--diag", StringComparer.OrdinalIgnoreCase)
                     || Environment.GetEnvironmentVariable("FILETOOLBOX_DIAG") == "1";
-        _diagnostics = new DiagnosticsChannel(diag);
+        var diagnostics = new DiagnosticsChannel(diag);
         Log.Info($"File Toolbox starting (pid {Environment.ProcessId}, diagnostics {(diag ? "on" : "off")}, data {AppPaths.DataDir}).");
 
         DispatcherUnhandledException += (_, args) =>
@@ -43,21 +48,27 @@ public partial class App : Application
             Log.Error("Unhandled UI exception", args.Exception);
             args.Handled = true;
         };
+        AppDomain.CurrentDomain.UnhandledException += (_, args) => Log.Error("Unhandled exception", args.ExceptionObject as Exception);
 
-        _settings = new SettingsStore();
-        var settings = _settings.Current;
+        _host = new ToolboxHost(diagnostics);
+        var settings = _host.Settings.Current;
+        ThemeResources.Apply(this, settings.Theme);
+        SystemEvents.UserPreferenceChanged += (_, _) => Dispatcher.BeginInvoke(() => ThemeResources.Apply(this, _host.Settings.Current.Theme));
+        WicHeicDecoder.Register();
+
+        var toasts = new ToastManager(_host, job => new JobDetailsWindow(job, j => _dispatcher.Retry(j)).Show());
+        _dispatcher = new ActionDispatcher(_host, toasts);
 
         _overlay = new WheelOverlayWindow(WheelDiameter(settings.WheelSize));
         _overlay.Show();
         _overlay.MoveOffscreen();
 
-        _drag = new DragActivationService(_overlay, () => _settings.Current, () => [], _diagnostics);
-        _drag.Dropped += OnWheelDrop;
+        _drag = new DragActivationService(_overlay, () => _host.Settings.Current, () => [], diagnostics);
+        _drag.Dropped += request => _dispatcher.Dispatch(request.ActionId, request.Paths, request.ScreenPoint);
         _drag.Start();
         _drag.WarmUp();
 
-        var palette = Palette.Current(settings.Theme);
-        _tray = new TrayIcon(AppIcon.CreateTrayIcon(palette.Accent), "File Toolbox — drag a file and tap Shift");
+        _tray = new TrayIcon(AppIcon.CreateTrayIcon(ThemeResources.Current.Accent), "File Toolbox — drag a file and tap Shift");
         _tray.SetMenu(
         [
             ("File Toolbox", null),
@@ -65,7 +76,7 @@ public partial class App : Application
             ("Quit", () => Shutdown()),
         ]);
 
-        _diagnostics.WriteReady(Environment.ProcessId);
+        diagnostics.WriteReady(Environment.ProcessId);
     }
 
     protected override void OnExit(ExitEventArgs e)
@@ -75,12 +86,6 @@ public partial class App : Application
         Log.Info("File Toolbox exiting.");
         _instanceMutex?.Dispose();
         base.OnExit(e);
-    }
-
-    private void OnWheelDrop(WheelDropRequest request)
-    {
-        // M1 spike: record the real payload; M3 routes it to the job runner and editors.
-        Log.Info($"Wheel action requested: {request.ActionId} for {request.Paths.Count} item(s).");
     }
 
     internal static double WheelDiameter(string size) => size.ToUpperInvariant() switch
