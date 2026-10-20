@@ -1,0 +1,6 @@
+﻿* text=auto
+*.png binary
+*.jpg binary
+*.pdf binary
+*.ico binary
+*.traineddata binary

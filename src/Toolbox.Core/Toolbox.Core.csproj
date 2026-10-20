@@ -1,0 +1,14 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Platform-neutral product model: actions, jobs, outputs, recipes, settings, history.
+       No UI and no native engines, so a later macOS adapter can reuse it unchanged. -->
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <RootNamespace>Toolbox.Core</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Toolbox.Core.Tests" />
+  </ItemGroup>
+
+</Project>

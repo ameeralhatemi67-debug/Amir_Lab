@@ -1,0 +1,13 @@
+bin/
+obj/
+dist/
+artifacts/
+.vs/
+.vscode/
+*.user
+*.suo
+TestResults/
+*.ftb-tmp
+# Local reference footage and extracted frames stay out of the repo.
+*.mp4
+reference-frames/

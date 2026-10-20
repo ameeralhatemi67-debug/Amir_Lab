@@ -1,0 +1,29 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Windows desktop adapter: activation, native drops, wheel, editors, tray, shell integration. -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <AssemblyName>FileToolbox</AssemblyName>
+    <RootNamespace>Toolbox.Windows</RootNamespace>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- WFO0003 targets WinForms apps; this is a WPF app whose manifest declares PerMonitorV2 on purpose. -->
+    <NoWarn>$(NoWarn);WFO0003</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- WinForms is referenced only for NotifyIcon; keep its namespaces out of implicit usings
+         so WPF types (Application, MessageBox, Point...) stay unambiguous. -->
+    <Using Remove="System.Windows.Forms" />
+    <Using Remove="System.Drawing" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Toolbox.Core\Toolbox.Core.csproj" />
+    <ProjectReference Include="..\Toolbox.Processing\Toolbox.Processing.csproj" />
+  </ItemGroup>
+
+</Project>
