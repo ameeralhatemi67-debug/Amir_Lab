@@ -8,6 +8,17 @@ dotnet test FileToolbox.sln
 
 Unit and integration tests cover the Core rules (probing, naming, collisions, outputs, jobs) and the Processing engines against generated fixtures.
 
+Amir Lap's shell is covered by these tests:
+
+- `KeyChordTests`, `ToolSettingsTests` and `LegacyDataMigrationTests` (Core): parsing shortcuts, per-tool settings, and the one-time copy of File Toolbox data.
+- `ToolRegistryTests` (Windows): tools start and stop with their switch, shortcuts are released while a tool is off, clashes are reported, and changes, switch-offs and resets work. They register throwaway Ctrl+Alt+Shift+F22/F23 shortcuts for a moment.
+- `HomeWindowTests` builds every page of the Amir Lap window off-screen, in light and dark, without showing anything or starting a tool. To look at the pages, set `AMIRLAP_SNAPSHOT_DIR` to a folder; each page is saved there as a PNG:
+
+```bash
+set AMIRLAP_SNAPSHOT_DIR=%TEMP%\amirlap-pages
+dotnet test tests/Toolbox.Windows.Tests --filter HomeWindowTests
+```
+
 ### Real-drag harness
 
 The harness moves the **real mouse and keyboard** for a few seconds per scenario, so keep hands off while it runs.

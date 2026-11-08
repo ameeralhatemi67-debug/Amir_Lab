@@ -64,7 +64,7 @@ public class InstanceChannelTests
     public async Task Arguments_reach_the_running_instance()
     {
         // Uses the real per-user pipe name: skip when the app itself is running on this machine.
-        if (System.Diagnostics.Process.GetProcessesByName("FileToolbox").Length > 0) return;
+        if (System.Diagnostics.Process.GetProcessesByName("AmirLap").Length > 0) return;
         var received = new TaskCompletionSource<string[]>();
         using var channel = new InstanceChannel();
         channel.Start(args => received.TrySetResult(args));

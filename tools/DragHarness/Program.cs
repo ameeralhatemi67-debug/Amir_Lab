@@ -8,7 +8,7 @@ namespace DragHarness;
 /// Automated end-to-end check of the desktop interaction with real File Explorer drags.
 /// It moves the real mouse and presses real keys (SendInput), so keep hands off while it runs.
 ///
-///   DragHarness [--app path\to\FileToolbox.exe] [--only name1,name2] [--desktop] [--expect-outputs]
+///   DragHarness [--app path\to\AmirLap.exe] [--only name1,name2] [--desktop] [--expect-outputs]
 /// </summary>
 internal static class Program
 {
@@ -95,10 +95,10 @@ internal static class Program
         var root = AppContext.BaseDirectory;
         for (var dir = new DirectoryInfo(root); dir is not null; dir = dir.Parent)
         {
-            var candidate = Path.Combine(dir.FullName, "src", "Toolbox.Windows", "bin", "Debug", "net9.0-windows10.0.19041.0", "FileToolbox.exe");
+            var candidate = Path.Combine(dir.FullName, "src", "Toolbox.Windows", "bin", "Debug", "net9.0-windows10.0.19041.0", "AmirLap.exe");
             if (File.Exists(candidate)) return candidate;
         }
-        throw new FileNotFoundException("FileToolbox.exe not found; build src/Toolbox.Windows or pass --app.");
+        throw new FileNotFoundException("AmirLap.exe not found; build src/Toolbox.Windows or pass --app.");
     }
 }
 

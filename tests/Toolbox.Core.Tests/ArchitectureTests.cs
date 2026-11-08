@@ -37,7 +37,7 @@ public class ArchitectureTests
                          .Concat(Directory.EnumerateFiles(bin, "*.exe", SearchOption.AllDirectories)))
             {
                 var fileName = Path.GetFileName(file);
-                if (fileName is "Toolbox.Processing.dll" or "ftb.dll" or "FileToolbox.dll" or "Toolbox.Windows.Ocr.dll")
+                if (fileName is "Toolbox.Processing.dll" or "ftb.dll" or "AmirLap.dll" or "Toolbox.Windows.Ocr.dll")
                     yield return [file];
             }
         }

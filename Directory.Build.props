@@ -4,8 +4,8 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <Deterministic>true</Deterministic>
-    <Product>File Toolbox</Product>
-    <Company>File Toolbox</Company>
+    <Product>Amir Lap</Product>
+    <Company>Amir Lap</Company>
     <Copyright>Local use</Copyright>
     <Version>0.1.0</Version>
     <!-- Native engines (libvips, PDFium, Skia) are shipped for win-x64 only at this stage. -->

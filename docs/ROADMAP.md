@@ -16,6 +16,22 @@ Milestones for the Windows build (from the approved plan). Every item from the s
 | M7 | Arabic/English OCR | Windows' built-in recogniser (instead of the planned Tesseract sidecar); image/scanned PDF → text, → searchable PDF; generated evaluation corpus with CER/WER; claims limited to measured cases. **Done.** Follow-ups below. |
 | M8 | Hardening & packaging | Performance measurements, temp cleanup, permission/disk-space handling, multi-monitor maths tests, self-contained publish, per-user installer. **Done.** Follow-ups below. |
 
+## Amir Lap (owner decision, 8 Nov 2026)
+
+File Toolbox becomes tool #1 of **Amir Lap**, a multi-tool tray app ([DECISIONS.md](DECISIONS.md#amir-lap-shell-phase-1--8-nov-2026)).
+
+| Phase | Scope | State |
+|---|---|---|
+| 1. Shell | Rename and data migration; tool modules with on/off switches; configurable global shortcuts with conflict checks; sidebar window (Dashboard, tool pages, General); tray menu per tool; installer that replaces File Toolbox. | Done |
+| 2. Longshot | Rewrite the Python prototype (`tools/LongshotPrototype`) in C#: stitching engine with its pixel-exact tests, box selection, Extend / Auto / Follow / Undo panel kept out of captures, result window, Longshot page and shortcuts (default Ctrl+Alt+S, and Ctrl+Alt+Shift+S after a 3-second delay). The network guard must cover the new assembly. | Next |
+| 3. Finish | Installer and uninstaller for both tools, idle-cost measurement, 100/125/150% scaling, docs. | — |
+
+Ideas kept for later, owner to choose:
+
+- **Longshot:** pick a window or scroll area by hovering; open the result in Studio (crop, redact, annotate); copy text from the capture with the existing OCR, or save as a searchable PDF; split into A4 PDF pages or image parts for messengers; delay timer and "capture the same area again"; sideways scrolling; ordinary region/window/full-screen captures and "pin to screen"; capture history.
+- **File Toolbox:** PDF compression (unblocks "PDF under 2 MB"); batch rename with a live preview using the naming tokens. PDF merge/split/reorder and watched folders are already listed under future candidates below.
+- **Amir Lap:** a quick-launcher flyout on tray click; a shortcut cheat sheet while holding Ctrl+Alt; export and import of settings; a brand icon of its own. New tools should build on what is unique here (Arabic/English OCR, the file wheel, scroll capture) rather than repeat PowerToys.
+
 ## Planned improvements preserved from the seed (§8)
 
 - Saved multi-step actions (recipes): define, inspect, name, save, edit, duplicate, reuse. Deterministic, no LLM. → M6

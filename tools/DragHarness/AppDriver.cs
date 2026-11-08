@@ -40,7 +40,7 @@ internal sealed class AppDriver : IDisposable
         }
 
         var psi = new ProcessStartInfo(_exe, "--diag") { UseShellExecute = false };
-        psi.Environment["FILETOOLBOX_DATA"] = _dataDir;
+        psi.Environment["AMIRLAP_DATA"] = _dataDir;
         _process = Process.Start(psi) ?? throw new InvalidOperationException("App did not start.");
 
         var ready = Path.Combine(DiagDir, "ready.json");

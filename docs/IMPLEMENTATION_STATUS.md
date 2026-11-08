@@ -3,7 +3,19 @@
 States: **Working** (implemented and verified, with the evidence named), **Partial** (some of it works; the gaps are listed), **Blocked** (cannot proceed without something), **Future** (not started).
 A capability listed in the seed or the capability map is not working until this table says so.
 
-_Last updated: 20 Oct 2026 — M8 complete (all planned milestones). Measurements: [PERFORMANCE.md](PERFORMANCE.md)._
+_Last updated: 8 Nov 2026 — Amir Lap phase 1 (the multi-tool shell) complete; File Toolbox is tool #1. M8 measurements: [PERFORMANCE.md](PERFORMANCE.md) (not yet re-measured for the shell)._
+
+## Amir Lap shell (phase 1)
+
+| Capability | State | Evidence / notes |
+|---|---|---|
+| Tool switch: off stops the tool (keyboard hook, wheel window, shortcut released) | **Working** | `ToolRegistryTests`; the published app starts and quits with File Toolbox on (`publish.ps1`, `test-install.ps1`). Not yet clicked through by the owner. |
+| Configurable global shortcuts, conflict checks, pause while recording | **Working** | `KeyChordTests`, `ToolRegistryTests`, `VirtualKeyTests` (every allowed key). The recorder control itself has not been driven by a real key press yet. |
+| Amir Lap window: Dashboard, File Toolbox page, General | **Working** | `HomeWindowTests` builds every page in light and dark off-screen; snapshots reviewed. Not yet used live by the owner. |
+| Tray menu with a sub-menu per tool | **Partial** | Built and compiled; not yet exercised by a real click. |
+| First-start copy of File Toolbox data | **Working** | `LegacyDataMigrationTests` (copy once, never overwrite, old folder untouched, logs not carried over). |
+| Installer replaces File Toolbox; integrations carried over | **Working** | `test-install.ps1`: 26 checks, including old folder, shortcut and uninstall entry removed and the startup entry moved to `AmirLap`. |
+| Longshot (tool #2) | **Future** | Phase 2. A Python prototype with pixel-exact stitching tests is in `tools/LongshotPrototype`. |
 
 ## Desktop interaction
 

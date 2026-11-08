@@ -2,35 +2,37 @@ using System.Windows;
 using System.Windows.Threading;
 using Microsoft.Win32;
 using Toolbox.Core;
-using Toolbox.Core.Actions;
 using Toolbox.Core.Diagnostics;
 using Toolbox.Windows.Diagnostics;
-using Toolbox.Windows.Drag;
 using Toolbox.Windows.Editors;
+using Toolbox.Windows.Home;
 using Toolbox.Windows.Imaging;
 using Toolbox.Windows.Jobs;
 using Toolbox.Windows.CommandPalette;
 using Toolbox.Windows.Settings;
 using Toolbox.Windows.Shell;
 using Toolbox.Windows.Theme;
-using Toolbox.Windows.Wheel;
+using Toolbox.Windows.Tools;
 
 namespace Toolbox.Windows;
 
+/// <summary>
+/// Amir Lap: one tray app hosting several tools (File Toolbox first). Each tool can be switched
+/// off, has its own shortcuts and settings, and costs nothing while it is off.
+/// </summary>
 public partial class App : Application
 {
-    private const string InstanceMutexName = "Local\\FileToolbox.SingleInstance";
+    private const string InstanceMutexName = "Local\\AmirLap.SingleInstance";
 
     private Mutex? _instanceMutex;
     private ToolboxHost _host = null!;
-    private WheelOverlayWindow _overlay = null!;
-    private DragActivationService _drag = null!;
     private ActionDispatcher _dispatcher = null!;
+    private ToolRegistry? _tools;
+    private FileToolboxTool _fileToolbox = null!;
     private TrayIcon? _tray;
     private InstanceChannel? _channel;
-    private GlobalHotkey? _hotkey;
     private PaletteWindow? _palette;
-    private SettingsWindow? _settingsWindow;
+    private AmirLapWindow? _home;
     private HistoryWindow? _historyWindow;
     private Recipes.RecipesWindow? _recipesWindow;
     private readonly List<string> _pendingPaths = [];
@@ -57,10 +59,23 @@ public partial class App : Application
             return;
         }
 
+        // First start after File Toolbox became part of Amir Lap: copy its data over before anything
+        // (the log included) creates the new data folder. The old folder is left as it was.
+        int migrated = 0;
+        string? migrationError = null;
+        if (AppPaths.DataOverride is null)
+        {
+            try { migrated = LegacyDataMigration.Run(AppPaths.LegacyDataDir, AppPaths.DefaultDataDir); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { migrationError = ex.Message; }
+        }
+
         bool diag = e.Args.Contains("--diag", StringComparer.OrdinalIgnoreCase)
+                    || Environment.GetEnvironmentVariable("AMIRLAP_DIAG") == "1"
                     || Environment.GetEnvironmentVariable("FILETOOLBOX_DIAG") == "1";
         var diagnostics = new DiagnosticsChannel(diag);
-        Log.Info($"File Toolbox starting (pid {Environment.ProcessId}, diagnostics {(diag ? "on" : "off")}, data {AppPaths.DataDir}).");
+        Log.Info($"Amir Lap starting (pid {Environment.ProcessId}, diagnostics {(diag ? "on" : "off")}, data {AppPaths.DataDir}).");
+        if (migrated > 0) Log.Info($"Copied {migrated} file(s) of File Toolbox data from {AppPaths.LegacyDataDir}.");
+        if (migrationError is not null) Log.Warn($"File Toolbox data could not be copied over: {migrationError}");
 
         DispatcherUnhandledException += (_, args) =>
         {
@@ -80,23 +95,17 @@ public partial class App : Application
         _dispatcher = new ActionDispatcher(_host, toasts);
         _dispatcher.Editors = new EditorLauncher(_dispatcher);
 
-        _overlay = new WheelOverlayWindow(WheelDiameter(settings.WheelSize));
-        _overlay.Show();
-        _overlay.MoveOffscreen();
-
-        _drag = new DragActivationService(_overlay, () => _host.Settings.Current, () => _host.Recipes.All().Where(r => r.Pinned).ToList(), diagnostics);
-        _drag.Dropped += request => _dispatcher.Dispatch(request.ActionId, request.Paths, request.ScreenPoint);
-        _drag.Start();
-        _drag.WarmUp();
+        _fileToolbox = new FileToolboxTool(_host, _dispatcher, diagnostics);
+        _tools = new ToolRegistry(_host.Settings, [_fileToolbox]);
 
         _channel = new InstanceChannel();
         _channel.Start(args => Dispatcher.BeginInvoke(() => HandleArguments(args, fromAnotherInstance: true)));
-        _hotkey = new GlobalHotkey(() => ShowPalette());
 
-        _tray = new TrayIcon(AppIcon.CreateTrayIcon(ThemeResources.Current.Accent), "File Toolbox — drag a file and tap Shift");
-        _tray.PrimaryAction = () => ShowPalette();
-        RefreshTrayMenu();
+        _tray = new TrayIcon(AppIcon.CreateTrayIcon(ThemeResources.Current.Accent), "Amir Lap");
+        _tray.PrimaryAction = OnTrayClick;
+        _tools.Changed += RefreshTrayMenu;
         _host.Runner.JobFinished += _ => Dispatcher.BeginInvoke(RefreshTrayMenu);
+        _tools.Apply(force: true); // starts the tools that are on and registers their shortcuts
 
         diagnostics.WriteReady(Environment.ProcessId);
         HandleArguments(e.Args, fromAnotherInstance: false);
@@ -104,15 +113,14 @@ public partial class App : Application
 
     protected override void OnExit(ExitEventArgs e)
     {
-        _drag?.Dispose();
+        _tools?.Dispose();
         _tray?.Dispose();
         _channel?.Dispose();
-        _hotkey?.Dispose();
         // A second launch that only forwarded its arguments never started, so it does not log an exit.
         if (_host is not null)
         {
             _host.Shutdown();
-            Log.Info("File Toolbox exiting.");
+            Log.Info("Amir Lap exiting.");
         }
         _instanceMutex?.Dispose();
         base.OnExit(e);
@@ -121,12 +129,12 @@ public partial class App : Application
     // ---- entry points ---------------------------------------------------------------------------
 
     /// <summary>
-    /// Paths (from Explorer's menu, "Send to" or the command line) open the palette with those files.
-    /// Explorer starts one process per selected file, so arrivals within a short window are batched.
+    /// Paths (from Explorer's menu, "Send to" or the command line) open File Toolbox's palette with
+    /// those files. Explorer starts one process per selected file, so arrivals are batched.
     /// </summary>
     private void HandleArguments(string[] args, bool fromAnotherInstance)
     {
-        // "FileToolbox.exe --quit" (used by the uninstaller and scripts): finish like the tray's Quit.
+        // "AmirLap.exe --quit" (used by the uninstaller and scripts): finish like the tray's Quit.
         if (args.Contains("--quit", StringComparer.OrdinalIgnoreCase))
         {
             Shutdown();
@@ -147,13 +155,45 @@ public partial class App : Application
             _pathBatch.Start();
             return;
         }
+        if (args.Contains("--palette", StringComparer.OrdinalIgnoreCase))
+        {
+            ShowPalette(); // File Toolbox's window directly (scripts, the QA harness)
+            return;
+        }
         bool quiet = args.Any(a => a is "--background" or "--diag");
-        if (fromAnotherInstance || (!quiet && args.Length == 0)) ShowPalette();
+        if (fromAnotherInstance || (!quiet && args.Length == 0)) ShowHome();
     }
 
+    private void OnTrayClick()
+    {
+        if (_host.Settings.Current.TrayClick == "palette" && _tools?.IsEnabled(_fileToolbox) == true) ShowPalette();
+        else ShowHome();
+    }
+
+    /// <summary>Opens the Amir Lap window, on a page (a tool id, "dashboard" or "general").</summary>
+    internal static void ShowHome(string? page = null)
+    {
+        var app = (App)Current;
+        if (app._tools is null) return;
+        if (app._home is null)
+        {
+            app._home = new AmirLapWindow(app._host, app._tools);
+            app._home.Closed += (_, _) => app._home = null;
+            app._home.Show();
+        }
+        if (page is not null) app._home.ShowPage(page);
+        Foreground.Activate(app._home);
+    }
+
+    /// <summary>File Toolbox's palette (its main window). When the tool is off, shows its page instead.</summary>
     internal static void ShowPalette(IReadOnlyList<string>? files = null, string? preselect = null)
     {
         var app = (App)Current;
+        if (app._tools is null || !app._tools.IsEnabled(app._fileToolbox))
+        {
+            ShowHome(FileToolboxTool.ToolId);
+            return;
+        }
         if (app._palette is null || !app._palette.IsLoaded)
         {
             app._palette = new PaletteWindow(app._dispatcher, app._host);
@@ -165,17 +205,8 @@ public partial class App : Application
         Foreground.Activate(app._palette);
     }
 
-    internal static void ShowSettings()
-    {
-        var app = (App)Current;
-        if (app._settingsWindow is null)
-        {
-            app._settingsWindow = new SettingsWindow(app._host, app._hotkey?.Registered ?? false);
-            app._settingsWindow.Closed += (_, _) => app._settingsWindow = null;
-            app._settingsWindow.Show();
-        }
-        Foreground.Activate(app._settingsWindow);
-    }
+    /// <summary>File Toolbox's settings now live on its page in the Amir Lap window.</summary>
+    internal static void ShowSettings() => ShowHome(FileToolboxTool.ToolId);
 
     internal static void ShowHistory()
     {
@@ -201,20 +232,41 @@ public partial class App : Application
         Foreground.Activate(app._recipesWindow);
     }
 
+    /// <summary>Closes File Toolbox's own windows (when the tool is switched off).</summary>
+    internal static void CloseFileToolboxWindows()
+    {
+        var app = (App)Current;
+        app._palette?.Close();
+        app._recipesWindow?.Close();
+        app._historyWindow?.Close();
+    }
+
     private void RefreshTrayMenu()
     {
-        if (_tray is null) return;
-        var last = _host.LastAction is { } la && CapabilityMap.TryGet(la.ActionId, out var action) ? action : null;
-        _tray.SetMenu(
-        [
-            ("Open File Toolbox" + (_hotkey?.Registered == true ? "\tCtrl+Alt+F" : ""), () => ShowPalette()),
-            (last is null ? "Repeat last action" : $"Repeat: {last.Title}…", last is null ? null : () => ShowPalette(preselect: last.Id)),
-            ("Recipes", ShowRecipes),
-            ("History", ShowHistory),
-            ("Settings", ShowSettings),
-            ("-", null),
-            ("Quit File Toolbox", () => Shutdown()),
-        ]);
+        if (_tray is null || _tools is null) return;
+        var items = new List<TrayItem> { new("Open Amir Lap", () => ShowHome(), Bold: true), TrayItem.Separator };
+        foreach (var tool in _tools.Tools)
+        {
+            if (_tools.IsEnabled(tool))
+            {
+                var children = tool.TrayItems(c => _tools.ActiveShortcut(tool, c)).ToList();
+                children.Add(TrayItem.Separator);
+                children.Add(new TrayItem($"{tool.Name} settings", () => ShowHome(tool.Id)));
+                children.Add(new TrayItem($"Turn off {tool.Name}", () => _tools.SetEnabled(tool, false)));
+                items.Add(new TrayItem(tool.Name, Children: children));
+            }
+            else
+            {
+                items.Add(new TrayItem($"{tool.Name} (off)", Children:
+                [
+                    new TrayItem($"Turn on {tool.Name}", () => _tools.SetEnabled(tool, true)),
+                    new TrayItem($"{tool.Name} settings", () => ShowHome(tool.Id)),
+                ]));
+            }
+        }
+        items.Add(TrayItem.Separator);
+        items.Add(new TrayItem("Quit Amir Lap", () => Shutdown()));
+        _tray.SetMenu(items);
     }
 
     internal static double WheelDiameter(string size) => size.ToUpperInvariant() switch

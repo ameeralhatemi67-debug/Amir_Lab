@@ -14,7 +14,7 @@ internal sealed class InstanceChannel : IDisposable
     private readonly CancellationTokenSource _cts = new();
 
     public static string PipeName =>
-        "FileToolbox." + string.Concat($"{Environment.UserDomainName}.{Environment.UserName}".Select(c => char.IsLetterOrDigit(c) ? c : '_'));
+        "AmirLap." + string.Concat($"{Environment.UserDomainName}.{Environment.UserName}".Select(c => char.IsLetterOrDigit(c) ? c : '_'));
 
     /// <summary>Sends the arguments to the running instance. Returns false when none answered.</summary>
     public static bool TrySend(string[] args)

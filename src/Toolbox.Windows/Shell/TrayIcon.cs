@@ -2,6 +2,12 @@ using System.Windows.Forms;
 
 namespace Toolbox.Windows.Shell;
 
+/// <summary>One tray-menu entry: a command, a separator ("-"), or a sub-menu (<see cref="Children"/>).</summary>
+internal sealed record TrayItem(string Text, Action? Action = null, IReadOnlyList<TrayItem>? Children = null, string? Shortcut = null, bool Bold = false)
+{
+    public static readonly TrayItem Separator = new("-");
+}
+
 /// <summary>Notification-area presence: the app stays available without a large main window.</summary>
 internal sealed class TrayIcon : IDisposable
 {
@@ -23,22 +29,34 @@ internal sealed class TrayIcon : IDisposable
         };
     }
 
-    /// <summary>Invoked on a left click (opens the drop zone).</summary>
+    /// <summary>Invoked on a left click.</summary>
     public Action? PrimaryAction { get; set; }
 
-    public void SetMenu(IEnumerable<(string Text, Action? Action)> items)
+    public void SetMenu(IEnumerable<TrayItem> items)
     {
         _menu.Items.Clear();
-        foreach (var (text, action) in items)
+        Fill(_menu.Items, items);
+    }
+
+    private static void Fill(ToolStripItemCollection target, IEnumerable<TrayItem> items)
+    {
+        foreach (var entry in items)
         {
-            if (text == "-")
+            if (entry.Text == "-")
             {
-                _menu.Items.Add(new ToolStripSeparator());
+                target.Add(new ToolStripSeparator());
                 continue;
             }
-            var item = new ToolStripMenuItem(text) { Enabled = action is not null };
-            if (action is not null) item.Click += (_, _) => action();
-            _menu.Items.Add(item);
+            var item = new ToolStripMenuItem(entry.Text) { ShortcutKeyDisplayString = entry.Shortcut ?? "" };
+            if (entry.Bold) item.Font = new System.Drawing.Font(item.Font, System.Drawing.FontStyle.Bold);
+            if (entry.Children is { Count: > 0 } children)
+                Fill(item.DropDownItems, children);
+            else
+            {
+                item.Enabled = entry.Action is not null;
+                if (entry.Action is { } action) item.Click += (_, _) => action();
+            }
+            target.Add(item);
         }
     }
 

@@ -16,7 +16,7 @@ using Toolbox.Windows.Ocr;
 using Ids = Toolbox.Core.Actions.CapabilityMap.Ids;
 
 // Usage:
-//   Bench [--out <dir>] [--app <FileToolbox.exe>] [--skip-idle]
+//   Bench [--out <dir>] [--app <AmirLap.exe>] [--skip-idle]
 //   Bench --op <name> <fixtures dir>      (internal: one operation, prints one JSON line)
 Console.OutputEncoding = Encoding.UTF8;
 var inv = CultureInfo.InvariantCulture;
@@ -242,12 +242,12 @@ internal static class Idle
     {
         for (var d = new DirectoryInfo(AppContext.BaseDirectory); d is not null; d = d.Parent)
         {
-            var exe = Path.Combine(d.FullName, "src", "Toolbox.Windows", "bin", "Release", "net9.0-windows10.0.19041.0", "FileToolbox.exe");
+            var exe = Path.Combine(d.FullName, "src", "Toolbox.Windows", "bin", "Release", "net9.0-windows10.0.19041.0", "AmirLap.exe");
             if (File.Exists(exe)) return exe;
-            exe = Path.Combine(d.FullName, "src", "Toolbox.Windows", "bin", "Debug", "net9.0-windows10.0.19041.0", "FileToolbox.exe");
+            exe = Path.Combine(d.FullName, "src", "Toolbox.Windows", "bin", "Debug", "net9.0-windows10.0.19041.0", "AmirLap.exe");
             if (File.Exists(exe)) return exe;
         }
-        return "FileToolbox.exe";
+        return "AmirLap.exe";
     }
 
     public static string Measure(string exe, string dataDir)

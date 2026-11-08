@@ -1,0 +1,51 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Longshot test page</title>
+<style>
+  body { margin: 0; font: 16px/1.5 "Segoe UI", sans-serif; background: #fff; color: #222; }
+  header { position: sticky; top: 0; height: 60px; background: #1f4fbf; color: #fff; display: flex;
+           align-items: center; padding: 0 20px; font-weight: 600; z-index: 2; }
+  footer { position: fixed; bottom: 0; left: 0; right: 0; height: 40px; background: #222; color: #fff;
+           display: flex; align-items: center; justify-content: center; z-index: 2; }
+  #ruler { position: absolute; left: 0; top: 0; width: 24px; }
+  #ruler div { height: 8px; }
+  main { margin-left: 40px; padding: 10px 20px 60px; }
+  p { margin: 0 0 12px; }
+  .box { height: 80px; border-radius: 8px; margin: 0 0 12px; }
+</style>
+</head>
+<body>
+<header>Sticky header · Longshot test page</header>
+<div id="ruler"></div>
+<main id="main"></main>
+<footer>Fixed footer (like a cookie bar)</footer>
+<script>
+  // Numbered paragraphs plus coloured boxes.
+  const main = document.getElementById("main");
+  for (let i = 1; i <= 90; i++) {
+    const p = document.createElement("p");
+    p.textContent = `Paragraph ${String(i).padStart(3, "0")} · ` +
+      "The quick brown fox jumps over the lazy dog. ".repeat(1 + (i * 7) % 4);
+    main.appendChild(p);
+    if (i % 9 === 0) {
+      const b = document.createElement("div");
+      b.className = "box";
+      b.style.background = `hsl(${(i * 37) % 360} 60% 60%)`;
+      main.appendChild(b);
+    }
+  }
+  // A ruler down the left edge: a unique colour every 8px, so a checker can
+  // tell exactly which part of the page each row of the capture came from.
+  const ruler = document.getElementById("ruler");
+  const H = document.documentElement.scrollHeight;
+  ruler.style.height = H + "px";
+  for (let i = 0; i * 8 < H; i++) {
+    const d = document.createElement("div");
+    d.style.background = `rgb(${i & 255}, ${(i >> 8) * 60 + 30}, 200)`;
+    ruler.appendChild(d);
+  }
+</script>
+</body>
+</html>

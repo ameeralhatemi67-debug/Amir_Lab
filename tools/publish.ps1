@@ -1,14 +1,14 @@
 <#
 .SYNOPSIS
-    Builds File Toolbox for distribution: a self-contained win-x64 folder (no .NET install needed),
+    Builds Amir Lap for distribution: a self-contained win-x64 folder (no .NET install needed),
     the install/uninstall scripts beside it, and a zip of both.
 
 .DESCRIPTION
     Output (default artifacts\publish):
-      FileToolbox\            the application: FileToolbox.exe (tray app), ftb.exe (command line),
+      AmirLap\                the application: AmirLap.exe (tray app), ftb.exe (File Toolbox command line),
                               native engines, licences\ and docs\
       install.ps1, uninstall.ps1
-      FileToolbox-<version>-win-x64.zip
+      AmirLap-<version>-win-x64.zip
 
     Restoring a self-contained, ReadyToRun build needs the .NET runtime packs from NuGet the first time.
 
@@ -28,7 +28,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 if (-not $Output) { $Output = Join-Path $root 'artifacts\publish' }
-$app = Join-Path $Output 'FileToolbox'
+$app = Join-Path $Output 'AmirLap'
 
 if (Test-Path $app) { Remove-Item $app -Recurse -Force }
 New-Item -ItemType Directory -Force $app | Out-Null
@@ -55,7 +55,7 @@ Copy-Item (Join-Path $staging 'app\*') $app -Recurse -Force
 Remove-Item $staging -Recurse -Force
 # Debug symbols of third-party native libraries (SkiaSharp ships 110 MB of them) are not distributed;
 # our own assemblies keep theirs so logged errors have line numbers.
-Get-ChildItem $app -Filter *.pdb | Where-Object { $_.Name -notmatch '^(FileToolbox|ftb|Toolbox\..*)\.pdb$' } | Remove-Item -Force
+Get-ChildItem $app -Filter *.pdb | Where-Object { $_.Name -notmatch '^(AmirLap|ftb|Toolbox\..*)\.pdb$' } | Remove-Item -Force
 
 # Licences and notices travel with the binaries (libvips is LGPL and dynamically linked: its DLLs may be replaced).
 $licences = New-Item -ItemType Directory -Force (Join-Path $app 'licences')
@@ -84,37 +84,37 @@ Copy-Item (Join-Path $PSScriptRoot 'uninstall.ps1') $app -Force
 # Smoke check of the published bits: the CLI loads every engine and reports the runtime features.
 # It runs with a throwaway data folder so nothing is written to the user's settings or logs.
 $smokeData = Join-Path $Output '.smoke-data'
-$previousData = $env:FILETOOLBOX_DATA
-$env:FILETOOLBOX_DATA = $smokeData
+$previousData = $env:AMIRLAP_DATA
+$env:AMIRLAP_DATA = $smokeData
 try {
     $features = & (Join-Path $app 'ftb.exe') features
     if ($LASTEXITCODE -ne 0) { throw "The published ftb.exe did not run." }
     Write-Host ($features -join [Environment]::NewLine)
 
-    if (Get-Process FileToolbox -ErrorAction SilentlyContinue) {
-        Write-Warning 'File Toolbox is running, so the published app could not be start-tested. Quit it and publish again to check.'
+    if (Get-Process AmirLap -ErrorAction SilentlyContinue) {
+        Write-Warning 'Amir Lap is running, so the published app could not be start-tested. Quit it and publish again to check.'
     }
     else {
-        $desktop = Start-Process (Join-Path $app 'FileToolbox.exe') -ArgumentList '--background' -PassThru
+        $desktop = Start-Process (Join-Path $app 'AmirLap.exe') -ArgumentList '--background' -PassThru
         Start-Sleep -Seconds 6
-        if ($desktop.HasExited) { throw "The published FileToolbox.exe exited during start-up (code $($desktop.ExitCode)). See the Windows Application event log." }
-        Start-Process (Join-Path $app 'FileToolbox.exe') -ArgumentList '--quit' -Wait
-        if (-not $desktop.WaitForExit(15000)) { $desktop.Kill(); throw 'The published FileToolbox.exe did not quit on --quit.' }
+        if ($desktop.HasExited) { throw "The published AmirLap.exe exited during start-up (code $($desktop.ExitCode)). See the Windows Application event log." }
+        Start-Process (Join-Path $app 'AmirLap.exe') -ArgumentList '--quit' -Wait
+        if (-not $desktop.WaitForExit(15000)) { $desktop.Kill(); throw 'The published AmirLap.exe did not quit on --quit.' }
         Write-Host 'Desktop app: starts and quits cleanly.'
     }
 }
 finally {
-    $env:FILETOOLBOX_DATA = $previousData
+    $env:AMIRLAP_DATA = $previousData
     if (Test-Path $smokeData) { Remove-Item $smokeData -Recurse -Force }
 }
 
 # ProductVersion carries "+<commit>"; file names use the plain version.
-$version = (Get-Item (Join-Path $app 'FileToolbox.exe')).VersionInfo.ProductVersion.Split('+')[0]
+$version = (Get-Item (Join-Path $app 'AmirLap.exe')).VersionInfo.ProductVersion.Split('+')[0]
 $size = (Get-ChildItem $app -Recurse -File | Measure-Object Length -Sum).Sum
-Write-Host ("FileToolbox {0}: {1:N0} files, {2:N0} MB in {3}" -f $version, (Get-ChildItem $app -Recurse -File).Count, ($size / 1MB), $app)
+Write-Host ("Amir Lap {0}: {1:N0} files, {2:N0} MB in {3}" -f $version, (Get-ChildItem $app -Recurse -File).Count, ($size / 1MB), $app)
 
 if (-not $NoZip) {
-    $zip = Join-Path $Output "FileToolbox-$version-win-x64.zip"
+    $zip = Join-Path $Output "AmirLap-$version-win-x64.zip"
     if (Test-Path $zip) { Remove-Item $zip -Force }
     Compress-Archive -Path $app, (Join-Path $Output 'install.ps1'), (Join-Path $Output 'uninstall.ps1') -DestinationPath $zip -CompressionLevel Optimal
     Write-Host ("Zip: {0} ({1:N0} MB)" -f $zip, ((Get-Item $zip).Length / 1MB))

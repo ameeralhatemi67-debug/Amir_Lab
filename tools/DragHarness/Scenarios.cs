@@ -39,12 +39,12 @@ internal sealed class Scenarios
         if (IncludeQa) yield return ("qa-windows", QaWindows);
     }
 
-    /// <summary>Visual QA only (--qa): opens the palette, Recipes and Settings windows and screenshots them.</summary>
+    /// <summary>Visual QA only (--qa): opens the palette, Recipes and the Amir Lap (settings) windows and screenshots them.</summary>
     public static bool IncludeQa { get; set; }
 
     private ScenarioResult QaWindows()
     {
-        var launch = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(_app.ExePath) { UseShellExecute = false });
+        var launch = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(_app.ExePath, "--palette") { UseShellExecute = false });
         launch?.WaitForExit(8000);
         var palette = WaitFor(() => AutomationElement.RootElement.FindFirst(TreeScope.Children, new AndCondition(
             new PropertyCondition(AutomationElement.ProcessIdProperty, _app.ProcessId),
@@ -52,7 +52,7 @@ internal sealed class Scenarios
         if (palette is null) return Fail("Palette did not open.");
         Thread.Sleep(800);
         Snapshots.Capture("qa-palette-empty");
-        foreach (var (button, title, tab) in new[] { ("Recipes", "File Toolbox recipes", "Brand styles"), ("Settings", "File Toolbox settings", (string?)null) })
+        foreach (var (button, title, tab) in new[] { ("Recipes", "File Toolbox recipes", "Brand styles"), ("Settings", "Amir Lap", (string?)null) })
         {
             if (!Select(palette, button)) return Fail($"{button} button not found.");
             var window = WaitFor(() => AutomationElement.RootElement.FindFirst(TreeScope.Children, new PropertyCondition(AutomationElement.NameProperty, title)), TimeSpan.FromSeconds(5));

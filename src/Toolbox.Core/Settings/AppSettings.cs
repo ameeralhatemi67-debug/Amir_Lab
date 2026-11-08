@@ -4,10 +4,31 @@ using Toolbox.Core.Output;
 
 namespace Toolbox.Core.Settings;
 
-/// <summary>User preferences, stored locally as JSON. Every field has a sensible default.</summary>
+/// <summary>
+/// User preferences, stored locally as JSON. Every field has a sensible default. App-wide (Amir Lap)
+/// settings sit next to File Toolbox's own, which predate the multi-tool app and keep their names
+/// so existing settings files load unchanged.
+/// </summary>
 public sealed class AppSettings
 {
-    // ---- Activation & wheel ----------------------------------------------------------------
+    // ---- Amir Lap (app-wide) -------------------------------------------------------------------
+    /// <summary>What a left click on the tray icon opens: "home" (the Amir Lap window) or "palette".</summary>
+    public string TrayClick { get; set; } = "home";
+
+    /// <summary>Per-tool switch and shortcuts, keyed by tool id (for example "fileToolbox").</summary>
+    public Dictionary<string, ToolSettings> Tools { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>The stored state of a tool, or the defaults when it was never changed.</summary>
+    public ToolSettings Tool(string id) => Tools.TryGetValue(id, out var t) ? t : new ToolSettings();
+
+    /// <summary>The tool's entry for editing (created on first use).</summary>
+    public ToolSettings EditTool(string id)
+    {
+        if (!Tools.TryGetValue(id, out var t)) Tools[id] = t = new ToolSettings();
+        return t;
+    }
+
+    // ---- File Toolbox: activation & wheel ----------------------------------------------------
     /// <summary>Key tapped during a file drag to open the wheel: Shift, Ctrl, Alt or CapsLock.</summary>
     public string ActivationKey { get; set; } = "Shift";
 
@@ -55,6 +76,24 @@ public sealed class AppSettings
     };
 
     public AppSettings Clone() => JsonSerializer.Deserialize<AppSettings>(JsonSerializer.Serialize(this, SettingsStore.JsonOptions), SettingsStore.JsonOptions)!;
+}
+
+/// <summary>A tool's on/off switch and its keyboard shortcuts.</summary>
+public sealed class ToolSettings
+{
+    public bool Enabled { get; set; } = true;
+
+    /// <summary>
+    /// Shortcut text per command id ("Ctrl+Alt+F"). A missing entry means the command's default;
+    /// an empty string means the user switched that shortcut off.
+    /// </summary>
+    public Dictionary<string, string> Shortcuts { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>The chord in effect for a command, or null when it has none.</summary>
+    public KeyChord? ShortcutFor(string commandId, string? defaultShortcut) =>
+        (Shortcuts.TryGetValue(commandId, out var text) ? text : defaultShortcut) is { Length: > 0 } s && KeyChord.TryParse(s, out var chord)
+            ? chord
+            : null;
 }
 
 /// <summary>Loads and saves <see cref="AppSettings"/> atomically.</summary>
