@@ -170,7 +170,7 @@ Product direction lives in [`sead_idea.md`](../sead_idea.md) (the seed). This fi
 - **Launching.** A plain launch, or a second launch, opens the Amir Lap window; `--background` stays quiet; `--palette` opens File Toolbox's window directly (scripts, the QA harness). Files from Explorer still open the palette, or File Toolbox's page if the tool is off. A left click on the tray icon opens this window by default; General can switch it to the palette.
 - **Window design.** Built in code like the other windows, on the same glass theme and shared styles. New shared styles: `Toolbox.Switch`, `Toolbox.NavItem`, `Toolbox.KeyCap`. Settings rows are grouped in cards, as in Windows Settings and PowerToys. The old Settings window is gone: its File Toolbox sections live on the tool's page, and Theme, Reduce motion, Start with Windows and Privacy live on General.
 - **Light-theme fix (found while building this).** The global `TextBlock` style forced `Brush.Text` on text inside accent buttons, selected segments and selected tabs, so white-on-accent text turned black in light mode. Those three templates now reset the implicit style for their content.
-- **Not done in phase 1:** a new brand icon (the File Toolbox glyph is kept for now), the quick-launcher flyout and the shortcut cheat sheet (both on the roadmap), and Longshot itself (phase 2).
+- **Not done in phase 1:** a new brand icon (added on 8 Nov 2026, see [App icon](#app-icon-8-nov-2026)), the quick-launcher flyout and the shortcut cheat sheet (both on the roadmap), and Longshot itself (phase 2).
 
 ## Longshot (phase 2 — 8 Nov 2026)
 
@@ -197,3 +197,12 @@ Product direction lives in [`sead_idea.md`](../sead_idea.md) (the seed). This fi
   - **Result window:** shows a downscaled copy (at most 16,000 px tall), because WPF can render very tall bitmaps blank. **Open in File Toolbox** hands the file to the palette for any File Toolbox action, such as OCR, PDF or compression.
   - **Limits:** at most 40,000 px tall; Undo keeps the last 10 steps.
 - **Shortcuts (defaults):** Ctrl+Alt+S starts a capture. Ctrl+Alt+Shift+S starts one after a delay (3, 5 or 10 s), with a countdown that is itself left out of captures. "Capture the same area again" has no default.
+
+## App icon (8 Nov 2026)
+
+- **"Tool tiles", chosen by the owner** from three options (tool tiles, an AL monogram, a lab flask). It shows four tiles on an accent square:
+  - top-left holds a small wheel (File Toolbox);
+  - bottom-right holds a down arrow (Longshot);
+  - the two pale tiles stand for tools still to come, so the icon doesn't need to change when a tool is added.
+- **Drawn in code** (`Shell/AppIcon.cs`) on a 64-unit grid, like the old wheel glyph. `tools/IconGen` writes `app.ico` from it at 16–256 px. Below 24 px the wheel and arrow are left out, because they would only blur the tiles at that size.
+- **Colour:** the program icon uses the fixed Windows blue (`BrandAccent`); the tray icon and the window's sidebar follow the user's Windows accent colour, as before.

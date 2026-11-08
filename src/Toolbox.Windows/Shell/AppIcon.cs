@@ -6,7 +6,9 @@ using System.Windows.Media.Imaging;
 namespace Toolbox.Windows.Shell;
 
 /// <summary>
-/// Draws the app glyph (a small segmented wheel) at runtime, so no binary icon assets are needed.
+/// Draws the Amir Lap glyph at runtime, so no binary icon assets are needed: four tiles on an
+/// accent square, one tool per tile. Top-left holds a small wheel (File Toolbox), bottom-right a down
+/// arrow (Longshot); the two pale tiles stand for tools still to come. Drawn on a 64-unit grid.
 /// </summary>
 internal static class AppIcon
 {
@@ -15,26 +17,26 @@ internal static class AppIcon
         var visual = new DrawingVisual();
         using (var dc = visual.RenderOpen())
         {
-            double c = size / 2.0, ro = size * 0.47, ri = size * 0.2;
-            var tile = new SolidColorBrush(Color.FromRgb(0xF4, 0xF4, 0xF6));
-            var rim = new SolidColorBrush(Color.FromRgb(0x2A, 0x2B, 0x30));
-            dc.DrawEllipse(rim, null, new Point(c, c), ro + size * 0.03, ro + size * 0.03);
-            int n = 6;
-            for (int i = 0; i < n; i++)
+            dc.PushTransform(new ScaleTransform(size / 64.0, size / 64.0));
+            var accentBrush = new SolidColorBrush(accent);
+            dc.DrawRoundedRectangle(accentBrush, null, new Rect(2, 2, 60, 60), 14, 14);
+
+            var solid = Brushes.White;
+            var pale = new SolidColorBrush(Color.FromArgb(0x80, 0xFF, 0xFF, 0xFF));
+            dc.DrawRoundedRectangle(solid, null, new Rect(11, 11, 19, 19), 4.5, 4.5);
+            dc.DrawRoundedRectangle(pale, null, new Rect(34, 11, 19, 19), 4.5, 4.5);
+            dc.DrawRoundedRectangle(pale, null, new Rect(11, 34, 19, 19), 4.5, 4.5);
+            dc.DrawRoundedRectangle(solid, null, new Rect(34, 34, 19, 19), 4.5, 4.5);
+
+            // The details only read from 24 px up; below that they would just blur the tiles.
+            if (size >= 24)
             {
-                double sweep = 2 * Math.PI / n, gap = 0.12;
-                double a0 = i * sweep - sweep / 2 + gap, a1 = i * sweep + sweep / 2 - gap;
-                var g = new StreamGeometry();
-                using (var ctx = g.Open())
-                {
-                    ctx.BeginFigure(P(c, a0, ro), true, true);
-                    ctx.ArcTo(P(c, a1, ro), new Size(ro, ro), 0, false, SweepDirection.Clockwise, true, false);
-                    ctx.LineTo(P(c, a1, ri + size * 0.05), true, false);
-                    ctx.ArcTo(P(c, a0, ri + size * 0.05), new Size(ri, ri), 0, false, SweepDirection.Counterclockwise, true, false);
-                }
-                dc.DrawGeometry(i == 1 ? new SolidColorBrush(accent) : tile, null, g);
+                var ring = new Pen(accentBrush, 3) { DashStyle = new DashStyle([6.5 / 3, 1.4 / 3], 0), DashCap = PenLineCap.Flat };
+                dc.DrawEllipse(null, ring, new Point(20.5, 20.5), 5, 5);
+                var arrow = new Pen(accentBrush, 3) { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round, LineJoin = PenLineJoin.Round };
+                dc.DrawGeometry(null, arrow, Geometry.Parse("M43.5,38.5 L43.5,48 M39.5,44 L43.5,48 L47.5,44"));
             }
-            dc.DrawEllipse(new SolidColorBrush(accent), null, new Point(c, c), ri * 0.75, ri * 0.75);
+            dc.Pop();
         }
         var bitmap = new RenderTargetBitmap(size, size, 96, 96, PixelFormats.Pbgra32);
         bitmap.Render(visual);
@@ -125,6 +127,4 @@ internal static class AppIcon
         }
         return ms.ToArray();
     }
-
-    private static Point P(double c, double angle, double r) => new(c + Math.Sin(angle) * r, c - Math.Cos(angle) * r);
 }

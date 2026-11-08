@@ -30,7 +30,7 @@ Ideas kept for later, owner to choose:
 
 - **Longshot:** pick a window or scroll area by hovering; open the result in Studio (crop, redact, annotate); copy text from the capture with the existing OCR, or save as a searchable PDF; split into A4 PDF pages or image parts for messengers; delay timer and "capture the same area again"; sideways scrolling; ordinary region/window/full-screen captures and "pin to screen"; capture history.
 - **File Toolbox:** PDF compression (unblocks "PDF under 2 MB"); batch rename with a live preview using the naming tokens. PDF merge/split/reorder and watched folders are already listed under future candidates below.
-- **Amir Lap:** a quick-launcher flyout on tray click; a shortcut cheat sheet while holding Ctrl+Alt; export and import of settings; a brand icon of its own. New tools should build on what is unique here (Arabic/English OCR, the file wheel, scroll capture) rather than repeat PowerToys.
+- **Amir Lap:** a quick-launcher flyout on tray click; a shortcut cheat sheet while holding Ctrl+Alt; export and import of settings. (Its own icon, "Tool tiles", was added on 8 Nov 2026.) New tools should build on what is unique here (Arabic/English OCR, the file wheel, scroll capture) rather than repeat PowerToys.
 
 ## Planned improvements preserved from the seed (§8)
 
