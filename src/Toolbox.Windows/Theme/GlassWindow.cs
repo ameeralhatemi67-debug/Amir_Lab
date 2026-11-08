@@ -29,6 +29,8 @@ internal class GlassWindow : Window
     private const int DWMSBT_NONE = 1;
     private const int DWMSBT_TRANSIENTWINDOW = 3;
     private const int DWMWCP_ROUND = 2;
+    private const int GWL_STYLE = -16;
+    private const long WS_SYSMENU = 0x00080000;
 
     [StructLayout(LayoutKind.Sequential)]
     private struct MARGINS { public int Left, Right, Top, Bottom; }
@@ -40,6 +42,8 @@ internal class GlassWindow : Window
     private static extern int DwmExtendFrameIntoClientArea(IntPtr hwnd, ref MARGINS margins);
 
     private bool _resizable;
+    private bool _nativeFrame;
+    private double _captionHeight;
 
     public GlassWindow()
     {
@@ -52,6 +56,8 @@ internal class GlassWindow : Window
         if (Application.Current?.Resources["Font.UI"] is FontFamily font) FontFamily = font;
         ApplyChrome();
         SetResourceReference(ForegroundProperty, "Brush.Text");
+        ThemeResources.Changed += RefreshFrame;
+        Closed += (_, _) => ThemeResources.Changed -= RefreshFrame;
         PreviewKeyDown += (_, e) =>
         {
             if (e.Key == Key.Escape && CloseOnEscape)
@@ -80,6 +86,24 @@ internal class GlassWindow : Window
 
     /// <summary>True when the acrylic backdrop is active.</summary>
     public bool HasBackdrop { get; private set; }
+
+    /// <summary>Turns the backdrop off while "Reduce transparency" is on (the Amir Lap window).</summary>
+    protected bool FollowsGlassSetting { get; set; }
+
+    /// <summary>
+    /// A real resizable window frame without the system title bar: Windows' own minimize, maximize and
+    /// snap behaviour and animations, with the app drawing its title bar in the top
+    /// <paramref name="captionHeight"/> DIPs (dragging there moves the window).
+    /// </summary>
+    protected void UseNativeFrame(double captionHeight)
+    {
+        _nativeFrame = true;
+        _captionHeight = captionHeight;
+        _resizable = true;
+        WindowStyle = WindowStyle.SingleBorderWindow;
+        ResizeMode = ResizeMode.CanResize;
+        ApplyChrome();
+    }
 
     protected bool CloseOnEscape { get; set; } = true;
 
@@ -141,14 +165,35 @@ internal class GlassWindow : Window
             Native.SetWindowLongPtr(hwnd, Native.GWL_EXSTYLE, new IntPtr(style));
         }
 
-        var source = HwndSource.FromHwnd(hwnd);
-        int darkValue = ThemeResources.Current.IsDark ? 1 : 0;
-        DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, ref darkValue, sizeof(int));
+        if (_nativeFrame)
+        {
+            // Keep the caption style (real maximize, snap and animations) but drop the system menu,
+            // so Windows draws no caption buttons of its own over the app's title bar.
+            var style = (long)Native.GetWindowLongPtr(hwnd, GWL_STYLE);
+            Native.SetWindowLongPtr(hwnd, GWL_STYLE, new IntPtr(style & ~WS_SYSMENU));
+        }
+
         int corner = DWMWCP_ROUND;
         DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, ref corner, sizeof(int));
+        ApplyFrame(hwnd);
+    }
 
+    /// <summary>Re-applies the light/dark frame and the backdrop after the theme changed.</summary>
+    public void RefreshFrame()
+    {
+        var hwnd = new WindowInteropHelper(this).Handle;
+        if (hwnd != IntPtr.Zero) ApplyFrame(hwnd);
+    }
+
+    private void ApplyFrame(IntPtr hwnd)
+    {
+        int darkValue = ThemeResources.Current.IsDark ? 1 : 0;
+        DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, ref darkValue, sizeof(int));
+
+        var source = HwndSource.FromHwnd(hwnd);
         bool supportsBackdrop = Environment.OSVersion.Version.Build >= 22621;
-        if (BackdropKind == Backdrop.Acrylic && supportsBackdrop && source?.CompositionTarget is not null)
+        bool wantBackdrop = BackdropKind == Backdrop.Acrylic && !(FollowsGlassSetting && ThemeResources.Lap.GlassOff);
+        if (wantBackdrop && supportsBackdrop && source?.CompositionTarget is not null)
         {
             source.CompositionTarget.BackgroundColor = Colors.Transparent;
             var margins = new MARGINS { Left = -1, Right = -1, Top = -1, Bottom = -1 };
@@ -156,16 +201,33 @@ internal class GlassWindow : Window
             int backdrop = DWMSBT_TRANSIENTWINDOW;
             HasBackdrop = DwmSetWindowAttribute(hwnd, DWMWA_SYSTEMBACKDROP_TYPE, ref backdrop, sizeof(int)) == 0;
         }
-        else if (supportsBackdrop)
+        else
         {
-            int none = DWMSBT_NONE;
-            DwmSetWindowAttribute(hwnd, DWMWA_SYSTEMBACKDROP_TYPE, ref none, sizeof(int));
+            if (supportsBackdrop)
+            {
+                int none = DWMSBT_NONE;
+                DwmSetWindowAttribute(hwnd, DWMWA_SYSTEMBACKDROP_TYPE, ref none, sizeof(int));
+            }
+            HasBackdrop = false;
         }
-        if (!HasBackdrop) SetResourceReference(BackgroundProperty, "Brush.SurfaceSolid");
+        if (HasBackdrop) Background = Brushes.Transparent;
+        else SetResourceReference(BackgroundProperty, "Brush.SurfaceSolid");
     }
 
     private void ApplyChrome()
     {
+        if (_nativeFrame)
+        {
+            WindowChrome.SetWindowChrome(this, new WindowChrome
+            {
+                CaptionHeight = _captionHeight,
+                GlassFrameThickness = new Thickness(-1),
+                ResizeBorderThickness = SystemParameters.WindowResizeBorderThickness,
+                CornerRadius = new CornerRadius(0),
+                UseAeroCaptionButtons = false,
+            });
+            return;
+        }
         WindowChrome.SetWindowChrome(this, new WindowChrome
         {
             CaptionHeight = 0,

@@ -55,6 +55,7 @@ internal sealed class ToolRegistry : IDisposable
 
         _hotkeys.UnregisterAll();
         _states.Clear();
+        _suggestions.Clear();
         var used = new Dictionary<KeyChord, string>();
         foreach (var tool in Tools)
         {
@@ -113,7 +114,7 @@ internal sealed class ToolRegistry : IDisposable
         foreach (var t in Tools)
             foreach (var c in t.Commands)
                 if (!(t == tool && c == command) && ChordOf(t, c) == chord)
-                    return t == tool ? c.Title : $"{t.Name}: {c.Title}";
+                    return t == tool ? c.Label : $"{t.Name}: {c.Label}";
         return null;
     }
 
@@ -122,6 +123,31 @@ internal sealed class ToolRegistry : IDisposable
     /// working shortcut. Call while shortcuts are paused for a correct answer about our own ones.
     /// </summary>
     public bool IsAvailable(KeyChord chord) => _hotkeys.IsFree(chord);
+
+    private readonly Dictionary<(string Tool, string Command, string Current), KeyChord?> _suggestions = [];
+
+    /// <summary>
+    /// A free shortcut to offer when the command's own one is taken by another program: the
+    /// command's listed alternatives first, then the same modifiers with another letter.
+    /// </summary>
+    public KeyChord? SuggestFree(ToolModule tool, ToolCommand command)
+    {
+        var current = ChordOf(tool, command);
+        var cacheKey = (tool.Id, command.Id, current?.ToString() ?? "");
+        if (_suggestions.TryGetValue(cacheKey, out var cached)) return cached;
+
+        var modifiers = current is { IsUsableGlobally: true } c ? c.Modifiers : ChordModifiers.Ctrl | ChordModifiers.Alt;
+        var candidates = command.Alternatives.Select(a => KeyChord.TryParse(a, out var k) ? k : (KeyChord?)null).OfType<KeyChord>()
+            .Concat("LKJHGPOUIYMNBVQWXZTRE".Select(letter => new KeyChord(modifiers, letter.ToString())));
+        KeyChord? found = null;
+        foreach (var chord in candidates)
+        {
+            if (chord == current || !chord.IsUsableGlobally || UsedByAnotherCommand(chord, tool, command) is not null) continue;
+            if (_hotkeys.IsFree(chord)) { found = chord; break; }
+        }
+        _suggestions[cacheKey] = found;
+        return found;
+    }
 
     /// <summary>Releases every shortcut while the user records a new one, so pressing it reaches the recorder.</summary>
     public IDisposable PauseShortcuts()

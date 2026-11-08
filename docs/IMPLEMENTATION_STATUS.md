@@ -3,7 +3,7 @@
 States: **Working** (implemented and verified, with the evidence named), **Partial** (some of it works; the gaps are listed), **Blocked** (cannot proceed without something), **Future** (not started).
 A capability listed in the seed or the capability map is not working until this table says so.
 
-_Last updated: 8 Nov 2026 — Amir Lap phases 1 and 2 complete: the multi-tool shell, File Toolbox as tool #1 and Longshot as tool #2. M8 measurements: [PERFORMANCE.md](PERFORMANCE.md) (not yet re-measured for the shell)._
+_Last updated: 8 Nov 2026 — Amir Lap phases 1 and 2 complete: the multi-tool shell, File Toolbox as tool #1 and Longshot as tool #2; the window redesigned in glass (light/dark, English/Arabic). M8 measurements: [PERFORMANCE.md](PERFORMANCE.md) (not yet re-measured for the shell)._
 
 ## Amir Lap shell (phase 1)
 
@@ -12,6 +12,12 @@ _Last updated: 8 Nov 2026 — Amir Lap phases 1 and 2 complete: the multi-tool s
 | Tool switch: off stops the tool (keyboard hook, wheel window, shortcut released) | **Working** | `ToolRegistryTests`; the published app starts and quits with File Toolbox on (`publish.ps1`, `test-install.ps1`). Not yet clicked through by the owner. |
 | Configurable global shortcuts, conflict checks, pause while recording | **Working** | `KeyChordTests`, `ToolRegistryTests`, `VirtualKeyTests` (every allowed key). The recorder control itself has not been driven by a real key press yet. |
 | Amir Lap window: Dashboard, File Toolbox page, General | **Working** | `HomeWindowTests` builds every page in light and dark off-screen; snapshots reviewed. Not yet used live by the owner. |
+| Glass redesign: light/dark, accent, glass, English/Arabic, motion, About page, new logo | **Working** | `HomeWindowTests` renders all five pages in light and dark, English and Arabic, and rebuilds in place; snapshots reviewed. Settings round-trip in `AmirLapSettingsTests`. Not yet used live by the owner. |
+| Window frame: minimize, maximize, resize from every edge, snap layouts | **Partial** | `HomeWindowTests` shows the real window off-screen and checks Windows' hit-test answers (maximize button, drag area, resize edges, no system buttons). Maximizing and the snap flyout are not exercised automatically (that would put a window on the screen); needs a live try. |
+| File Toolbox wheel in glass (frosted backdrop, texture, edge light, blue backlight, motion) | **Working** | `HomeWindowTests` renders it idle, with a lit tile, on the tools ring and with Share lit, in light and dark over a busy background, and checks hit testing of tiles, hub and Share bubble. The real screen capture behind it and the motion are not exercised automatically; needs a live try. |
+| Share from the wheel (Quick Share, else Windows' share sheet) | **Partial** | Built; the bubble's hit testing is tested. Starting Quick Share and the share sheet have not been tried live (they open other apps' windows). |
+| File Toolbox without a keyboard shortcut | **Working** | The Dashboard and tray show "Shift · tap" instead; `HomeWindowTests` builds the pages. |
+| Free-shortcut offer when another program holds one | **Working** | `ToolRegistryTests`: a second registry holds the chord; the alternative is offered and works. |
 | Tray menu with a sub-menu per tool | **Partial** | Built and compiled; not yet exercised by a real click. |
 | First-start copy of File Toolbox data | **Working** | `LegacyDataMigrationTests` (copy once, never overwrite, old folder untouched, logs not carried over). |
 | Installer replaces File Toolbox; integrations carried over | **Working** | `test-install.ps1`: 26 checks, including old folder, shortcut and uninstall entry removed and the startup entry moved to `AmirLap`. |
@@ -23,9 +29,23 @@ _Last updated: 8 Nov 2026 — Amir Lap phases 1 and 2 complete: the multi-tool s
 | Stitching engine (shift finding, sticky bars, soft edges, look-alike rows) | **Working** | `ScrollStitcherTests` (16): pixel-identical results with sticky bars, hand scrolling, noise, Undo, soft footer edges, blank stretches, look-alike rows in and out of range. The same algorithm passed live tests in Chrome as the Python prototype. |
 | Capture loop: Extend, Auto, Follow, Undo, end detection, smaller-step retry | **Working** | `CaptureSessionTests` (7) on a simulated page and scroller: pixel-identical to the page. |
 | Reading the screen (GDI) | **Working** | `ScreenCaptureTests`: reads a real screen rectangle (read-only). |
-| Area chooser, panel, frame, result window, Longshot page, tray entries | **Working** | `HomeWindowTests` builds every window off-screen in light and dark; snapshots reviewed. Not yet used live. |
+| Glass panel with live whole-image preview, movable/resizable frame, result window, Longshot page, tray entries | **Working** | `HomeWindowTests` builds every window off-screen in light and dark; snapshots reviewed. `ScrollStitcherTests` checks the growing overview (appends, trims). The panel's frosted backdrop, dragging the frame and staying on top need a live try. |
+| Growing the frame's bottom edge keeps the capture; Refresh scrolls back to the start; step size kept across smaller steps and restarts | **Working** | `ScrollStitcherTests` (grow down), `CaptureSessionTests` (Refresh returns to the start and keeps the step size), `HomeWindowTests` (the whole flow, through the real panel and controller, on a simulated page). Needs a live try on real pages. |
+| Starting on the window in front (no area-drawing step) | **Partial** | Built; needs a live try (which window is picked, browsers' tab bars kept once as a sticky header). |
 | Real wheel scrolling of other apps and live use end to end | **Partial** | Not exercised by the automated tests (they never move the real pointer). Needs a live try by the owner. |
 | Monitors with different scalings | **Partial** | One window spans the virtual screen; untested on mixed-DPI setups. |
+
+## Pulse (tool #3)
+
+| Capability | State | Evidence / notes |
+|---|---|---|
+| Codex limits from its session logs | **Working** | `PulseTests` on lines in Codex's real format and on a folder of logs; the format was checked against this PC's Codex logs. |
+| Claude limits and session states from the status line and hooks; shared state file | **Working** | `PulseTests` (status line, hook sequence, most urgent session, 12 hooks at once). The real `AmirLap.exe --pulse-status / --pulse-event` was run from Git Bash and PowerShell: about 0.2 s, and it finds the session's window. |
+| Connecting and removing Claude Code (keeps other settings and an earlier status line, backup, broken file left alone) | **Working** | `PulseTests` on temporary settings files. Not run on the owner's real Claude Code settings: connecting is the owner's choice on the Pulse page. |
+| Alerts (limit warnings once per window, used up, long task finished) | **Working** | `PulseTests`. |
+| Dock on all four edges with every tile and state, cards, preview, Pulse page and Dashboard card, light/dark, English/Arabic | **Working** | `HomeWindowTests` builds them off-screen; snapshots reviewed. |
+| The dock window keeps its size, lets clicks through its empty side, answers tile clicks, opens its menu above everything | **Working** | `HomeWindowTests` shows the real window far off-screen (0.5.0 grew without end; fixed in 0.5.1). |
+| Moving (dots) and resizing (inner edge), slide away, fade, full-screen hiding, frosted glass, file drops | **Partial** | Built. They act on the real screen, pointer and other apps, so they need a live try by the owner. |
 
 ## Desktop interaction
 

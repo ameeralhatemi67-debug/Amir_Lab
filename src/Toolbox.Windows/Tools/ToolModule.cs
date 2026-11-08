@@ -5,8 +5,18 @@ using Toolbox.Windows.Shell;
 
 namespace Toolbox.Windows.Tools;
 
-/// <summary>Something a tool can do from a keyboard shortcut.</summary>
-internal sealed record ToolCommand(string Id, string Title, string? DefaultShortcut, Action Run);
+/// <summary>Something a tool can do from a keyboard shortcut. <see cref="Title"/> is English (logs); <see cref="Label"/> is shown.</summary>
+internal sealed record ToolCommand(string Id, string Title, string? DefaultShortcut, Action Run)
+{
+    /// <summary>The Arabic title, when there is one.</summary>
+    public string? TitleAr { get; init; }
+
+    /// <summary>Shortcuts to offer first when the current one is taken by another program.</summary>
+    public IReadOnlyList<string> Alternatives { get; init; } = [];
+
+    /// <summary>The title in the app's language.</summary>
+    public string Label => Theme.Lang.T(Title, TitleAr ?? Title);
+}
 
 /// <summary>A way to reach a tool that is not a registered shortcut (for the Dashboard's list).</summary>
 internal sealed record ToolGesture(string Title, IReadOnlyList<string> Keys);

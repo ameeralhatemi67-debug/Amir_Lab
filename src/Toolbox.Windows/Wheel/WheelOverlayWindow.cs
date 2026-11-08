@@ -4,6 +4,7 @@ using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 using Toolbox.Windows.Interop;
+using Toolbox.Windows.Theme;
 
 namespace Toolbox.Windows.Wheel;
 
@@ -22,6 +23,7 @@ internal sealed class WheelOverlayWindow : Window
 
     private readonly Grid _root;
     private readonly ScaleTransform _scale = new(1, 1);
+    private readonly RotateTransform _turn = new(0);
     private IntPtr _hwnd;
     private int _animationGeneration;
 
@@ -49,7 +51,7 @@ internal sealed class WheelOverlayWindow : Window
             VerticalAlignment = VerticalAlignment.Center,
             Opacity = 0,
             RenderTransformOrigin = new Point(0.5, 0.5),
-            RenderTransform = _scale,
+            RenderTransform = new TransformGroup { Children = { _scale, _turn } },
             IsHitTestVisible = true,
         };
         _root = new Grid { Background = PassBrush, AllowDrop = true };
@@ -93,28 +95,37 @@ internal sealed class WheelOverlayWindow : Window
         IsOnScreen = false;
     }
 
+    /// <summary>Opens with a springy grow and a small turn, then the tiles fly out from the hub.</summary>
     public void AnimateIn(bool reducedMotion)
     {
         _animationGeneration++;
-        var duration = TimeSpan.FromMilliseconds(reducedMotion ? 90 : 170);
-        Menu.BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(reducedMotion ? 90 : 120)));
+        Menu.BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(reducedMotion ? 90 : 140)));
         if (reducedMotion)
         {
             _scale.BeginAnimation(ScaleTransform.ScaleXProperty, null);
             _scale.BeginAnimation(ScaleTransform.ScaleYProperty, null);
+            _turn.BeginAnimation(RotateTransform.AngleProperty, null);
             _scale.ScaleX = _scale.ScaleY = 1;
+            _turn.Angle = 0;
             return;
         }
-        var ease = new BackEase { Amplitude = 0.28, EasingMode = EasingMode.EaseOut };
-        _scale.BeginAnimation(ScaleTransform.ScaleXProperty, new DoubleAnimation(0.62, 1, duration) { EasingFunction = ease });
-        _scale.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(0.62, 1, duration) { EasingFunction = ease });
+        var duration = TimeSpan.FromMilliseconds(360);
+        _scale.BeginAnimation(ScaleTransform.ScaleXProperty, new DoubleAnimation(0.62, 1, duration) { EasingFunction = Motion.Spring });
+        _scale.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(0.62, 1, duration) { EasingFunction = Motion.Spring });
+        _turn.BeginAnimation(RotateTransform.AngleProperty, new DoubleAnimation(-10, 0, TimeSpan.FromMilliseconds(420)) { EasingFunction = Motion.Spring });
+        Menu.PlayIntro();
     }
 
-    public void AnimateOut(bool reducedMotion, Action completed)
+    /// <summary>
+    /// Closes: a quick shrink and fade, or after a drop (<paramref name="confirmed"/>) a short pause
+    /// for the ripple, then a slight swell as it fades, as if it took the file.
+    /// </summary>
+    public void AnimateOut(bool reducedMotion, Action completed, bool confirmed = false)
     {
         int generation = ++_animationGeneration;
-        var duration = TimeSpan.FromMilliseconds(reducedMotion ? 60 : 110);
-        var fade = new DoubleAnimation(0, duration);
+        var delay = TimeSpan.FromMilliseconds(confirmed && !reducedMotion ? 170 : 0);
+        var duration = TimeSpan.FromMilliseconds(reducedMotion ? 60 : confirmed ? 220 : 120);
+        var fade = new DoubleAnimation(0, duration) { BeginTime = delay, EasingFunction = Motion.Out };
         fade.Completed += (_, _) =>
         {
             if (generation == _animationGeneration) completed();
@@ -122,8 +133,9 @@ internal sealed class WheelOverlayWindow : Window
         Menu.BeginAnimation(OpacityProperty, fade);
         if (!reducedMotion)
         {
-            _scale.BeginAnimation(ScaleTransform.ScaleXProperty, new DoubleAnimation(0.9, duration));
-            _scale.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(0.9, duration));
+            double to = confirmed ? 1.05 : 0.9;
+            _scale.BeginAnimation(ScaleTransform.ScaleXProperty, new DoubleAnimation(to, duration) { BeginTime = delay, EasingFunction = Motion.Out });
+            _scale.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(to, duration) { BeginTime = delay, EasingFunction = Motion.Out });
         }
     }
 
@@ -136,7 +148,9 @@ internal sealed class WheelOverlayWindow : Window
         Menu.Opacity = 0;
         _scale.BeginAnimation(ScaleTransform.ScaleXProperty, null);
         _scale.BeginAnimation(ScaleTransform.ScaleYProperty, null);
+        _turn.BeginAnimation(RotateTransform.AngleProperty, null);
         _scale.ScaleX = _scale.ScaleY = 0.62;
+        _turn.Angle = -10;
     }
 
     /// <summary>Physical-pixel screen position of a point in wheel coordinates.</summary>

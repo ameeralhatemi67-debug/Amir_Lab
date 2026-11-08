@@ -62,6 +62,21 @@ internal sealed class TrayIcon : IDisposable
 
     public void ShowBalloon(string title, string text) => _icon.ShowBalloonTip(4000, title, text, ToolTipIcon.Info);
 
+    /// <summary>New icon (after the accent colour changed).</summary>
+    public void SetIcon(System.Drawing.Icon icon)
+    {
+        var old = _icon.Icon;
+        _icon.Icon = icon;
+        old?.Dispose();
+    }
+
+    /// <summary>Tooltip text and menu direction for the app's language (Arabic is right-to-left).</summary>
+    public void SetLanguage(string tooltip, bool rightToLeft)
+    {
+        _icon.Text = tooltip;
+        _menu.RightToLeft = rightToLeft ? RightToLeft.Yes : RightToLeft.No;
+    }
+
     public void Dispose()
     {
         _icon.Visible = false;

@@ -77,6 +77,11 @@ internal sealed class ActionDispatcher
                 else RunRecipe(recipe, paths, anchor);
                 return;
             }
+            if (actionId == ShareService.ActionId)
+            {
+                ShareService.Share(paths, anchor, (title, message) => Notice(title, message, anchor, warning: true));
+                return;
+            }
             if (!CapabilityMap.TryGet(actionId, out var action))
             {
                 Notice("Unknown action", actionId, anchor, warning: true);

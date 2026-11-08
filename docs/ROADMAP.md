@@ -23,8 +23,10 @@ File Toolbox becomes tool #1 of **Amir Lap**, a multi-tool tray app ([DECISIONS.
 | Phase | Scope | State |
 |---|---|---|
 | 1. Shell | Rename and data migration; tool modules with on/off switches; configurable global shortcuts with conflict checks; sidebar window (Dashboard, tool pages, General); tray menu per tool; installer that replaces File Toolbox. | Done |
-| 2. Longshot | Rewrite the Python prototype (`tools/LongshotPrototype`) in C#: stitching engine with its pixel-exact tests, box selection, Extend / Auto / Follow / Undo panel kept out of captures, result window, Longshot page and shortcuts (default Ctrl+Alt+S, and Ctrl+Alt+Shift+S after a delay). | Done (live use by the owner pending) |
-| 3. Finish | Live check of both tools, installer and uninstaller for both tools, idle-cost measurement, 100/125/150% scaling and mixed-DPI monitors, docs. | Next |
+| 2. Longshot | Rewrite the Python prototype (`tools/LongshotPrototype`) in C#: stitching engine with its pixel-exact tests, box selection, Extend / Auto / Follow / Undo panel kept out of captures, result window, Longshot page and shortcuts. Later on 8 Nov: starts on the window in front with a movable, resizable frame, glass panel with a live preview, default Alt+Shift+S. | Done (live use by the owner pending) |
+| Design | Glass redesign of the window (white/black, Liquid Glass style, light/dark switch, English/Arabic, motion), real minimize/maximize/resize with snap layouts, new "Glass tiles" logo. Features unchanged. | Done (live check by the owner pending) |
+| Pulse | Tool #3: the edge dock with Claude and Codex usage and shortcuts, designed on the canvas, then built (local only; the Claude Code connection only on request). | Done (live use by the owner pending) |
+| 3. Finish | Live check of both tools, installer and uninstaller for both tools, idle-cost measurement, 100/125/150% scaling and mixed-DPI monitors, docs. Next design passes: File Toolbox's own windows and the Longshot panel in the glass style, File Toolbox fixes from the owner's video. | Next |
 
 Ideas kept for later, owner to choose:
 

@@ -264,4 +264,61 @@ public class ScrollStitcherTests
         Assert.Equal(24, removed.Length);
         Assert.Equal(Enumerable.Range(0, 16).Select(i => (byte)i), img.ToArray());
     }
+
+    [Fact]
+    public void The_overview_shrinks_the_whole_image_and_follows_appends_and_trims()
+    {
+        static byte[] Rows(int width, int rows, byte value)
+        {
+            var px = new byte[width * rows * 4];
+            for (int i = 0; i < px.Length; i += 4) { px[i] = px[i + 1] = px[i + 2] = value; px[i + 3] = 255; }
+            return px;
+        }
+        var top = Rows(8, 4, 0).Concat(Rows(8, 4, 200)).ToArray();
+        var img = new LongImage(new Frame(8, 8, top));
+
+        static byte[] Shown(LongImage image, int width, out int height)
+        {
+            var buffer = image.Overview(width, out height);
+            return buffer[..(width * height * 4)];
+        }
+        static byte Gray(byte[] px, int width, int row) => px[row * width * 4];
+
+        var ov = Shown(img, 4, out int h);
+        Assert.Equal(4, h); // half size both ways
+        Assert.Equal(new byte[] { 0, 0, 200, 200 }, Enumerable.Range(0, 4).Select(r => Gray(ov, 4, r)).ToArray());
+
+        img.Append(Rows(8, 4, 100));
+        ov = Shown(img, 4, out h);
+        Assert.Equal(6, h);
+        Assert.Equal(new byte[] { 0, 0, 200, 200, 100, 100 }, Enumerable.Range(0, 6).Select(r => Gray(ov, 4, r)).ToArray());
+
+        img.Trim(6); // into the white rows: the overview's lower rows are worked out again
+        img.Append(Rows(8, 2, 50));
+        ov = Shown(img, 4, out h);
+        Assert.Equal(4, h);
+        Assert.Equal(new byte[] { 0, 0, 200, 50 }, Enumerable.Range(0, 4).Select(r => Gray(ov, 4, r)).ToArray());
+    }
+
+    [Fact]
+    public void Growing_the_area_downward_adds_the_new_rows_without_starting_again()
+    {
+        static byte[] Rows(int width, int rows, byte value)
+        {
+            var px = new byte[width * rows * 4];
+            for (int i = 0; i < px.Length; i += 4) { px[i] = px[i + 1] = px[i + 2] = value; px[i + 3] = 255; }
+            return px;
+        }
+        var first = new Frame(4, 3, Rows(4, 3, 10));
+        var stitcher = new ScrollStitcher(first);
+        var taller = new Frame(4, 5, [.. Rows(4, 3, 10), .. Rows(4, 2, 90)]);
+
+        Assert.Equal(2, stitcher.GrowDown(taller));
+        Assert.Equal(5, stitcher.Image.Height);
+        Assert.Equal(taller.Pixels, stitcher.Image.ToArray());
+        Assert.Same(taller, stitcher.Last);
+        Assert.Equal(1, stitcher.Steps);
+        Assert.False(stitcher.CanUndo); // the frames are a different size from here on
+        Assert.Throws<ArgumentException>(() => stitcher.GrowDown(first));
+    }
 }

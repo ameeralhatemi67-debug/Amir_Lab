@@ -158,6 +158,14 @@ internal static partial class CaptureWindows
     public static bool ExcludeFromCapture(IntPtr hwnd) =>
         Environment.GetEnvironmentVariable("AMIRLAP_SHOW_IN_CAPTURES") == "1" || SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE);
 
+    /// <summary>Never takes focus when clicked, and has no taskbar button (the panel and frame).</summary>
+    public static void MakeNoActivate(IntPtr hwnd)
+    {
+        var style = (long)Interop.Native.GetWindowLongPtr(hwnd, Interop.Native.GWL_EXSTYLE);
+        style |= Interop.Native.WS_EX_TOOLWINDOW | Interop.Native.WS_EX_NOACTIVATE;
+        Interop.Native.SetWindowLongPtr(hwnd, Interop.Native.GWL_EXSTYLE, new IntPtr(style));
+    }
+
     /// <summary>Mouse clicks and the wheel pass through to the window below.</summary>
     public static void MakeClickThrough(IntPtr hwnd)
     {
@@ -171,4 +179,51 @@ internal static partial class CaptureWindows
         Interop.Native.SetWindowPos(hwnd, Interop.Native.HWND_TOPMOST, r.X, r.Y, r.Width, r.Height, Interop.Native.SWP_NOACTIVATE | Interop.Native.SWP_SHOWWINDOW);
 
     public static bool EscapePressed() => (Interop.Native.GetAsyncKeyState(Interop.Native.VK_ESCAPE) & 0x8000) != 0;
+}
+
+/// <summary>
+/// Where a capture starts: the window in front (its visible frame, kept inside its screen's work
+/// area), or that screen's work area when the desktop, the taskbar or Amir Lap itself is in front.
+/// </summary>
+internal static partial class StartArea
+{
+    private const int DWMWA_EXTENDED_FRAME_BOUNDS = 9;
+
+    [LibraryImport("user32.dll")]
+    private static partial IntPtr GetForegroundWindow();
+
+    [LibraryImport("user32.dll")]
+    private static partial uint GetWindowThreadProcessId(IntPtr hwnd, out uint processId);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool IsIconic(IntPtr hwnd);
+
+    [LibraryImport("user32.dll", EntryPoint = "GetClassNameW", StringMarshalling = StringMarshalling.Utf16)]
+    private static partial int GetClassName(IntPtr hwnd, [Out] char[] name, int max);
+
+    [LibraryImport("dwmapi.dll")]
+    private static partial int DwmGetWindowAttribute(IntPtr hwnd, int attribute, out Interop.Native.RECT value, int size);
+
+    private static readonly HashSet<string> ShellClasses = new(StringComparer.Ordinal) { "Progman", "WorkerW", "Shell_TrayWnd", "Shell_SecondaryTrayWnd" };
+
+    public static PixelRect Find()
+    {
+        var cursor = Interop.ScreenGeometry.CursorPosition();
+        var fallback = PixelRect.From(Interop.ScreenGeometry.MonitorAt(cursor).WorkArea);
+        var hwnd = GetForegroundWindow();
+        if (hwnd == IntPtr.Zero || IsIconic(hwnd)) return fallback;
+        GetWindowThreadProcessId(hwnd, out uint pid);
+        if (pid == (uint)Environment.ProcessId) return fallback;
+        var name = new char[64];
+        int length = GetClassName(hwnd, name, name.Length);
+        if (length > 0 && ShellClasses.Contains(new string(name, 0, length))) return fallback;
+        if (DwmGetWindowAttribute(hwnd, DWMWA_EXTENDED_FRAME_BOUNDS, out var bounds, Marshal.SizeOf<Interop.Native.RECT>()) != 0) return fallback;
+
+        var window = PixelRect.From(bounds);
+        var work = PixelRect.From(Interop.ScreenGeometry.MonitorAt(new Interop.Native.POINT { X = window.CenterX, Y = window.CenterY }).WorkArea);
+        int l = Math.Max(window.X, work.X), t = Math.Max(window.Y, work.Y);
+        int r = Math.Min(window.Right, work.Right), b = Math.Min(window.Bottom, work.Bottom);
+        return r - l >= 160 && b - t >= 120 ? new PixelRect(l, t, r - l, b - t) : fallback;
+    }
 }

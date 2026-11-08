@@ -117,6 +117,27 @@ public class ToolSettingsTests
             Assert.Equal(77, s.JpegQuality);
             Assert.Equal("home", s.TrayClick);
             Assert.True(s.Tool("fileToolbox").Enabled);
+            Assert.Equal(("en", "blue", "system", false), (s.Language, s.Accent, s.ReduceTransparency, s.TrayHintShown));
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void Look_and_language_survive_saving()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"amirlap-look-{Guid.NewGuid():N}.json");
+        try
+        {
+            var store = new SettingsStore(path);
+            var next = store.Current.Clone();
+            (next.Language, next.Accent, next.ReduceTransparency, next.Theme, next.TrayHintShown) = ("ar", "teal", "on", "dark", true);
+            store.Save(next);
+
+            var s = new SettingsStore(path).Current;
+            Assert.Equal(("ar", "teal", "on", "dark", true), (s.Language, s.Accent, s.ReduceTransparency, s.Theme, s.TrayHintShown));
         }
         finally
         {

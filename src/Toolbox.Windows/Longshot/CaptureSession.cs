@@ -7,7 +7,7 @@ using Toolbox.Processing.Capture;
 
 namespace Toolbox.Windows.Longshot;
 
-internal enum SessionCommand { Extend, Auto, Follow, Undo, Finish, Quit }
+internal enum SessionCommand { Extend, Auto, Follow, Undo, Finish, Grow, Quit }
 
 internal enum StepOutcome { Added, End, Failed, Full }
 
@@ -18,11 +18,18 @@ internal sealed record SessionReady : SessionEvent;
 /// <summary>The command now running, or null when the session is idle again.</summary>
 internal sealed record SessionBusy(SessionCommand? Command) : SessionEvent;
 
-internal sealed record SessionUpdate(int Width, int Height, int Parts, BitmapSource Preview, string? Message, bool CanUndo) : SessionEvent;
+/// <summary>
+/// The capture so far: <see cref="Preview"/> is the whole long image shrunk to the preview width;
+/// <see cref="AddedRows"/> how many rows the last step added at the bottom (0 after Undo).
+/// </summary>
+internal sealed record SessionUpdate(int Width, int Height, int Parts, BitmapSource Preview, string? Message, bool CanUndo, int AddedRows = 0) : SessionEvent;
 
 internal sealed record SessionFinished(int Width, int Height, byte[] Pixels) : SessionEvent;
 
 internal sealed record SessionFailed(string Message) : SessionEvent;
+
+/// <summary>The area grew, but the page had moved and the new part couldn't be lined up: start again from the new area.</summary>
+internal sealed record SessionRestartNeeded(string Message) : SessionEvent;
 
 /// <summary>How long to wait for scrolling to settle. Tests use shorter times with a simulated screen.</summary>
 internal sealed record SessionTiming(TimeSpan SettleMin, TimeSpan Poll, TimeSpan SettleTimeout, TimeSpan FollowPoll)
@@ -40,14 +47,19 @@ internal sealed class CaptureSession : IDisposable
 {
     public const int MaxHeight = 40000;
 
-    private readonly Func<IScreenSource> _openScreen;
-    private readonly IScroller _scroller;
+    private Func<IScreenSource> _openScreen;
+    private IScroller _scroller;
     private readonly Action<SessionEvent> _post;
     private readonly SessionTiming _timing;
     private readonly double _stepFraction;
-    private readonly int _previewWidth, _previewHeight;
+    private readonly int _previewWidth;
+    private int _shownHeight;
     private readonly BlockingCollection<SessionCommand> _commands = new();
-    private readonly List<double> _pxPerUnit = [];
+    private readonly List<double> _pxPerDelta = []; // pixels the page moves per 120 of wheel delta (one notch)
+    private double _estimate = double.NaN;          // their median, readable from the UI thread
+    private long _scrolledDelta;                     // net wheel delta sent down since the start (for Refresh)
+    private volatile bool _followUsed;
+    private (Func<IScreenSource> Open, IScroller Scroller)? _grow;
     private Thread? _thread;
     private volatile bool _stop;
     private bool _finished;
@@ -64,10 +76,36 @@ internal sealed class CaptureSession : IDisposable
         _post = post;
         _timing = timing ?? SessionTiming.Real;
         _stepFraction = stepFraction;
-        _previewWidth = previewWidth;
-        _previewHeight = previewHeight;
-        _unit = areaHeight >= 300 ? 120 : 60; // wheel delta per step we send; halved if one step jumps too far
+        _previewWidth = previewWidth; // the preview shows the whole image at this width (previewHeight is no longer needed)
+        // Wheel delta per step: until it is known how far one notch moves, a short area starts with half
+        // a notch, so the first step can't jump past what the area shows. Halved if a step jumps too far.
+        _unit = areaHeight >= 900 ? 120 : 60;
         _region = areaHeight;
+    }
+
+    /// <summary>How far the page moves per notch, learnt earlier in this capture (carried over after Refresh or a new area).</summary>
+    public double? KnownPxPerDelta { get; init; }
+
+    /// <summary>Wheel delta to scroll back up before the first part (Refresh: back to where the capture started).</summary>
+    public long RewindDelta { get; init; }
+
+    /// <summary>Scroll back up to the very top before the first part (after Follow, when the user did the scrolling).</summary>
+    public bool RewindToTop { get; init; }
+
+    /// <summary>Net wheel delta this session has scrolled down so far.</summary>
+    public long ScrolledDelta => Interlocked.Read(ref _scrolledDelta);
+
+    /// <summary>True once Follow ran (the user scrolled, so the distance isn't known).</summary>
+    public bool FollowUsed => _followUsed;
+
+    /// <summary>Pixels per notch, once known.</summary>
+    public double? PxPerDelta => Volatile.Read(ref _estimate) is var e && double.IsNaN(e) ? null : e;
+
+    /// <summary>The frame's bottom edge moved down: take in the rows below without starting again.</summary>
+    public void GrowDown(Func<IScreenSource> openScreen, IScroller scroller)
+    {
+        _grow = (openScreen, scroller);
+        Enqueue(SessionCommand.Grow);
     }
 
     /// <summary>Checked while Auto or Follow runs; Esc stops them even though the panel never has focus.</summary>
@@ -110,10 +148,17 @@ internal sealed class CaptureSession : IDisposable
         try
         {
             _screen = _openScreen();
+            if (KnownPxPerDelta is { } known && known > 0)
+            {
+                _pxPerDelta.Add(known);
+                Volatile.Write(ref _estimate, known);
+                _unit = 120;
+            }
+            bool rewound = Rewind();
             var first = GrabSettled(TimeSpan.FromMilliseconds(50));
             _stitcher = new ScrollStitcher(first);
             _post(new SessionReady());
-            Update("Press Extend to add what's below.");
+            Update(rewound ? "Back at the start. Press Extend to add what's below." : "Press Extend to add what's below.");
             foreach (var command in _commands.GetConsumingEnumerable())
             {
                 if (command == SessionCommand.Quit) break;
@@ -127,6 +172,7 @@ internal sealed class CaptureSession : IDisposable
                         case SessionCommand.Follow: RunFollow(); break;
                         case SessionCommand.Undo: RunUndo(); break;
                         case SessionCommand.Finish: Finish(); break;
+                        case SessionCommand.Grow: RunGrow(); break;
                     }
                 }
                 catch (Exception ex)
@@ -190,11 +236,49 @@ internal sealed class CaptureSession : IDisposable
         return count == 0 || sum / (double)count < 0.25;
     }
 
-    private int Notches()
+    /// <summary>Pixels one step of the current wheel delta moves, once known (it holds when the delta is halved).</summary>
+    private double? PerNotch => _pxPerDelta.Count == 0 ? null : Median(_pxPerDelta) * _unit / 120.0;
+
+    private int Notches() => PerNotch is { } per ? Math.Clamp((int)(_stepFraction * _region / Math.Max(per, 1)), 1, 15) : 1;
+
+    private void Scroll(int notches, bool down, int unit)
     {
-        if (_pxPerUnit.Count == 0) return 1;
-        double per = Median(_pxPerUnit);
-        return Math.Clamp((int)(_stepFraction * _region / Math.Max(per, 1)), 1, 15);
+        _scroller.Scroll(notches, down, unit);
+        Interlocked.Add(ref _scrolledDelta, (down ? 1L : -1L) * notches * unit);
+    }
+
+    /// <summary>
+    /// Refresh: scrolls back to where the capture started (or to the top after Follow), so the new
+    /// first part is the start of the page again. Returns whether it scrolled.
+    /// </summary>
+    private bool Rewind()
+    {
+        if (RewindToTop)
+        {
+            var prev = GrabSettled();
+            for (int i = 0; i < 80; i++)
+            {
+                _scroller.Scroll(10, down: false, 120);
+                var cur = GrabSettled();
+                if (Same(cur, prev)) break;
+                prev = cur;
+            }
+            return true;
+        }
+        long left = RewindDelta;
+        if (left <= 0) return false;
+        while (left > 0)
+        {
+            int notches = (int)Math.Min(15, left / 120);
+            if (notches == 0)
+            {
+                _scroller.Scroll(1, down: false, (int)left);
+                break;
+            }
+            _scroller.Scroll(notches, down: false, 120);
+            left -= notches * 120L;
+        }
+        return true;
     }
 
     private static double Median(List<double> values)
@@ -207,38 +291,45 @@ internal sealed class CaptureSession : IDisposable
     {
         if (St.Image.Height >= MaxHeight) return (StepOutcome.Full, $"Stopped at {MaxHeight:N0} px, the size limit.");
         int n = Notches();
-        double? per = _pxPerUnit.Count > 0 ? Median(_pxPerUnit) : null;
         ShiftMatch? match = null;
-        for (int attempt = 0; attempt < 4; attempt++)
+        for (int attempt = 0; attempt < 5; attempt++)
         {
-            double? expected = per * n;
-            _scroller.Scroll(n, down: true, _unit);
+            double? expected = PerNotch * n;
+            Scroll(n, down: true, _unit);
             var frame = GrabSettled();
             var (m, gray) = St.Match(frame, expected);
             match = m;
-            Log.Info($"Longshot extend n={n} unit={_unit} -> moved={m.Moved} ok={m.Ok} d={m.Distance} score={m.Score:F2} worst={m.Worst:F1} top={m.Top} bottom={m.Bottom} est={m.Estimated} {m.Reason}");
-            if (!m.Moved) return (StepOutcome.End, "Reached the bottom. Nothing moved. Press Done to save.");
+            Log.Info($"Longshot extend n={n} unit={_unit} expected={expected:F0} -> moved={m.Moved} ok={m.Ok} d={m.Distance} score={m.Score:F2} worst={m.Worst:F1} top={m.Top} bottom={m.Bottom} est={m.Estimated} {m.Reason}");
+            if (!m.Moved)
+            {
+                Interlocked.Add(ref _scrolledDelta, -(long)n * _unit); // nothing moved: as if it never scrolled
+                // Some apps only scroll on whole notches: try a whole one before calling it the end.
+                if (_unit < 120 && _pxPerDelta.Count == 0)
+                {
+                    _unit = 120;
+                    n = 1;
+                    continue;
+                }
+                return (StepOutcome.End, "Reached the bottom. Nothing moved. Press Done to save.");
+            }
             if (m.Ok)
             {
                 St.Apply(frame, gray, m, new StepInfo(n, _unit));
                 _region = m.Region;
                 if (!m.Estimated && (expected is null || m.Distance >= 0.8 * expected))
                 {
-                    _pxPerUnit.Add(m.Distance / (double)n);
-                    if (_pxPerUnit.Count > 8) _pxPerUnit.RemoveAt(0);
+                    _pxPerDelta.Add(m.Distance / (n * _unit / 120.0));
+                    if (_pxPerDelta.Count > 8) _pxPerDelta.RemoveAt(0);
+                    Volatile.Write(ref _estimate, Median(_pxPerDelta));
                 }
                 return (StepOutcome.Added, $"Added {m.Distance} px" + (m.Estimated ? " (blank area, estimated)." : "."));
             }
-            // It moved, but too far to line up: go back and take a smaller step.
-            _scroller.Scroll(n, down: false, _unit);
+            // It moved, but too far to line up: go back and take a smaller step. What one notch moves
+            // still holds, so the smaller step keeps an expected distance to check against.
+            Scroll(n, down: false, _unit);
             GrabSettled();
             if (n > 1) n = Math.Max(1, n / 2);
-            else if (_unit > 30)
-            {
-                _unit /= 2;
-                _pxPerUnit.Clear();
-                per = null;
-            }
+            else if (_unit > 30) _unit /= 2;
             else break;
         }
         return (StepOutcome.Failed, (match?.Reason is { Length: > 0 } r ? r : "Couldn't line it up") + ". Try a taller area.");
@@ -259,6 +350,7 @@ internal sealed class CaptureSession : IDisposable
 
     private void RunFollow()
     {
+        _followUsed = true;
         Update("Scroll the page yourself. Longshot adds as you go. Stop or Esc when done.");
         var prev = Grab();
         Frame? reported = null; // the still frame we last complained about
@@ -307,7 +399,7 @@ internal sealed class CaptureSession : IDisposable
         }
         if (step.Info.Notches > 0)
         {
-            _scroller.Scroll(step.Info.Notches, down: false, step.Info.WheelUnit);
+            Scroll(step.Info.Notches, down: false, step.Info.WheelUnit);
             GrabSettled();
             Update("Removed the last part.");
         }
@@ -315,6 +407,45 @@ internal sealed class CaptureSession : IDisposable
         {
             Update("Removed the last part. Scroll back up a little to continue.");
         }
+    }
+
+    /// <summary>
+    /// The frame's bottom edge moved down (same top, left and width): reads the taller area and adds
+    /// the rows below the old bottom. If the page moved meanwhile, the top part is lined up first;
+    /// if that fails, the controller starts again from the new area.
+    /// </summary>
+    private void RunGrow()
+    {
+        if (_grow is not { } grow) return;
+        _grow = null;
+        var old = _screen;
+        _screen = grow.Open();
+        _openScreen = grow.Open;
+        _scroller = grow.Scroller;
+        old?.Dispose();
+
+        var taller = GrabSettled();
+        var last = St.Last;
+        if (taller.Width != last.Width || taller.Height <= last.Height)
+        {
+            _post(new SessionRestartNeeded("Starting again from the new area…"));
+            return;
+        }
+        var top = new Frame(taller.Width, last.Height, taller.Pixels[..(last.Height * taller.Stride)]);
+        var (m, gray) = St.Match(top);
+        if (m.Moved)
+        {
+            if (!m.Ok)
+            {
+                _post(new SessionRestartNeeded("The page moved, so it starts again from the new area…"));
+                return;
+            }
+            St.Apply(top, gray, m);
+        }
+        int added = St.GrowDown(taller);
+        _region += added;
+        Log.Info($"Longshot area grew by {added} px; added below.");
+        Update($"Added {added} px below.");
     }
 
     private void Finish()
@@ -326,10 +457,13 @@ internal sealed class CaptureSession : IDisposable
     private void Update(string? message)
     {
         var image = St.Image;
-        int rows = Math.Min(image.Height, (int)Math.Ceiling(_previewHeight * (double)image.Width / _previewWidth) + 1);
-        var tail = image.Tail(rows);
-        var preview = Downscale(tail, image.Width, tail.Length / (image.Width * 4), _previewWidth);
-        _post(new SessionUpdate(image.Width, image.Height, St.Steps + 1, preview, message, St.CanUndo));
+        int width = Math.Max(1, Math.Min(_previewWidth, image.Width));
+        var pixels = image.Overview(width, out int height);
+        var preview = BitmapSource.Create(width, height, 96, 96, PixelFormats.Bgr32, null, pixels, width * 4);
+        preview.Freeze();
+        int added = Math.Max(0, image.Height - _shownHeight);
+        _shownHeight = image.Height;
+        _post(new SessionUpdate(image.Width, image.Height, St.Steps + 1, preview, message, St.CanUndo, _shownHeight == added ? 0 : added));
     }
 
     /// <summary>Area-averaged downscale of BGRA rows to a frozen bitmap <paramref name="width"/> px wide.</summary>

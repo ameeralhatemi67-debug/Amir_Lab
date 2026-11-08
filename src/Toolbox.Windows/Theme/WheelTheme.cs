@@ -24,7 +24,19 @@ internal sealed record Palette(
     Color SurfaceRaised,
     Color Border)
 {
-    public static Palette Current(string themeSetting = "system")
+    /// <summary>Amir Lap's own blue, the default accent and the colour of the program icon.</summary>
+    public static readonly Color BrandBlue = Color.FromRgb(0x25, 0x63, 0xEB);
+
+    /// <summary>The accent for a setting: "blue", "windows" (the Windows accent colour), "teal" or "violet".</summary>
+    public static Color AccentFor(string? setting) => setting switch
+    {
+        "windows" => SystemAccent() ?? BrandBlue,
+        "teal" => Color.FromRgb(0x0F, 0x76, 0x6E),
+        "violet" => Color.FromRgb(0x6D, 0x28, 0xD9),
+        _ => BrandBlue,
+    };
+
+    public static Palette Current(string themeSetting = "system", string accentSetting = "blue")
     {
         bool dark = themeSetting switch
         {
@@ -32,7 +44,7 @@ internal sealed record Palette(
             "light" => false,
             _ => SystemPrefersDark(),
         };
-        var accent = SystemAccent() ?? Color.FromRgb(0x2F, 0x6F, 0xED);
+        var accent = AccentFor(accentSetting);
         var accentText = Luminance(accent) > 0.6 ? Color.FromRgb(0x10, 0x10, 0x12) : Colors.White;
 
         return dark
@@ -41,7 +53,7 @@ internal sealed record Palette(
                 DiscRim: Color.FromArgb(0x38, 0xFF, 0xFF, 0xFF),
                 Tile: Color.FromRgb(0x3A, 0x3C, 0x43),
                 TileDisabled: Color.FromRgb(0x26, 0x27, 0x2B),
-                Text: Color.FromRgb(0xF4, 0xF4, 0xF7),
+                Text: Color.FromRgb(0xF4, 0xF5, 0xF7),
                 TextMuted: Color.FromArgb(0x70, 0xF4, 0xF4, 0xF7),
                 Hub: Color.FromRgb(0x1F, 0x20, 0x24),
                 Pill: Color.FromRgb(0x4A, 0x4C, 0x54),
@@ -54,8 +66,8 @@ internal sealed record Palette(
                 DiscRim: Color.FromArgb(0xC0, 0xFF, 0xFF, 0xFF),
                 Tile: Colors.White,
                 TileDisabled: Color.FromRgb(0xEC, 0xED, 0xF0),
-                Text: Color.FromRgb(0x1C, 0x1C, 0x1F),
-                TextMuted: Color.FromArgb(0x66, 0x1C, 0x1C, 0x1F),
+                Text: Color.FromRgb(0x0B, 0x0C, 0x10),
+                TextMuted: Color.FromArgb(0x66, 0x0B, 0x0C, 0x10),
                 Hub: Color.FromRgb(0xCF, 0xD2, 0xD9),
                 Pill: Colors.White,
                 PillText: Color.FromRgb(0x1C, 0x1C, 0x1F),
@@ -98,7 +110,7 @@ internal sealed record Palette(
     private static double Luminance(Color c) => (0.2126 * c.R + 0.7152 * c.G + 0.0722 * c.B) / 255.0;
 }
 
-internal static class Motion
+internal static partial class Motion
 {
     /// <summary>True when the user (or Windows) asked for reduced animation.</summary>
     public static bool Reduced(string setting) => setting switch

@@ -162,6 +162,35 @@ public class ToolRegistryTests : IDisposable
     });
 
     [Fact]
+    public void A_shortcut_held_elsewhere_gets_a_free_alternative_offered() => Sta(() =>
+    {
+        var otherPath = _path + ".other.json";
+        try
+        {
+            // Another "program" (a second registry with its own window) holds ChordA first.
+            var holder = new FakeTool("holder", new ToolCommand("hold", "Hold", ChordA, () => { }));
+            using var other = new ToolRegistry(new SettingsStore(otherPath), [holder]);
+            other.Apply(force: true);
+
+            var cmd = new ToolCommand("go", "Go", ChordA, () => { }) { Alternatives = [ChordB] };
+            var tool = new FakeTool("fake", cmd);
+            using var registry = new ToolRegistry(new SettingsStore(_path), [tool]);
+            registry.Apply(force: true);
+
+            Assert.Equal(HotkeyState.Taken, registry.StateOf(tool, cmd));
+            Assert.Equal(ChordB, registry.SuggestFree(tool, cmd)?.ToString());
+
+            registry.SetShortcut(tool, cmd, ChordB);
+            registry.Apply();
+            Assert.Equal(HotkeyState.Active, registry.StateOf(tool, cmd));
+        }
+        finally
+        {
+            System.IO.File.Delete(otherPath);
+        }
+    });
+
+    [Fact]
     public void Pausing_releases_every_shortcut_until_resumed() => Sta(() =>
     {
         var store = new SettingsStore(_path);

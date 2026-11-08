@@ -37,13 +37,22 @@ public partial class App : Application
     private Recipes.RecipesWindow? _recipesWindow;
     private readonly List<string> _pendingPaths = [];
     private DispatcherTimer? _pathBatch;
+    private string _look = "";
+    private bool _quitting;
 
     internal static ToolboxHost Host => ((App)Current)._host;
     internal static ActionDispatcher Actions => ((App)Current)._dispatcher;
 
+    /// <summary>
+    /// Set by the tests, which create the App only for its shared styles: they pump messages, which
+    /// would otherwise run start-up (the single-instance check, the tray, the tools) inside the test.
+    /// </summary>
+    internal const string StylesOnlyVariable = "AMIRLAP_STYLES_ONLY";
+
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+        if (Environment.GetEnvironmentVariable(StylesOnlyVariable) == "1") return;
 
         _instanceMutex = new Mutex(initiallyOwned: true, InstanceMutexName, out bool isFirst);
         if (!isFirst)
@@ -85,9 +94,10 @@ public partial class App : Application
         AppDomain.CurrentDomain.UnhandledException += (_, args) => Log.Error("Unhandled exception", args.ExceptionObject as Exception);
 
         _host = new ToolboxHost(diagnostics);
-        var settings = _host.Settings.Current;
-        ThemeResources.Apply(this, settings.Theme);
-        SystemEvents.UserPreferenceChanged += (_, _) => Dispatcher.BeginInvoke(() => ThemeResources.Apply(this, _host.Settings.Current.Theme));
+        ApplyLook();
+        // Windows' own light/dark, accent, transparency and animation settings can change any time.
+        SystemEvents.UserPreferenceChanged += (_, _) => Dispatcher.BeginInvoke(() => ApplyLook());
+        _host.Settings.Changed += _ => ToolboxHost.OnUi(() => ApplyLook());
         WicHeicDecoder.Register();
         Ocr.WindowsOcrEngine.Register();
 
@@ -96,12 +106,13 @@ public partial class App : Application
         _dispatcher.Editors = new EditorLauncher(_dispatcher);
 
         _fileToolbox = new FileToolboxTool(_host, _dispatcher, diagnostics);
-        _tools = new ToolRegistry(_host.Settings, [_fileToolbox, new LongshotTool(_host)]);
+        _tools = new ToolRegistry(_host.Settings, [_fileToolbox, new LongshotTool(_host), new PulseTool(_host)]);
 
         _channel = new InstanceChannel();
         _channel.Start(args => Dispatcher.BeginInvoke(() => HandleArguments(args, fromAnotherInstance: true)));
 
         _tray = new TrayIcon(AppIcon.CreateTrayIcon(ThemeResources.Current.Accent), "Amir Lap");
+        _tray.SetLanguage(Lang.T("Amir Lap", "أمير لاب"), Lang.IsArabic);
         _tray.PrimaryAction = OnTrayClick;
         _tools.Changed += RefreshTrayMenu;
         _host.Runner.JobFinished += _ => Dispatcher.BeginInvoke(RefreshTrayMenu);
@@ -137,7 +148,7 @@ public partial class App : Application
         // "AmirLap.exe --quit" (used by the uninstaller and scripts): finish like the tray's Quit.
         if (args.Contains("--quit", StringComparer.OrdinalIgnoreCase))
         {
-            Shutdown();
+            Quit();
             return;
         }
         var paths = args.Where(a => !a.StartsWith("--", StringComparison.Ordinal) && (File.Exists(a) || Directory.Exists(a))).ToList();
@@ -178,9 +189,14 @@ public partial class App : Application
         if (app._home is null)
         {
             app._home = new AmirLapWindow(app._host, app._tools);
-            app._home.Closed += (_, _) => app._home = null;
+            app._home.Closed += (_, _) =>
+            {
+                app._home = null;
+                app.ShowTrayHintOnce();
+            };
             app._home.Show();
         }
+        app._home.RestoreFromMinimized();
         if (page is not null) app._home.ShowPage(page);
         Foreground.Activate(app._home);
     }
@@ -193,8 +209,23 @@ public partial class App : Application
 
     internal static bool IsToolEnabled(string id)
     {
-        var app = (App)Current;
-        return app._tools?.Find(id) is { } tool && app._tools.IsEnabled(tool);
+        var app = Current as App;
+        return app?._tools?.Find(id) is { } tool && app._tools.IsEnabled(tool);
+    }
+
+    /// <summary>A tool by id (null when the app is not running, as in tests).</summary>
+    internal static ToolModule? FindTool(string id) => (Current as App)?._tools?.Find(id);
+
+    internal static void SetToolEnabled(string id, bool enabled)
+    {
+        if (Current is App { _tools: { } tools } && tools.Find(id) is { } tool) tools.SetEnabled(tool, enabled);
+    }
+
+    /// <summary>A command's shortcut as text ("Alt+Shift+S"), or null.</summary>
+    internal static string? ShortcutText(string toolId, string commandId)
+    {
+        if (Current is not App { _tools: { } tools } || tools.Find(toolId) is not { } tool) return null;
+        return tool.Commands.FirstOrDefault(c => c.Id == commandId) is { } command ? tools.ChordOf(tool, command)?.ToString() : null;
     }
 
     /// <summary>File Toolbox's palette (its main window). When the tool is off, shows its page instead.</summary>
@@ -256,29 +287,74 @@ public partial class App : Application
     private void RefreshTrayMenu()
     {
         if (_tray is null || _tools is null) return;
-        var items = new List<TrayItem> { new("Open Amir Lap", () => ShowHome(), Bold: true), TrayItem.Separator };
+        var items = new List<TrayItem> { new(Lang.T("Open Amir Lap", "فتح أمير لاب"), () => ShowHome(), Bold: true), TrayItem.Separator };
         foreach (var tool in _tools.Tools)
         {
             if (_tools.IsEnabled(tool))
             {
                 var children = tool.TrayItems(c => _tools.ActiveShortcut(tool, c)).ToList();
                 children.Add(TrayItem.Separator);
-                children.Add(new TrayItem($"{tool.Name} settings", () => ShowHome(tool.Id)));
-                children.Add(new TrayItem($"Turn off {tool.Name}", () => _tools.SetEnabled(tool, false)));
+                children.Add(new TrayItem(Lang.T($"{tool.Name} settings", $"إعدادات {tool.Name}"), () => ShowHome(tool.Id)));
+                children.Add(new TrayItem(Lang.T($"Turn off {tool.Name}", $"إيقاف {tool.Name}"), () => _tools.SetEnabled(tool, false)));
                 items.Add(new TrayItem(tool.Name, Children: children));
             }
             else
             {
-                items.Add(new TrayItem($"{tool.Name} (off)", Children:
+                items.Add(new TrayItem(Lang.T($"{tool.Name} (off)", $"{tool.Name} (متوقفة)"), Children:
                 [
-                    new TrayItem($"Turn on {tool.Name}", () => _tools.SetEnabled(tool, true)),
-                    new TrayItem($"{tool.Name} settings", () => ShowHome(tool.Id)),
+                    new TrayItem(Lang.T($"Turn on {tool.Name}", $"تشغيل {tool.Name}"), () => _tools.SetEnabled(tool, true)),
+                    new TrayItem(Lang.T($"{tool.Name} settings", $"إعدادات {tool.Name}"), () => ShowHome(tool.Id)),
                 ]));
             }
         }
         items.Add(TrayItem.Separator);
-        items.Add(new TrayItem("Quit Amir Lap", () => Shutdown()));
+        items.Add(new TrayItem(Lang.T("Quit Amir Lap", "إنهاء أمير لاب"), Quit));
         _tray.SetMenu(items);
+    }
+
+    private void Quit()
+    {
+        _quitting = true;
+        Shutdown();
+    }
+
+    /// <summary>
+    /// Applies theme, accent, glass, language and motion (from Amir Lap's settings and Windows'
+    /// own). Cheap when nothing that shows changed; otherwise every window updates and the Amir
+    /// Lap window is rebuilt in place, keeping its page.
+    /// </summary>
+    private void ApplyLook()
+    {
+        var s = _host.Settings.Current;
+        var palette = Palette.Current(s.Theme, s.Accent);
+        bool reduced = Motion.Reduced(s.ReduceMotion);
+        var look = $"{palette.IsDark}|{palette.Accent}|{ThemeResources.IsGlassOff(s.ReduceTransparency)}|{s.Language}|{reduced}";
+        if (look == _look) return;
+        bool first = _look.Length == 0;
+        bool themeFlipped = !first && palette.IsDark != ThemeResources.Current.IsDark;
+        _look = look;
+
+        Lang.Set(s.Language);
+        Motion.IsReduced = reduced;
+        ThemeResources.Apply(this, s.Theme, s.Accent, s.ReduceTransparency);
+        if (first) return;
+
+        _tray?.SetIcon(AppIcon.CreateTrayIcon(ThemeResources.Current.Accent));
+        _tray?.SetLanguage(Lang.T("Amir Lap", "أمير لاب"), Lang.IsArabic);
+        RefreshTrayMenu();
+        // After the click that changed it has finished, so the control is not replaced mid-event.
+        if (_home is { } home) Dispatcher.BeginInvoke(() => home.Rebuild(spinThemeIcon: themeFlipped), DispatcherPriority.Background);
+    }
+
+    /// <summary>The first time the window is closed: say the app (and its shortcuts) keep running in the tray.</summary>
+    private void ShowTrayHintOnce()
+    {
+        if (_quitting || Dispatcher.HasShutdownStarted || _tray is null || _host.Settings.Current.TrayHintShown) return;
+        _tray.ShowBalloon(Lang.T("Amir Lap is still running", "ما زال أمير لاب يعمل"),
+            Lang.T("Your tools and shortcuts keep working. Open it again from the notification area.", "أدواتك واختصاراتك تعمل كالمعتاد. افتحه مجددًا من منطقة الإشعارات."));
+        var next = _host.Settings.Current.Clone();
+        next.TrayHintShown = true;
+        _host.Settings.Save(next);
     }
 
     internal static double WheelDiameter(string size) => size.ToUpperInvariant() switch

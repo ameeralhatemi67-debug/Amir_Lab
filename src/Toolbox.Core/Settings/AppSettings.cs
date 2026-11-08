@@ -15,6 +15,18 @@ public sealed class AppSettings
     /// <summary>What a left click on the tray icon opens: "home" (the Amir Lap window) or "palette".</summary>
     public string TrayClick { get; set; } = "home";
 
+    /// <summary>"en" or "ar": the language of the Amir Lap window and tray menu. Arabic lays out right-to-left.</summary>
+    public string Language { get; set; } = "en";
+
+    /// <summary>Accent colour: "blue" (default), "windows" (the Windows accent), "teal" or "violet".</summary>
+    public string Accent { get; set; } = "blue";
+
+    /// <summary>system, on or off. On: solid panels instead of glass (system follows Windows' transparency effects).</summary>
+    public string ReduceTransparency { get; set; } = "system";
+
+    /// <summary>Set once the "still running in the notification area" notice has been shown.</summary>
+    public bool TrayHintShown { get; set; }
+
     /// <summary>Per-tool switch and shortcuts, keyed by tool id (for example "fileToolbox").</summary>
     public Dictionary<string, ToolSettings> Tools { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
@@ -30,6 +42,9 @@ public sealed class AppSettings
 
     /// <summary>Longshot (scrolling screenshots).</summary>
     public LongshotSettings Longshot { get; set; } = new();
+
+    /// <summary>Pulse (the edge dock with Claude and Codex usage and shortcuts).</summary>
+    public Pulse.PulseSettings Pulse { get; set; } = new();
 
     // ---- File Toolbox: activation & wheel ----------------------------------------------------
     /// <summary>Key tapped during a file drag to open the wheel: Shift, Ctrl, Alt or CapsLock.</summary>

@@ -4,8 +4,9 @@ Your desktop tools in one place: a local Windows tray app, in the spirit of Powe
 
 | Tool | What it does | Shortcut |
 |---|---|---|
-| **File Toolbox** | Convert, edit and prepare files right from where you work: drag a file in Explorer or on the desktop, tap **Shift**, and drop it onto a wheel of actions. | Ctrl+Alt+F opens its window |
-| **Longshot** | Scrolling screenshots: draw a box, then press Extend (or Auto, or Follow while you scroll) to grow it downward. Saved to Pictures\Screenshots and copied to the clipboard. | Ctrl+Alt+S, or Ctrl+Alt+Shift+S after a delay |
+| **File Toolbox** | Convert, edit, prepare and share files right from where you work: drag a file in Explorer or on the desktop, tap **Shift**, and drop it onto a wheel of actions. | Shift while dragging a file |
+| **Longshot** | Scrolling screenshots: it starts on the window in front; press Extend (or Auto, or Follow while you scroll) to grow it downward. Saved to Pictures\Screenshots and copied to the clipboard. | Alt+Shift+S, or Ctrl+Alt+Shift+S after a delay |
+| **Pulse** | A glass dock on any edge of the screen: how much of Claude's and Codex's limits is used (read from their own files on this PC), what Claude Code is doing, and your shortcuts (ChatGPT, Longshot, File Toolbox, a focus timer, a note, a colour picker, a folder, an app or website, PC status). | None by default ("Show or hide the dock" can be given one) |
 
 - Product direction: [`sead_idea.md`](sead_idea.md) (the seed: owner decisions and feature reference). The move to Amir Lap is recorded in [`docs/DECISIONS.md`](docs/DECISIONS.md).
 - What works today: [`docs/IMPLEMENTATION_STATUS.md`](docs/IMPLEMENTATION_STATUS.md)
@@ -33,9 +34,11 @@ powershell -ExecutionPolicy Bypass -File artifacts/publish/install.ps1 -Launch
   - Uninstalling also removes the Explorer menu, Send to and start-with-Windows entries if you switched them on.
   - It keeps your settings and history unless you pass `-RemoveUserData`.
   - It never touches the files the tools produced.
-- **Using it:** the app sits in the notification area. Click its icon for the Amir Lap window (Dashboard, a page per tool, General); right-click for each tool's menu.
+- **Using it:** the app sits in the notification area. Click its icon for the Amir Lap window (Dashboard, a page per tool, General, About); right-click for each tool's menu. The window is white or black with glass panels, can be resized, maximized and snapped like any Windows window, and switches between English and Arabic (right-to-left) from its title bar or General.
+- **File Toolbox:** drag a file and tap Shift: a frosted-glass wheel opens around the pointer (tap Shift again for the next ring). Drop the file on an option, or on **Share** (bottom-right) to send it with Quick Share, or Windows' share sheet if Quick Share isn't installed. File Toolbox has no keyboard shortcut; its window opens from the tray or the Dashboard.
   - **File Toolbox:** drag a file in Explorer or on the desktop and tap **Shift** for the wheel, or press **Ctrl+Alt+F** for its keyboard palette.
-  - **Longshot:** press **Ctrl+Alt+S** and drag a box, then use the panel beside it: **Extend** adds the next part, **Auto** keeps going to the bottom, **Follow** adds as you scroll, and **Done** saves and copies. Esc stops Auto and Follow.
+  - **Longshot:** press **Alt+Shift+S**: a frame appears around the window in front and the panel beside it (drag the frame's corners to resize it, or its Move grip to move it). **Extend** adds the next part, **Auto** keeps going to the bottom, **Follow** adds as you scroll, and **Done** saves and copies; the panel shows the whole capture growing. Esc stops Auto and Follow.
+- **Pulse:** the dock sits on the right edge at first. Drag its dots to slide it along the edge or onto another edge, and its inner edge to make it bigger or smaller. Hover a tile for its card, click to open, right-click the dock to switch tile sets. Codex's limits show by themselves once you have used Codex; for Claude, press **Connect** on the Pulse page (it adds a status line and hooks to Claude Code's settings; **Remove** takes them out again).
 - **Text recognition:** this uses Windows' own OCR. Arabic needs the Arabic language with "Optical character recognition" installed (Settings > Time & language > Language & region).
 - **Requirements:** Windows 10 1809 or later, x64. Tested on Windows 11 only.
 

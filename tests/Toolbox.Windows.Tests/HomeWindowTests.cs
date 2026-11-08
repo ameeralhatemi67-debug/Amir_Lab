@@ -6,6 +6,8 @@ using Toolbox.Windows.Diagnostics;
 using Toolbox.Windows.Home;
 using Toolbox.Windows.Jobs;
 using Toolbox.Windows.Longshot;
+using Toolbox.Windows.Pulse;
+using Toolbox.Core.Pulse;
 using Toolbox.Windows.Theme;
 using Toolbox.Windows.Tools;
 
@@ -13,8 +15,8 @@ namespace Toolbox.Windows.Tests;
 
 /// <summary>
 /// Builds every page of the Amir Lap window, and Longshot's panel, result window and area chooser,
-/// off-screen (nothing is shown, no tool is started, no input is sent), in light and dark. Set
-/// AMIRLAP_SNAPSHOT_DIR to also save each one as a PNG for visual review.
+/// off-screen (nothing is shown, no tool is started, no input is sent), in light and dark, English
+/// and Arabic. Set AMIRLAP_SNAPSHOT_DIR to also save each one as a PNG for visual review.
 /// </summary>
 public class HomeWindowTests
 {
@@ -38,46 +40,416 @@ public class HomeWindowTests
         var data = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"amirlap-home-{Guid.NewGuid():N}");
         var previous = Environment.GetEnvironmentVariable(Core.AppPaths.DataEnvironmentVariable);
         Environment.SetEnvironmentVariable(Core.AppPaths.DataEnvironmentVariable, data);
+        // Pulse's page looks for Claude Code and Codex: point both at empty folders, never the real ones.
+        var previousClaude = Environment.GetEnvironmentVariable("CLAUDE_CONFIG_DIR");
+        var previousCodex = Environment.GetEnvironmentVariable("CODEX_HOME");
+        Environment.SetEnvironmentVariable("CLAUDE_CONFIG_DIR", System.IO.Path.Combine(data, "claude"));
+        Environment.SetEnvironmentVariable("CODEX_HOME", System.IO.Path.Combine(data, "codex"));
         var snapshots = Environment.GetEnvironmentVariable("AMIRLAP_SNAPSHOT_DIR");
         try
         {
+            // Only the styles: start-up (single instance, tray, tools) must not run in the test, or it
+            // would talk to an installed Amir Lap that is running.
+            Environment.SetEnvironmentVariable(App.StylesOnlyVariable, "1");
             var app = new App();
             app.InitializeComponent(); // loads the shared styles (Theme/Controls.xaml)
             var host = new ToolboxHost(new DiagnosticsChannel(false));
             var dispatcher = new ActionDispatcher(host, new ToastManager(host, _ => { }));
             var fileToolbox = new FileToolboxTool(host, dispatcher, new DiagnosticsChannel(false));
             var longshot = new LongshotTool(host);
-            using var registry = new ToolRegistry(host.Settings, [fileToolbox, longshot]); // never applied: nothing starts
+            var pulse = new PulseTool(host);
+            using var registry = new ToolRegistry(host.Settings, [fileToolbox, longshot, pulse]); // never applied: nothing starts
 
-            foreach (var theme in new[] { "light", "dark" })
+            foreach (var (theme, lang) in new[] { ("light", "en"), ("dark", "en"), ("light", "ar"), ("dark", "ar") })
             {
+                Lang.Set(lang);
                 ThemeResources.Apply(app, theme);
                 var window = new AmirLapWindow(host, registry);
                 var content = (FrameworkElement)window.Content;
                 window.Content = null;
-                var frame = new Border { Child = content };
-                frame.SetResourceReference(Border.BackgroundProperty, "Brush.SurfaceSolid");
+                // Stands in for the desktop behind the glass (the real window sits on Windows' acrylic).
+                var frame = new Border { Child = content, Background = theme == "dark"
+                    ? new LinearGradientBrush(Color.FromRgb(0x10, 0x16, 0x2C), Color.FromRgb(0x24, 0x10, 0x22), 30)
+                    : new LinearGradientBrush(Color.FromRgb(0xD6, 0xE0, 0xF6), Color.FromRgb(0xF4, 0xE4, 0xEC), 30) };
 
-                foreach (var page in new[] { AmirLapWindow.DashboardPage, FileToolboxTool.ToolId, LongshotTool.ToolId, AmirLapWindow.GeneralPage })
+                foreach (var page in new[] { AmirLapWindow.DashboardPage, FileToolboxTool.ToolId, LongshotTool.ToolId, PulseTool.ToolId, AmirLapWindow.GeneralPage, AmirLapWindow.AboutPage })
                 {
                     window.ShowPage(page);
                     Assert.Equal(page, window.CurrentPage);
-                    double height = page switch { FileToolboxTool.ToolId => 1700, LongshotTool.ToolId => 1250, _ => 900 };
-                    Layout(frame, 960, height);
+                    double height = page switch { FileToolboxTool.ToolId => 1900, LongshotTool.ToolId => 1500, PulseTool.ToolId => 2700, AmirLapWindow.GeneralPage => 1150, AmirLapWindow.DashboardPage => 1500, _ => 790 };
+                    Layout(frame, 1180, height);
                     var scroll = FindScroll(content);
                     Assert.NotNull(scroll?.Content);
-                    Save(snapshots, frame, 960, height, $"{page}-{theme}");
+                    Save(snapshots, frame, 1180, height, $"{page}-{theme}-{lang}");
                 }
+
+                // Changing the language or theme rebuilds the window in place, on the same page.
+                window.Rebuild(spinThemeIcon: true);
+                Assert.Equal(AmirLapWindow.AboutPage, window.CurrentPage);
+                Assert.Equal(lang == "ar" ? FlowDirection.RightToLeft : FlowDirection.LeftToRight, content.FlowDirection);
                 window.Close();
 
-                RenderLongshotWindows(snapshots, theme);
+                if (lang == "en") RenderLongshotWindows(snapshots, theme);
+                if (lang == "en") RenderWheel(snapshots, theme);
+                RenderPulse(snapshots, theme, lang, host);
             }
+            Lang.Set("en");
+            ThemeResources.Apply(app, "light");
+            CheckRealFrame(host, registry);
+            CheckRealDock();
+            CheckLongshotFlow(host, longshot);
             app.Shutdown();
         }
         finally
         {
             Environment.SetEnvironmentVariable(Core.AppPaths.DataEnvironmentVariable, previous);
+            Environment.SetEnvironmentVariable("CLAUDE_CONFIG_DIR", previousClaude);
+            Environment.SetEnvironmentVariable(App.StylesOnlyVariable, null);
+            Environment.SetEnvironmentVariable("CODEX_HOME", previousCodex);
             try { System.IO.Directory.Delete(data, recursive: true); } catch (System.IO.IOException) { }
+        }
+    }
+
+    /// <summary>
+    /// Pulse's real dock window, shown far off-screen (a made-up screen at -30000) without taking
+    /// focus, and no input sent. Its glass reads and blurs the screen behind it; that picture must
+    /// never make the dock bigger (it grew on every refresh in 0.5.0 until it covered the screen).
+    /// Its empty parts must let clicks through, tiles must answer clicks, and its menu must work.
+    /// </summary>
+    private static void CheckRealDock()
+    {
+        var real = Interop.ScreenGeometry.MonitorAt(new Interop.Native.POINT());
+        var rect = new Interop.Native.RECT { Left = -30000, Top = -30000, Right = -30000 + 1600, Bottom = -30000 + 1000 };
+        var screen = new Interop.MonitorArea(rect, rect, real.Scale);
+        var settings = new PulseSettings();
+        string? clicked = null;
+        var dock = new DockWindow(() => settings, _ => { }) { ScreenOverride = () => screen };
+        dock.TileClicked += id => clicked = id;
+        bool ran = false;
+        dock.MenuFor = () => [new DockMenuItem("Work", () => ran = true, Checked: true), new DockMenuItem("Pulse settings…", () => { }, Separator: true)];
+        dock.Show();
+        try
+        {
+            var deadline = DateTime.UtcNow.AddSeconds(10);
+            Pump(() => (dock.Tile(PulseTiles.Claude) is { ActualWidth: > 0 } && dock.Placed.Width > 0) || DateTime.UtcNow > deadline, "the dock to be placed");
+            Assert.True(dock.Placed.Width > 0 && dock.Tile(PulseTiles.Claude) is { ActualWidth: > 0 },
+                $"placed {dock.Placed}, loaded {dock.IsLoaded}, tiles {dock.Tiles.Count}, claude width {dock.Tile(PulseTiles.Claude)?.ActualWidth}, window {dock.ActualWidth}x{dock.ActualHeight}");
+            var hwnd = new System.Windows.Interop.WindowInteropHelper(dock).Handle;
+            var first = dock.Placed;
+            double k = real.Scale;
+            // Medium tiles: about 76 DIPs thick, plus room for the cards beside it; on the right edge, flush with it.
+            Assert.InRange(first.Width, (int)(360 * k), (int)(400 * k));
+            Assert.Equal(rect.Right, first.Right);
+            for (int i = 0; i < 5; i++)
+            {
+                dock.KeepUpNow();
+                var until = DateTime.UtcNow.AddMilliseconds(150);
+                Pump(() => DateTime.UtcNow > until, "a moment");
+            }
+            Assert.True(dock.BackdropRefreshes >= 3, "the glass reads the screen behind it");
+            Assert.Equal(first, dock.Placed);
+            Assert.True(GetWindowRect(hwnd, out var r));
+            Assert.Equal(first.Width, r.Right - r.Left);
+            Assert.Equal(first.Height, r.Bottom - r.Top);
+
+            // The tile and the empty room beside the dock: only the tile belongs to the dock.
+            var tile = dock.Tile(PulseTiles.Claude)!;
+            var tileCentre = tile.PointToScreen(new Point(tile.ActualWidth / 2, tile.ActualHeight / 2));
+            Assert.Equal(hwnd, WindowFromPoint(new POINT { X = (int)tileCentre.X, Y = (int)tileCentre.Y }));
+            Assert.NotEqual(hwnd, WindowFromPoint(new POINT { X = r.Left + 40, Y = (r.Top + r.Bottom) / 2 }));
+
+            // A click on a tile (the events WPF raises for one; no real input).
+            tile.RaiseEvent(new System.Windows.Input.MouseButtonEventArgs(System.Windows.Input.Mouse.PrimaryDevice, 0, System.Windows.Input.MouseButton.Left) { RoutedEvent = UIElement.MouseLeftButtonDownEvent });
+            tile.RaiseEvent(new System.Windows.Input.MouseButtonEventArgs(System.Windows.Input.Mouse.PrimaryDevice, 0, System.Windows.Input.MouseButton.Left) { RoutedEvent = UIElement.MouseLeftButtonUpEvent });
+            Assert.Equal(PulseTiles.Claude, clicked);
+
+            // The menu opens inside the dock's own window and runs what is picked.
+            dock.ShowMenu(new Point(r.Right - r.Left - 40, 100));
+            Assert.NotNull(dock.OpenMenu);
+            var first2 = FindButton(dock.OpenMenu!, "Work") ?? FirstButton(dock.OpenMenu!);
+            Assert.NotNull(first2);
+            Click(first2!);
+            Assert.True(ran);
+            Assert.Null(dock.OpenMenu);
+
+            // Every edge places it flush with that edge and keeps the same thickness.
+            foreach (var edge in new[] { "left", "top", "bottom", "right" })
+            {
+                settings.Edge = edge;
+                dock.Rebuild();
+                var p = dock.Placed;
+                bool vertical = edge is "left" or "right";
+                Assert.InRange(vertical ? p.Width : p.Height, (int)(360 * k), (int)(400 * k));
+                if (edge == "left") Assert.Equal(rect.Left, p.X);
+                if (edge == "top") Assert.Equal(rect.Top, p.Y);
+                if (edge == "bottom") Assert.Equal(rect.Bottom, p.Y + p.Height);
+            }
+        }
+        finally
+        {
+            dock.Close();
+        }
+    }
+
+    private static Button? FirstButton(DependencyObject root)
+    {
+        for (int i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++)
+        {
+            var child = VisualTreeHelper.GetChild(root, i);
+            if (child is Button b) return b;
+            if (FirstButton(child) is { } found) return found;
+        }
+        return null;
+    }
+
+    private struct POINT { public int X, Y; }
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern IntPtr GetWindow(IntPtr hwnd, uint cmd);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern bool IsWindow(IntPtr hwnd);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern IntPtr WindowFromPoint(POINT point);
+
+    /// <summary>
+    /// The real window, shown far off-screen without taking focus: Windows must treat its edges as
+    /// resize borders, the empty title bar as the drag area and our maximize button as its maximize
+    /// button (that is what opens the Windows 11 snap layouts), and must not draw caption buttons of
+    /// its own. Only hit-test questions are sent to the window; no mouse or keyboard input.
+    /// </summary>
+    private static void CheckRealFrame(ToolboxHost host, ToolRegistry registry)
+    {
+        var window = new AmirLapWindow(host, registry)
+        {
+            ShowActivated = false,
+            ShowInTaskbar = false,
+            WindowStartupLocation = WindowStartupLocation.Manual,
+            Left = -30000,
+            Top = -30000,
+        };
+        window.Show();
+        try
+        {
+            window.UpdateLayout();
+            var hwnd = new System.Windows.Interop.WindowInteropHelper(window).Handle;
+            long style = GetWindowLongPtr(hwnd, -16).ToInt64();
+            Assert.True((style & 0x00080000) == 0, "no system menu, so Windows draws no caption buttons over ours");
+            Assert.True((style & 0x00C00000) == 0x00C00000, "keeps the caption style (real maximize, snap, animations)");
+            Assert.True((style & 0x00040000) != 0, "resizable frame");
+            Assert.True((style & 0x00030000) == 0x00030000, "minimize and maximize boxes");
+
+            var max = FindButton(window, "Maximize");
+            Assert.NotNull(max);
+            Assert.Equal(9, HitTest(hwnd, max!.PointToScreen(new Point(max.ActualWidth / 2, max.ActualHeight / 2)))); // HTMAXBUTTON
+
+            Assert.True(GetWindowRect(hwnd, out var r));
+            Assert.Equal(2, HitTest(hwnd, new Point((r.Left + r.Right) / 2.0, r.Top + 20)));   // HTCAPTION: drag to move
+            Assert.Equal(10, HitTest(hwnd, new Point(r.Left + 2, (r.Top + r.Bottom) / 2.0)));  // HTLEFT
+            Assert.Equal(17, HitTest(hwnd, new Point(r.Right - 2, r.Bottom - 2)));             // HTBOTTOMRIGHT
+            Assert.Equal(1, HitTest(hwnd, new Point((r.Left + r.Right) / 2.0, (r.Top + r.Bottom) / 2.0))); // HTCLIENT
+        }
+        finally
+        {
+            window.Close();
+        }
+    }
+
+    /// <summary>
+    /// A whole Longshot capture through the real controller, panel, frame and session, against a
+    /// simulated page and wheel (nothing real is read or scrolled; every window stays off the
+    /// screen): it gets ready, Extend adds a part, pulling the bottom edge down adds the rows below
+    /// without starting again, Auto turns into Stop and runs to the bottom, Refresh scrolls back to
+    /// the start and begins again from one part, and the close button ends it.
+    /// </summary>
+    private static void CheckLongshotFlow(ToolboxHost host, LongshotTool longshot)
+    {
+        const int width = 320, view = 300, pageHeight = 1600;
+        var page = new byte[width * pageHeight * 4];
+        Array.Fill(page, (byte)255);
+        var rnd = new Random(3);
+        for (int y = 8; y < pageHeight - 20; y += 18)
+            for (int x = rnd.Next(4, 24); x < width - 40;)
+            {
+                int word = rnd.Next(10, 50);
+                byte shade = (byte)rnd.Next(0, 120);
+                for (int yy = y; yy < y + 9; yy++)
+                    for (int xx = x; xx < Math.Min(x + word, width - 4); xx++)
+                    {
+                        int i = (yy * width + xx) * 4;
+                        page[i] = shade; page[i + 1] = (byte)(shade / 2); page[i + 2] = (byte)(255 - shade);
+                    }
+                x += word + rnd.Next(5, 12);
+            }
+        // Below the scrolling page the "screen" shows something that doesn't scroll (a status bar, say).
+        var below = new byte[width * 120 * 4];
+        for (int i = 0; i < below.Length; i += 4) { below[i] = 40; below[i + 1] = (byte)(i / (width * 4) * 2); below[i + 2] = 90; below[i + 3] = 255; }
+        int offset = 0; // only the session's worker thread reads and moves it
+        LongshotCapture.ScreenOverride = area => new PageScreen(() =>
+        {
+            int h = area.Height, rows = Math.Min(h, view);
+            var px = new byte[width * h * 4];
+            Buffer.BlockCopy(page, offset * width * 4, px, 0, rows * width * 4);
+            if (h > view) Buffer.BlockCopy(below, 0, px, rows * width * 4, (h - view) * width * 4);
+            return new Processing.Capture.Frame(width, h, px);
+        });
+        LongshotCapture.ScrollerOverride = _ => new PageScroller(by => offset = Math.Clamp(offset + by, 0, pageHeight - view));
+        LongshotCapture.TimingOverride = new SessionTiming(TimeSpan.FromMilliseconds(1), TimeSpan.FromMilliseconds(1), TimeSpan.FromMilliseconds(60), TimeSpan.FromMilliseconds(3));
+        CapturePanel.KeepOffScreen = true;
+        try
+        {
+            LongshotCapture.Start(host, longshot, new PixelRect(-30000, -30000, width, view));
+            var panel = LongshotCapture.Current?.Panel;
+            Assert.NotNull(panel);
+
+            // Ready: the first part is shown and Extend can be pressed (the buttons are enabled for a
+            // moment while the panel is created, before the session marks them busy).
+            Pump(() => panel!.Extend.IsEnabled && panel.InfoText.Contains("1 part"), "ready (Extend enabled)");
+            Assert.Contains("1 part", panel!.InfoText);
+
+            Click(panel.Extend);
+            Pump(() => panel.InfoText.Contains("2 parts"), "a second part after Extend");
+
+            // Pull the bottom edge down 60 px: those rows are added, nothing starts again.
+            LongshotCapture.Current!.ChangeArea(new PixelRect(-30000, -30000, width, view + 60));
+            Pump(() => panel.StatusText.StartsWith("Added 60 px below"), "the rows below being added");
+            Assert.Contains("3 parts", panel.InfoText);
+
+            Click(panel.Auto);
+            Assert.Equal("Stop", Label(panel.Auto));
+            Pump(() => Label(panel.Auto) == "Auto" && panel.Extend.IsEnabled, "Auto running to the bottom");
+            Assert.DoesNotContain(" 3 parts", panel.InfoText);
+
+            Click(panel.RefreshButton);
+            Pump(() => panel.InfoText.Contains("1 part") && panel.Extend.IsEnabled, "starting again after Refresh");
+            Assert.Equal(0, offset); // scrolled back to where the capture started
+
+            Click(panel.CloseButton);
+            Assert.Null(LongshotCapture.Current);
+        }
+        finally
+        {
+            LongshotCapture.CancelActive();
+            LongshotCapture.ScreenOverride = null;
+            LongshotCapture.ScrollerOverride = null;
+            LongshotCapture.TimingOverride = null;
+            CapturePanel.KeepOffScreen = false;
+        }
+    }
+
+    private sealed class PageScreen(Func<Processing.Capture.Frame> grab) : IScreenSource
+    {
+        public Processing.Capture.Frame Grab() => grab();
+        public void Dispose() { }
+    }
+
+    private sealed class PageScroller(Action<int> by) : IScroller
+    {
+        public void Scroll(int notches, bool down, int unit) => by((down ? 1 : -1) * notches * 90 * unit / 120);
+    }
+
+    private static void Click(Button button) => button.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent, button));
+
+    private static string Label(Button button) => ((TextBlock)((StackPanel)button.Content).Children[1]).Text;
+
+    /// <summary>Lets the UI thread handle what the capture thread sent, until <paramref name="done"/> (or fails after a while).</summary>
+    private static void Pump(Func<bool> done, string what, int seconds = 30)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(seconds);
+        while (!done())
+        {
+            if (DateTime.UtcNow > deadline) throw new TimeoutException("Longshot never got to: " + what);
+            var frame = new System.Windows.Threading.DispatcherFrame();
+            System.Windows.Threading.Dispatcher.CurrentDispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Background, () => frame.Continue = false);
+            System.Windows.Threading.Dispatcher.PushFrame(frame);
+            Thread.Sleep(5);
+        }
+    }
+
+    private static Button? FindButton(DependencyObject root, string name)
+    {
+        for (int i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++)
+        {
+            var child = VisualTreeHelper.GetChild(root, i);
+            if (child is Button b && System.Windows.Automation.AutomationProperties.GetName(b) == name) return b;
+            if (FindButton(child, name) is { } found) return found;
+        }
+        return null;
+    }
+
+    private static int HitTest(IntPtr hwnd, Point screen)
+    {
+        int x = (int)Math.Round(screen.X), y = (int)Math.Round(screen.Y);
+        var lParam = new IntPtr(((y & 0xFFFF) << 16) | (x & 0xFFFF));
+        return SendMessage(hwnd, 0x0084, IntPtr.Zero, lParam).ToInt32(); // WM_NCHITTEST
+    }
+
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+    private struct RECT { public int Left, Top, Right, Bottom; }
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern IntPtr SendMessage(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")]
+    private static extern IntPtr GetWindowLongPtr(IntPtr hwnd, int index);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+    private static extern bool GetWindowRect(IntPtr hwnd, out RECT rect);
+
+    /// <summary>
+    /// File Toolbox's glass wheel over a busy background: idle, a lit tile, the tools ring and the
+    /// Share bubble lit, plus hit testing of tiles, hub and bubble. Motion is reduced so each state
+    /// is drawn at its end.
+    /// </summary>
+    private static void RenderWheel(string? snapshots, string theme)
+    {
+        var payload = new[] { new Core.Inputs.ProbedFile(@"C:\Users\You\Pictures\Holiday.png", Core.Inputs.FileKind.Png, 1_150_000, null) };
+        var rings = Wheel.WheelModels.Build(payload, new Core.Settings.AppSettings());
+        var menu = new Wheel.RadialMenu(330);
+        menu.ApplyPalette(Palette.Current(theme));
+        menu.SetReducedMotion(true);
+        var (primary, secondary) = Wheel.WheelModels.IdleText(payload);
+        menu.SetIdleText(primary, secondary);
+        menu.SetShare(new Wheel.WheelSegmentModel(Shell.ShareService.ActionId, "Share", "Quick Share", "lap-share", true, "Send to a nearby phone or PC"));
+        menu.SetRing(rings[0], 0, rings.Count, animate: false);
+
+        Assert.Equal(Wheel.RadialMenu.ShareHit, menu.HitTest(menu.ShareCenter));
+        Assert.Equal(Shell.ShareService.ActionId, menu.SegmentAt(Wheel.RadialMenu.ShareHit)?.ActionId);
+        Assert.Equal(Wheel.RadialMenu.CenterHit, menu.HitTest(new Point(menu.Center, menu.Center)));
+        for (int i = 0; i < menu.SegmentCount; i++) Assert.Equal(i, menu.HitTest(menu.SegmentCenter(i)));
+        Assert.Equal(Wheel.RadialMenu.OutsideHit, menu.HitTest(new Point(menu.Center, -40)));
+
+        // Something busy behind the glass: colour, blocks and text, as on a real desktop.
+        var stage = new Grid { Width = 420, Height = 420 };
+        stage.Background = theme == "dark"
+            ? new LinearGradientBrush(Color.FromRgb(0x2B, 0x10, 0x4A), Color.FromRgb(0x6A, 0x12, 0x3A), 35)
+            : new LinearGradientBrush(Color.FromRgb(0x8E, 0x5C, 0xE8), Color.FromRgb(0xE8, 0x5C, 0x9A), 35);
+        var busy = new Canvas();
+        for (int i = 0; i < 9; i++)
+        {
+            var block = new Border { Width = 150, Height = 26, CornerRadius = new CornerRadius(4), Background = new SolidColorBrush(Color.FromArgb(0xB0, 255, 255, 255)), Child = new TextBlock { Text = $"Document {i + 1}.pdf", Margin = new Thickness(8, 4, 0, 0), Foreground = Brushes.Black } };
+            Canvas.SetLeft(block, 20 + (i % 2) * 230);
+            Canvas.SetTop(block, 30 + i * 40);
+            busy.Children.Add(block);
+        }
+        stage.Children.Add(busy);
+        // What the app does as the wheel opens: a picture of what is behind it, frosted under the glass.
+        Layout(stage, 420, 420);
+        var behind = new RenderTargetBitmap(420, 420, 96, 96, PixelFormats.Pbgra32);
+        behind.Render(stage);
+        behind.Freeze();
+        double offset = (420 - menu.Diameter) / 2;
+        menu.SetBackdrop(behind, new Rect(-offset, -offset, 420, 420));
+        stage.Children.Add(new Border { Child = menu, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center });
+
+        foreach (var (name, ring, hover) in new[] { ("idle", 0, Wheel.RadialMenu.OutsideHit), ("hover", 0, 2), ("tools", 1, 6), ("share", 0, Wheel.RadialMenu.ShareHit) })
+        {
+            menu.SetRing(rings[ring], ring, rings.Count, animate: false);
+            menu.SetHover(hover);
+            Layout(stage, 420, 420);
+            Save(snapshots, stage, 420, 420, $"wheel-{name}-{theme}");
         }
     }
 
@@ -92,19 +464,30 @@ public class HomeWindowTests
             for (int x = 40; x < w - 80; x += 70)
                 for (int yy = y; yy < y + 10; yy++)
                     for (int xx = x; xx < x + 50; xx++) { int i = (yy * w + xx) * 4; px[i] = 60; px[i + 1] = 60; px[i + 2] = 70; }
-        int tailRows = (int)(170.0 * w / 228); // what the session sends: the bottom of the image, sized to the box
-        var preview = CaptureSession.Downscale(px[^(tailRows * w * 4)..], w, tailRows, 228);
+        // What the session sends: the whole image so far, at the preview width.
+        var preview = CaptureSession.Downscale(px, w, h, 300);
 
         var panel = new CapturePanel();
-        panel.ShowUpdate(preview, w, h, 4, "Added 466 px.");
         var panelContent = (FrameworkElement)panel.Content;
         panel.Content = null;
-        var panelFrame = new Border { Child = panelContent };
-        panelFrame.SetResourceReference(Border.BackgroundProperty, "Brush.SurfaceSolid");
-        Layout(panelFrame, 300, 520);
-        Assert.True(panelContent.ActualHeight > 300, "the panel should lay out its preview and buttons");
-        Save(snapshots, panelFrame, 300, 520, $"longshot-panel-{theme}");
+        var panelFrame = new Border { Child = panelContent, Background = theme == "dark"
+            ? new LinearGradientBrush(Color.FromRgb(0x10, 0x16, 0x2C), Color.FromRgb(0x24, 0x10, 0x22), 30)
+            : new LinearGradientBrush(Color.FromRgb(0xD6, 0xE0, 0xF6), Color.FromRgb(0xF4, 0xE4, 0xEC), 30) };
+        Layout(panelFrame, 328, 620);
+        panel.ShowUpdate(preview, w, h, 4, "Added 466 px.", addedRows: 466);
+        panel.SetLive("Auto");
+        Layout(panelFrame, 328, 620);
+        Assert.True(panelContent.ActualHeight > 500, "the panel should lay out its preview and buttons");
+        Save(snapshots, panelFrame, 328, 620, $"longshot-panel-{theme}");
         panel.Close();
+
+        var frame = new CaptureFrame(new PixelRect(0, 0, 600, 400));
+        var frameContent = (FrameworkElement)frame.Content;
+        frame.Content = null;
+        var frameStage = new Border { Child = frameContent, Background = new SolidColorBrush(Color.FromRgb(0xF0, 0xF0, 0xF0)) };
+        Layout(frameStage, 636, 436);
+        Save(snapshots, frameStage, 636, 436, $"longshot-frame-{theme}");
+        frame.Close();
 
         var image = LongshotOutput.ToBitmap(w, h, px);
         var result = new LongshotResultWindow(image, CaptureSession.Downscale(px, w, h, 600),
@@ -117,16 +500,64 @@ public class HomeWindowTests
         Save(snapshots, resultFrame, 760, 700, $"longshot-result-{theme}");
         result.Close();
 
-        if (theme == "dark")
+    }
+
+    /// <summary>
+    /// Pulse's dock (built but never shown: its content is laid out off-screen) with every tile, in
+    /// each state Claude's tile can show, on each edge, and the cards that open beside the tiles.
+    /// </summary>
+    private static void RenderPulse(string? snapshots, string theme, string lang, ToolboxHost host)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var settings = new PulseSettings();
+        settings.Active.Tiles = [.. PulseTiles.All];
+        foreach (var (edge, state) in new[] { ("right", ClaudeActivity.Working), ("left", ClaudeActivity.Waiting), ("top", ClaudeActivity.Done), ("bottom", ClaudeActivity.Idle) })
         {
-            var overlay = new SelectionOverlay(new Processing.Capture.Frame(w, h, px), new PixelRect(0, 0, w, h));
-            var overlayContent = (FrameworkElement)overlay.Content;
-            overlay.Content = null;
-            var overlayFrame = new Border { Child = overlayContent };
-            Layout(overlayFrame, w, 500);
-            Save(snapshots, overlayFrame, w, 500, "longshot-choose-area");
-            overlay.Close();
+            settings.Edge = edge;
+            var dock = new DockWindow(() => settings, _ => { });
+            dock.Rebuild();
+            Assert.Equal(PulseTiles.All.Count + 1, dock.Tiles.Count); // every tile and the "+" tile
+            dock.Tile(PulseTiles.Claude)!.SetUsage(64);
+            dock.Tile(PulseTiles.Claude)!.SetLabel("64%");
+            dock.Tile(PulseTiles.Claude)!.SetStatus(state, state == ClaudeActivity.Waiting ? 2 : 0);
+            dock.Tile(PulseTiles.Codex)!.SetUsage(76);
+            dock.Tile(PulseTiles.System)!.SetUsage(93);
+            dock.Tile(PulseTiles.Toolbox)!.SetDropTarget(state == ClaudeActivity.Done);
+            var content = (FrameworkElement)dock.Content;
+            dock.Content = null;
+            bool vertical = edge is "left" or "right";
+            var stage = new Border { Child = content, Background = theme == "dark"
+                ? new LinearGradientBrush(Color.FromRgb(0x14, 0x1B, 0x3C), Color.FromRgb(0x3C, 0x15, 0x32), 30)
+                : new LinearGradientBrush(Color.FromRgb(0xC3, 0xD2, 0xF6), Color.FromRgb(0xF2, 0xD3, 0xE2), 30) };
+            double w = vertical ? 420 : 1100, h = vertical ? 1000 : 420;
+            Layout(stage, w, h);
+            Assert.True(dock.Tile(PulseTiles.Claude)!.ActualWidth > 40, "the tiles should lay out");
+            Save(snapshots, stage, w, h, $"pulse-dock-{edge}-{theme}-{lang}");
+            dock.Close();
         }
+
+        var cards = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(16) };
+        cards.Children.Add(PulseCards.Card(
+            PulseCards.Head("lap-claude", "Claude"),
+            PulseCards.Meter("Current session", new UsageWindow(64, now.AddMinutes(72)), now),
+            PulseCards.Meter("This week", new UsageWindow(91, now.AddDays(3)), now),
+            PulseCards.Status(PulseTileView.Amber, "Needs you · Amir_Lab"),
+            PulseCards.Note("From Claude Code on this PC.")));
+        cards.Children.Add(PulseCards.Card(PulseCards.Head("lap-codex", "Codex", "Plus plan"), PulseCards.Meter("5-hour limit", new UsageWindow(21, now.AddHours(3)), now), PulseCards.Meter("This week", null, now)).With(c => c.Margin = new Thickness(16, 0, 0, 0)));
+        cards.Children.Add(PulseCards.Card(PulseCards.Head("lap-toolbox", "File Toolbox"), PulseCards.Body("Drop a file on this tile."), PulseCards.DropBox("Drop a file here")).With(c => c.Margin = new Thickness(16, 0, 0, 0)));
+        var preview = new PulsePreview(220);
+        preview.Update(settings);
+        preview.Width = 360;
+        preview.Margin = new Thickness(16, 0, 0, 0);
+        cards.Children.Add(preview);
+        var cardStage = new Border { Child = cards };
+        cardStage.SetResourceReference(Border.BackgroundProperty, "Brush.SurfaceSolid");
+        cardStage.FlowDirection = Lang.Flow;
+        Layout(cardStage, 1300, 340);
+        Save(snapshots, cardStage, 1300, 340, $"pulse-cards-{theme}-{lang}");
+
+        Assert.Equal("Claude", PulseTool.ShortName(PulseTiles.Claude));
+        Assert.NotNull(host);
     }
 
     private static void Layout(FrameworkElement element, double width, double height)

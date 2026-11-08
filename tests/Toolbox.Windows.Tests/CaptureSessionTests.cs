@@ -78,6 +78,7 @@ public class CaptureSessionTests
     private sealed class FakeScreen(FakePage page) : IScreenSource
     {
         public volatile int Offset;
+        public FakePage Page => page;
         public Frame Grab() => page.At(Offset);
         public void Dispose() { }
     }
@@ -105,12 +106,18 @@ public class CaptureSessionTests
         public readonly FakeScroller Scroller;
         public readonly CaptureSession Session;
 
-        public Run(int pageHeight, int pxPerNotch, double stepFraction = 0.55, int areaHeight = HeaderH + View + FooterH)
+        public Run(int pageHeight, int pxPerNotch, double stepFraction = 0.55, int areaHeight = HeaderH + View + FooterH,
+            FakeScreen? screen = null, long rewindDelta = 0, double? knownPxPerDelta = null)
         {
-            Page = new FakePage(pageHeight);
-            Screen = new FakeScreen(Page);
+            Page = screen is null ? new FakePage(pageHeight) : screen.Page;
+            Screen = screen ?? new FakeScreen(Page);
             Scroller = new FakeScroller(Screen, Page, pxPerNotch);
-            Session = new CaptureSession(() => Screen, Scroller, areaHeight, stepFraction, 120, 90, Events.Add, Fast) { EscapePressed = () => false };
+            Session = new CaptureSession(() => Screen, Scroller, areaHeight, stepFraction, 120, 90, Events.Add, Fast)
+            {
+                EscapePressed = () => false,
+                RewindDelta = rewindDelta,
+                KnownPxPerDelta = knownPxPerDelta,
+            };
             Session.Start();
             Next<SessionReady>();
         }
@@ -230,6 +237,35 @@ public class CaptureSessionTests
         var update = run.Do(SessionCommand.Extend);
         Assert.Contains("Reached the bottom", update.Message);
         Assert.Equal(1, update.Parts);
+    }
+
+    [Fact]
+    public void Refresh_goes_back_to_where_the_capture_started_and_keeps_the_step_size()
+    {
+        long scrolled;
+        double? perNotch;
+        // A capture that starts 400 px down the page, takes three steps, then Refresh.
+        var page = new FakePage(3000);
+        var screen = new FakeScreen(page) { Offset = 400 };
+        using (var run = new Run(0, pxPerNotch: 90, screen: screen))
+        {
+            run.Do(SessionCommand.Extend);
+            run.Do(SessionCommand.Extend);
+            run.Do(SessionCommand.Extend);
+            Assert.True(screen.Offset > 400);
+            scrolled = run.Session.ScrolledDelta;
+            perNotch = run.Session.PxPerDelta;
+        }
+        Assert.True(scrolled > 0);
+        Assert.NotNull(perNotch);
+
+        using var again = new Run(0, pxPerNotch: 90, screen: screen, rewindDelta: scrolled, knownPxPerDelta: perNotch);
+        Assert.Equal(400, screen.Offset); // back at the start
+        again.Do(SessionCommand.Extend);
+        // A new capture starts cautiously with half a notch; this one already knows how far a notch goes.
+        Assert.Equal(120, again.Scroller.Calls.First(c => c.Down).Unit);
+        var done = again.Finish();
+        Assert.Equal(page.At(400).Height + (screen.Offset - 400), done.Height);
     }
 
     [Fact]

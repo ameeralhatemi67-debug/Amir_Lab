@@ -286,9 +286,82 @@ public sealed class LongImage
         Height += rows.Length / Stride;
     }
 
+    private byte[] _overview = [];
+    private int _overviewWidth;
+    private int _overviewRows;  // finished rows of the overview (their source rows are all in the image)
+    private int _overviewValid; // source rows the finished overview rows may rely on
+
+    /// <summary>
+    /// The whole image shrunk to <paramref name="width"/> px wide (box-averaged, sampling at most 4×4
+    /// source pixels per output pixel), for the live preview. Kept between calls: only rows added since
+    /// the last call are worked out, so it stays cheap however long the image gets. Returns a buffer of
+    /// at least <paramref name="height"/> rows of BGRA (the caller copies what it needs).
+    /// </summary>
+    public byte[] Overview(int width, out int height)
+    {
+        width = Math.Clamp(width, 1, Width);
+        double factor = Width / (double)width; // source pixels per overview pixel, both ways
+        height = Math.Max(1, (int)(Height / factor));
+        if (width != _overviewWidth)
+        {
+            _overviewWidth = width;
+            _overviewRows = 0;
+            _overviewValid = 0;
+        }
+        // Rows whose source was trimmed (Undo, sticky footers) are worked out again.
+        while (_overviewRows > 0 && (int)Math.Ceiling(_overviewRows * factor) > _overviewValid) _overviewRows--;
+        int need = height * width * 4;
+        if (_overview.Length < need) Array.Resize(ref _overview, Math.Max(need, _overview.Length * 2));
+
+        for (int y = _overviewRows; y < height; y++)
+        {
+            int y0 = (int)(y * factor), y1 = Math.Min(Height, Math.Max(y0 + 1, (int)((y + 1) * factor)));
+            int stepY = Math.Max(1, (y1 - y0) / 4);
+            int o = y * width * 4;
+            for (int x = 0; x < width; x++)
+            {
+                int x0 = (int)(x * factor), x1 = Math.Min(Width, Math.Max(x0 + 1, (int)((x + 1) * factor)));
+                int stepX = Math.Max(1, (x1 - x0) / 4);
+                int b = 0, g = 0, r = 0, n = 0;
+                for (int sy = y0; sy < y1; sy += stepY)
+                {
+                    var (data, rowStart) = Row(sy);
+                    for (int sx = x0; sx < x1; sx += stepX)
+                    {
+                        int i = rowStart + sx * 4;
+                        b += data[i]; g += data[i + 1]; r += data[i + 2]; n++;
+                    }
+                }
+                _overview[o++] = (byte)(b / n);
+                _overview[o++] = (byte)(g / n);
+                _overview[o++] = (byte)(r / n);
+                _overview[o++] = 255;
+            }
+        }
+        // The last row may still grow; keep only rows whose source was complete.
+        _overviewRows = Math.Max(0, Math.Min(height, (int)(Height / factor) - 1));
+        _overviewValid = Height;
+        return _overview;
+    }
+
+    /// <summary>The chunk holding a source row, and where that row starts in it (rows near the bottom are found fastest).</summary>
+    private (byte[] Data, int Start) Row(int row)
+    {
+        int end = Height;
+        for (int i = _chunks.Count - 1; i >= 0; i--)
+        {
+            int rows = _chunks[i].Length / Stride;
+            int start = end - rows;
+            if (row >= start) return (_chunks[i], (row - start) * Stride);
+            end = start;
+        }
+        return (_chunks[0], 0);
+    }
+
     /// <summary>Removes <paramref name="count"/> rows from the bottom and returns them.</summary>
     public byte[] Trim(int count)
     {
+        _overviewValid = Math.Min(_overviewValid, Math.Max(0, Height - count));
         var removed = new List<byte[]>();
         while (count > 0 && _chunks.Count > 0)
         {
@@ -396,6 +469,26 @@ public sealed class ScrollStitcher
         var (match, gray) = Match(frame, expected);
         if (match.Moved && match.Ok) Apply(frame, gray, match, info);
         return match;
+    }
+
+    /// <summary>
+    /// The area grew downward while the page stayed put (the owner pulled the frame's bottom edge
+    /// down to take in what scrolling can't reach): the rows below the old bottom are added as they
+    /// are. <paramref name="taller"/> must be the same width, with the old frame as its top part.
+    /// Undo can't go back past this point, because the frames are a different size from here on.
+    /// </summary>
+    public int GrowDown(Frame taller)
+    {
+        if (taller.Width != Last.Width || taller.Height <= Last.Height)
+            throw new ArgumentException("The new frame must be as wide as the last one and taller.", nameof(taller));
+        int stride = taller.Stride;
+        int added = taller.Height - Last.Height;
+        Image.Append(taller.Pixels[(Last.Height * stride)..]);
+        _history.Clear();
+        Last = taller;
+        LastGray = GrayFrame.From(taller);
+        Steps++;
+        return added;
     }
 
     public StitchStep? Undo()

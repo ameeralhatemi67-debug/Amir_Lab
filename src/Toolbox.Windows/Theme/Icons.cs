@@ -36,7 +36,53 @@ internal static class Icons
         ["keyboard"] = "M2,6 L22,6 L22,18 L2,18 Z M6,10 L6,10.5 M10,10 L10,10.5 M14,10 L14,10.5 M18,10 L18,10.5 M7,14 L17,14",
         ["info"] = "M12,3 A9,9 0 1 0 12,21 A9,9 0 1 0 12,3 Z M12,11 L12,16 M12,7.5 L12,8",
         ["longshot"] = "M5,2 L19,2 L19,13 L5,13 Z M8,6 L16,6 M8,9 L13,9 M12,15.5 L12,22 M8.5,18.5 L12,22 L15.5,18.5",
+
+        // Amir Lap window (glass design): drawn on the full 24-unit grid, shown with SettingsPage.Glyph.
+        ["lap-dashboard"] = RoundRect(3.5, 3.5, 7, 7, 2) + RoundRect(13.5, 3.5, 7, 7, 2) + RoundRect(3.5, 13.5, 7, 7, 2) + RoundRect(13.5, 13.5, 7, 7, 2),
+        ["lap-toolbox"] = RoundRect(3, 8, 18, 12, 3) + " M9,8 V6 A2,2 0 0 1 11,4 H13 A2,2 0 0 1 15,6 V8 M3,13 H21",
+        ["lap-longshot"] = RoundRect(5, 3, 14, 11, 2.5) + " M12,17 V21.5 M9,18.8 L12,21.5 L15,18.8",
+        ["lap-general"] = "M4,7 H13.8 M18.2,7 H20 M4,17 H7.8 M12.2,17 H20" + Circle(16, 7, 2.2) + Circle(10, 17, 2.2),
+        ["lap-about"] = Circle(12, 12, 8.5) + " M12,11 V16.5 M12,7.6 V8",
+        ["lap-sun"] = Circle(12, 12, 4.2) + " M12,2.5 V4.5 M12,19.5 V21.5 M2.5,12 H4.5 M19.5,12 H21.5 M5.3,5.3 L6.7,6.7 M17.3,17.3 L18.7,18.7 M5.3,18.7 L6.7,17.3 M17.3,6.7 L18.7,5.3",
+        ["lap-moon"] = "M20,14.5 A8,8 0 0 1 9.5,4 A8,8 0 1 0 20,14.5 Z",
+        ["lap-image"] = RoundRect(4, 4, 16, 16, 3) + " M4,16 L9,11 L13,15 L15,13 L20,18",
+        ["lap-doc"] = "M7,3 H14 L18,7 V21 H7 Z M14,3 V7 H18 M10,12 H15 M10,16 H15",
+        ["lap-check"] = "M5,12.5 L9.5,17 L19,7.5",
+        ["lap-folder"] = "M3.5,7 A2,2 0 0 1 5.5,5 H9.5 L11.5,7 H18.5 A2,2 0 0 1 20.5,9 V17 A2,2 0 0 1 18.5,19 H5.5 A2,2 0 0 1 3.5,17 Z",
+        ["lap-open"] = "M14,4 H20 V10 M20,4 L11,13 M18,14 V18 A2,2 0 0 1 16,20 H6 A2,2 0 0 1 4,18 V8 A2,2 0 0 1 6,6 H10",
+        ["lap-warning"] = "M12,4 L21,19.5 H3 Z M12,10 V14 M12,16.8 V17.2",
+        ["lap-refresh"] = "M19.5,12 A7.5,7.5 0 1 1 16.8,6.2 M17.5,2.8 L17,6.6 L20.8,7",
+        ["lap-move"] = "M12,3 V21 M3,12 H21 M9,6 L12,3 L15,6 M9,18 L12,21 L15,18 M6,9 L3,12 L6,15 M18,9 L21,12 L18,15",
+        ["lap-down"] = "M12,4 V19 M6,13 L12,19 L18,13",
+        ["lap-play"] = "M7.5,5 L18.5,12 L7.5,19 Z",
+        ["lap-stop"] = RoundRect(6.5, 6.5, 11, 11, 2.5),
+        ["lap-follow"] = Circle(12, 12, 8.5) + Circle(12, 12, 3),
+        ["lap-undo"] = "M9,14 L4,9 L9,4 M4,9 H14 A6,6 0 0 1 14,21 H11",
+        ["lap-share"] = Circle(17.5, 5.5, 2.6) + Circle(6.5, 12, 2.6) + Circle(17.5, 18.5, 2.6) + " M8.8,10.7 L15.2,6.8 M8.8,13.3 L15.2,17.2",
+        // Pulse and its tiles (generic marks, not the services' logos).
+        ["lap-pulse"] = "M3,12 H7 L9.5,6 L13.5,18 L16,12 H21",
+        ["lap-claude"] = "M12,3.5 V20.5 M3.5,12 H20.5 M6,6 L18,18 M18,6 L6,18",
+        ["lap-codex"] = "M12,3 L20,7.5 V16.5 L12,21 L4,16.5 V7.5 Z M12,12 L20,7.5 M12,12 V21 M12,12 L4,7.5",
+        ["lap-chat"] = "M5,5 H19 A2,2 0 0 1 21,7 V15 A2,2 0 0 1 19,17 H12 L8,20.5 V17 H5 A2,2 0 0 1 3,15 V7 A2,2 0 0 1 5,5 Z",
+        ["lap-timer"] = Circle(12, 13.5, 7.5) + " M12,9.5 V13.5 L14.5,15.5 M10,2.5 H14",
+        ["lap-note"] = "M6,3.5 H15 L19,7.5 V20.5 H6 Z M15,3.5 V7.5 H19 M9,12 H15 M9,16 H13",
+        ["lap-colour"] = "M12,3.5 C15.5,7.7 18,11 18,14 A6,6 0 0 1 6,14 C6,11 8.5,7.7 12,3.5 Z",
+        ["lap-link"] = "M10,14 A4,4 0 0 0 15.7,14 L18.7,11 A4,4 0 0 0 13,5.3 L12,6.3 M14,10 A4,4 0 0 0 8.3,10 L5.3,13 A4,4 0 0 0 11,18.7 L12,17.7",
+        ["lap-system"] = RoundRect(6, 6, 12, 12, 2) + " M9,3 V6 M15,3 V6 M9,18 V21 M15,18 V21 M3,9 H6 M3,15 H6 M18,9 H21 M18,15 H21",
+        ["lap-plus"] = "M12,6 V18 M6,12 H18",
+        ["lap-chev-up"] = "M6,15 L12,9 L18,15",
+        ["lap-chev-down"] = "M6,9 L12,15 L18,9",
+        ["lap-x"] = "M7,7 L17,17 M17,7 L7,17",
     };
+
+    private static string F(double v) => v.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture);
+
+    private static string RoundRect(double x, double y, double w, double h, double r) =>
+        $" M{F(x + r)},{F(y)} H{F(x + w - r)} A{F(r)},{F(r)} 0 0 1 {F(x + w)},{F(y + r)} V{F(y + h - r)} A{F(r)},{F(r)} 0 0 1 {F(x + w - r)},{F(y + h)}" +
+        $" H{F(x + r)} A{F(r)},{F(r)} 0 0 1 {F(x)},{F(y + h - r)} V{F(y + r)} A{F(r)},{F(r)} 0 0 1 {F(x + r)},{F(y)} Z";
+
+    private static string Circle(double cx, double cy, double r) =>
+        $" M{F(cx - r)},{F(cy)} A{F(r)},{F(r)} 0 1 0 {F(cx + r)},{F(cy)} A{F(r)},{F(r)} 0 1 0 {F(cx - r)},{F(cy)} Z";
 
     public static Geometry Get(string key)
     {

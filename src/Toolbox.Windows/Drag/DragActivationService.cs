@@ -7,6 +7,7 @@ using Toolbox.Core.Recipes;
 using Toolbox.Core.Settings;
 using Toolbox.Windows.Diagnostics;
 using Toolbox.Windows.Interop;
+using Toolbox.Windows.Shell;
 using Toolbox.Windows.Theme;
 using Toolbox.Windows.Wheel;
 
@@ -86,7 +87,8 @@ internal sealed class DragActivationService : IDisposable
     {
         var settings = _settings();
         var menu = _overlay.Menu;
-        menu.ApplyPalette(Palette.Current(settings.Theme));
+        menu.ApplyPalette(Palette.Current(settings.Theme, settings.Accent));
+        menu.SetShare(ShareService.WheelModel(1));
         foreach (var kind in new[] { FileKind.Pdf, FileKind.Png })
         {
             var payload = new[] { new ProbedFile($"C:\\warm-up{kind.Extension()}", kind, 1024, null) };
@@ -95,6 +97,7 @@ internal sealed class DragActivationService : IDisposable
             {
                 menu.SetRing(rings[i], i, rings.Count, animate: false);
                 menu.SetHover(0);
+                menu.SetHover(RadialMenu.ShareHit);
                 menu.SetHover(RadialMenu.OutsideHit);
                 menu.UpdateLayout();
             }
@@ -189,17 +192,46 @@ internal sealed class DragActivationService : IDisposable
         _ringIndex = 0;
 
         var menu = _overlay.Menu;
-        menu.ApplyPalette(Palette.Current(settings.Theme));
+        menu.ApplyPalette(Palette.Current(settings.Theme, settings.Accent));
         menu.SetReducedMotion(_reducedMotion);
         var (primary, secondary) = WheelModels.IdleText(_payload);
         menu.SetIdleText(primary, secondary);
+        menu.SetShare(ShareService.WheelModel(paths.Length));
         menu.SetRing(_rings[0], 0, _rings.Count, animate: false);
+        CaptureBackdrop();
 
         _state = State.Open;
         _overlay.AnimateIn(_reducedMotion);
         LastRevealLatencyMs = Stopwatch.GetElapsedTime(_activationTimestamp).TotalMilliseconds;
         Log.Info($"Wheel revealed for {paths.Length} item(s) [{string.Join(", ", _payload.Select(p => p.Kind).Distinct())}] in {LastRevealLatencyMs:F0} ms.");
         _overlay.Dispatcher.BeginInvoke(DispatcherPriority.Loaded, WriteWheelDiagnostics);
+    }
+
+    /// <summary>
+    /// Reads the screen behind the wheel (its window is on screen but still invisible) so the glass
+    /// can blur it. In memory only; dropped when the wheel closes.
+    /// </summary>
+    private void CaptureBackdrop()
+    {
+        var menu = _overlay.Menu;
+        try
+        {
+            if (!Native.GetWindowRect(_overlay.Handle, out var r) || r.Width <= 0 || r.Height <= 0)
+            {
+                menu.SetBackdrop(null, default);
+                return;
+            }
+            using var source = new Longshot.GdiScreenSource(Longshot.PixelRect.From(r));
+            var frame = source.Grab();
+            var picture = Longshot.LongshotOutput.ToBitmap(frame.Width, frame.Height, frame.Pixels);
+            double offset = (_overlay.SizeDip - menu.Diameter) / 2;
+            menu.SetBackdrop(picture, new Rect(-offset, -offset, _overlay.SizeDip, _overlay.SizeDip));
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or OutOfMemoryException or ArgumentException)
+        {
+            Log.Warn($"The wheel's frosted background could not be made: {ex.Message}");
+            menu.SetBackdrop(null, default);
+        }
     }
 
     private void CycleRing()
@@ -319,7 +351,8 @@ internal sealed class DragActivationService : IDisposable
             {
                 _overlay.MoveOffscreen();
                 _overlay.Menu.IsHitTestVisible = true;
-            });
+                _overlay.Menu.SetBackdrop(null, default);
+            }, confirmed: reason == "dropped");
         }
         else
         {

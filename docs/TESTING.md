@@ -15,7 +15,8 @@ Amir Lap's shell is covered by these tests:
 - `ScrollStitcherTests` (Processing): Longshot's stitching on generated pages. The results are pixel-identical with sticky bars, hand scrolling, noise, soft footer edges and Undo, and blank stretches and look-alike rows are handled safely.
 - `CaptureSessionTests` (Windows) runs Longshot's whole capture loop (Extend, Auto, Follow, Undo, end detection, the smaller-step retry) against a simulated page and scroller. The real mouse and screen are never touched.
 - `ScreenCaptureTests` reads a 64×64 corner of the real screen (read-only) and checks where the panel goes.
-- `HomeWindowTests` builds every page of the Amir Lap window, plus Longshot's panel, result window and area chooser, off-screen in light and dark, without showing anything or starting a tool. To look at them, set `AMIRLAP_SNAPSHOT_DIR` to a folder; each one is saved there as a PNG:
+- `PulseTests` (Core): reading Codex's logs, Claude's status line and hooks, the most urgent session, the shared state file under concurrent writes, the bridge's output, alerts, connecting and removing Claude Code on temporary settings files, and Pulse's settings.
+- `HomeWindowTests` builds every page of the Amir Lap window (Pulse's included, and its dock on all four edges with its cards; it also shows the real dock window far off-screen and checks that it keeps its size, lets clicks through its empty side, and answers clicks and its menu). It creates the app only for its styles (`AMIRLAP_STYLES_ONLY=1`), so start-up never runs in the test and never talks to an installed Amir Lap that is running; plus File Toolbox's wheel and Longshot's panel, frame and result window, off-screen in light and dark (and the window in Arabic), without showing anything or starting a tool. To look at them, set `AMIRLAP_SNAPSHOT_DIR` to a folder; each one is saved there as a PNG:
 
 ```bash
 set AMIRLAP_SNAPSHOT_DIR=%TEMP%\amirlap-pages
@@ -102,4 +103,7 @@ Install with `artifacts/publish/install.ps1 -Launch` (or run the Debug build). T
 8. Try at another display scaling and on a second monitor if you have one, and note any misplacement.
 9. Drag a scan or a photo of an Arabic letter, tap Shift twice, drop on **Text (OCR)** → a `.txt` beside it; open it and check names and numbers.
 10. Drag a scanned PDF onto **Searchable** (Tools ring) → `… Searchable.pdf`; open it, search for an Arabic word and an English word, and copy a line.
-11. Uninstall from Settings > Apps > Installed apps → the shortcut, the folder and any Explorer entries are gone; your results are still where they were saved.
+11. **Pulse:** the dock appears on the right edge. Hover each tile (cards), drag its dots along the edge and onto the top edge, drag its inner edge to resize it (it snaps to Small/Medium/Large), right-click it to switch sets, and set Show to Slide away. Start a full-screen video: the dock hides.
+12. **Pulse and Codex:** use Codex once, then hover Codex's tile: the 5-hour and weekly numbers match Codex's own.
+13. **Pulse and Claude Code:** on the Pulse page press **See what changes**, then **Connect**. In Claude Code, send a prompt (the ring's light circles), make it ask for permission (amber, "!"), click Claude's tile (its terminal comes forward), and let it finish a task that takes over a minute (a note at the top). Press **Remove**: `~/.claude/settings.json` is back as before.
+14. Uninstall from Settings > Apps > Installed apps → the shortcut, the folder and any Explorer entries are gone; your results are still where they were saved.
