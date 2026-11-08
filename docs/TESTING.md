@@ -12,7 +12,10 @@ Amir Lap's shell is covered by these tests:
 
 - `KeyChordTests`, `ToolSettingsTests` and `LegacyDataMigrationTests` (Core): parsing shortcuts, per-tool settings, and the one-time copy of File Toolbox data.
 - `ToolRegistryTests` (Windows): tools start and stop with their switch, shortcuts are released while a tool is off, clashes are reported, and changes, switch-offs and resets work. They register throwaway Ctrl+Alt+Shift+F22/F23 shortcuts for a moment.
-- `HomeWindowTests` builds every page of the Amir Lap window off-screen, in light and dark, without showing anything or starting a tool. To look at the pages, set `AMIRLAP_SNAPSHOT_DIR` to a folder; each page is saved there as a PNG:
+- `ScrollStitcherTests` (Processing): Longshot's stitching on generated pages. The results are pixel-identical with sticky bars, hand scrolling, noise, soft footer edges and Undo, and blank stretches and look-alike rows are handled safely.
+- `CaptureSessionTests` (Windows) runs Longshot's whole capture loop (Extend, Auto, Follow, Undo, end detection, the smaller-step retry) against a simulated page and scroller. The real mouse and screen are never touched.
+- `ScreenCaptureTests` reads a 64×64 corner of the real screen (read-only) and checks where the panel goes.
+- `HomeWindowTests` builds every page of the Amir Lap window, plus Longshot's panel, result window and area chooser, off-screen in light and dark, without showing anything or starting a tool. To look at them, set `AMIRLAP_SNAPSHOT_DIR` to a folder; each one is saved there as a PNG:
 
 ```bash
 set AMIRLAP_SNAPSHOT_DIR=%TEMP%\amirlap-pages

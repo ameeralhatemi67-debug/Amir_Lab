@@ -11,3 +11,7 @@ TestResults/
 # Local reference footage and extracted frames stay out of the repo.
 *.mp4
 reference-frames/
+# Python prototype of Longshot (tools/LongshotPrototype): its environment, caches and log.
+.venv/
+__pycache__/
+longshot.log

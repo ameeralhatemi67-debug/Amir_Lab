@@ -3,7 +3,7 @@
 States: **Working** (implemented and verified, with the evidence named), **Partial** (some of it works; the gaps are listed), **Blocked** (cannot proceed without something), **Future** (not started).
 A capability listed in the seed or the capability map is not working until this table says so.
 
-_Last updated: 8 Nov 2026 — Amir Lap phase 1 (the multi-tool shell) complete; File Toolbox is tool #1. M8 measurements: [PERFORMANCE.md](PERFORMANCE.md) (not yet re-measured for the shell)._
+_Last updated: 8 Nov 2026 — Amir Lap phases 1 and 2 complete: the multi-tool shell, File Toolbox as tool #1 and Longshot as tool #2. M8 measurements: [PERFORMANCE.md](PERFORMANCE.md) (not yet re-measured for the shell)._
 
 ## Amir Lap shell (phase 1)
 
@@ -15,7 +15,17 @@ _Last updated: 8 Nov 2026 — Amir Lap phase 1 (the multi-tool shell) complete; 
 | Tray menu with a sub-menu per tool | **Partial** | Built and compiled; not yet exercised by a real click. |
 | First-start copy of File Toolbox data | **Working** | `LegacyDataMigrationTests` (copy once, never overwrite, old folder untouched, logs not carried over). |
 | Installer replaces File Toolbox; integrations carried over | **Working** | `test-install.ps1`: 26 checks, including old folder, shortcut and uninstall entry removed and the startup entry moved to `AmirLap`. |
-| Longshot (tool #2) | **Future** | Phase 2. A Python prototype with pixel-exact stitching tests is in `tools/LongshotPrototype`. |
+
+## Longshot (phase 2)
+
+| Capability | State | Evidence / notes |
+|---|---|---|
+| Stitching engine (shift finding, sticky bars, soft edges, look-alike rows) | **Working** | `ScrollStitcherTests` (16): pixel-identical results with sticky bars, hand scrolling, noise, Undo, soft footer edges, blank stretches, look-alike rows in and out of range. The same algorithm passed live tests in Chrome as the Python prototype. |
+| Capture loop: Extend, Auto, Follow, Undo, end detection, smaller-step retry | **Working** | `CaptureSessionTests` (7) on a simulated page and scroller: pixel-identical to the page. |
+| Reading the screen (GDI) | **Working** | `ScreenCaptureTests`: reads a real screen rectangle (read-only). |
+| Area chooser, panel, frame, result window, Longshot page, tray entries | **Working** | `HomeWindowTests` builds every window off-screen in light and dark; snapshots reviewed. Not yet used live. |
+| Real wheel scrolling of other apps and live use end to end | **Partial** | Not exercised by the automated tests (they never move the real pointer). Needs a live try by the owner. |
+| Monitors with different scalings | **Partial** | One window spans the virtual screen; untested on mixed-DPI setups. |
 
 ## Desktop interaction
 

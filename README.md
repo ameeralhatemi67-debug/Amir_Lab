@@ -5,7 +5,7 @@ Your desktop tools in one place: a local Windows tray app, in the spirit of Powe
 | Tool | What it does | Shortcut |
 |---|---|---|
 | **File Toolbox** | Convert, edit and prepare files right from where you work: drag a file in Explorer or on the desktop, tap **Shift**, and drop it onto a wheel of actions. | Ctrl+Alt+F opens its window |
-| **Longshot** (next) | Scrolling screenshots: draw a box, then extend it downward. Prototype in [`tools/LongshotPrototype`](tools/LongshotPrototype). | Ctrl+Alt+S (planned) |
+| **Longshot** | Scrolling screenshots: draw a box, then press Extend (or Auto, or Follow while you scroll) to grow it downward. Saved to Pictures\Screenshots and copied to the clipboard. | Ctrl+Alt+S, or Ctrl+Alt+Shift+S after a delay |
 
 - Product direction: [`sead_idea.md`](sead_idea.md) (the seed: owner decisions and feature reference). The move to Amir Lap is recorded in [`docs/DECISIONS.md`](docs/DECISIONS.md).
 - What works today: [`docs/IMPLEMENTATION_STATUS.md`](docs/IMPLEMENTATION_STATUS.md)
@@ -33,7 +33,9 @@ powershell -ExecutionPolicy Bypass -File artifacts/publish/install.ps1 -Launch
   - Uninstalling also removes the Explorer menu, Send to and start-with-Windows entries if you switched them on.
   - It keeps your settings and history unless you pass `-RemoveUserData`.
   - It never touches the files the tools produced.
-- **Using it:** the app sits in the notification area. Click its icon for the Amir Lap window (Dashboard, a page per tool, General); right-click for each tool's menu. Drag a file in Explorer or on the desktop and tap **Shift** for the File Toolbox wheel, or press **Ctrl+Alt+F** for its keyboard palette.
+- **Using it:** the app sits in the notification area. Click its icon for the Amir Lap window (Dashboard, a page per tool, General); right-click for each tool's menu.
+  - **File Toolbox:** drag a file in Explorer or on the desktop and tap **Shift** for the wheel, or press **Ctrl+Alt+F** for its keyboard palette.
+  - **Longshot:** press **Ctrl+Alt+S** and drag a box, then use the panel beside it: **Extend** adds the next part, **Auto** keeps going to the bottom, **Follow** adds as you scroll, and **Done** saves and copies. Esc stops Auto and Follow.
 - **Text recognition:** this uses Windows' own OCR. Arabic needs the Arabic language with "Optical character recognition" installed (Settings > Time & language > Language & region).
 - **Requirements:** Windows 10 1809 or later, x64. Tested on Windows 11 only.
 
@@ -42,16 +44,16 @@ powershell -ExecutionPolicy Bypass -File artifacts/publish/install.ps1 -Launch
 | Path | Role |
 |---|---|
 | `src/Toolbox.Core` | Platform-neutral model: capability map, probing, outputs, jobs, settings (including per-tool switches and shortcuts), history |
-| `src/Toolbox.Processing` | Local engines: libvips, PDFium, Skia, PDFsharp, OpenXML |
+| `src/Toolbox.Processing` | Local engines: libvips, PDFium, Skia, PDFsharp, OpenXML, and Longshot's stitching (`Capture/`) |
 | `src/Toolbox.Cli` | `ftb`, File Toolbox's command-line runner (tests, scripting, future out-of-process worker) |
-| `src/Toolbox.Windows` | Windows app (`AmirLap.exe`): the Amir Lap window and tool registry (`Home/`, `Tools/`), shortcuts, tray, and File Toolbox's keyboard hook, OLE drop target, wheel and editors |
+| `src/Toolbox.Windows` | Windows app (`AmirLap.exe`): the Amir Lap window and tool registry (`Home/`, `Tools/`), shortcuts, tray, File Toolbox's keyboard hook, OLE drop target, wheel and editors, and Longshot's capture windows and session (`Longshot/`) |
 | `src/Toolbox.Windows.Ocr` | Windows' built-in OCR (`Windows.Media.Ocr`) behind the portable `IOcrEngine` |
 | `tests/` | xUnit tests |
 | `tools/DragHarness` | Automated real-Explorer drag test |
 | `tools/OcrEval` | Arabic/English OCR evaluation (generated corpus + your samples, CER/WER) |
 | `tools/Bench` | Idle cost, preview latency, time and peak memory of heavy operations |
 | `tools/IconGen` | Regenerates `app.ico` from the glyph the app draws |
-| `tools/LongshotPrototype` | Working Python prototype of Longshot, with pixel-exact stitching tests (reference for phase 2) |
+| `tools/LongshotPrototype` | The Python prototype Longshot was ported from, with its live-test tools (reference only, not shipped) |
 | `tools/publish.ps1`, `install.ps1`, `uninstall.ps1`, `test-install.ps1` | Packaging, per-user install and its sandboxed end-to-end test |
 
 ## Build

@@ -23,8 +23,8 @@ File Toolbox becomes tool #1 of **Amir Lap**, a multi-tool tray app ([DECISIONS.
 | Phase | Scope | State |
 |---|---|---|
 | 1. Shell | Rename and data migration; tool modules with on/off switches; configurable global shortcuts with conflict checks; sidebar window (Dashboard, tool pages, General); tray menu per tool; installer that replaces File Toolbox. | Done |
-| 2. Longshot | Rewrite the Python prototype (`tools/LongshotPrototype`) in C#: stitching engine with its pixel-exact tests, box selection, Extend / Auto / Follow / Undo panel kept out of captures, result window, Longshot page and shortcuts (default Ctrl+Alt+S, and Ctrl+Alt+Shift+S after a 3-second delay). The network guard must cover the new assembly. | Next |
-| 3. Finish | Installer and uninstaller for both tools, idle-cost measurement, 100/125/150% scaling, docs. | — |
+| 2. Longshot | Rewrite the Python prototype (`tools/LongshotPrototype`) in C#: stitching engine with its pixel-exact tests, box selection, Extend / Auto / Follow / Undo panel kept out of captures, result window, Longshot page and shortcuts (default Ctrl+Alt+S, and Ctrl+Alt+Shift+S after a delay). | Done (live use by the owner pending) |
+| 3. Finish | Live check of both tools, installer and uninstaller for both tools, idle-cost measurement, 100/125/150% scaling and mixed-DPI monitors, docs. | Next |
 
 Ideas kept for later, owner to choose:
 

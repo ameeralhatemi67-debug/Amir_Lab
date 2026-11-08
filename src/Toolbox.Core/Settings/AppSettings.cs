@@ -28,6 +28,9 @@ public sealed class AppSettings
         return t;
     }
 
+    /// <summary>Longshot (scrolling screenshots).</summary>
+    public LongshotSettings Longshot { get; set; } = new();
+
     // ---- File Toolbox: activation & wheel ----------------------------------------------------
     /// <summary>Key tapped during a file drag to open the wheel: Shift, Ctrl, Alt or CapsLock.</summary>
     public string ActivationKey { get; set; } = "Shift";
@@ -76,6 +79,34 @@ public sealed class AppSettings
     };
 
     public AppSettings Clone() => JsonSerializer.Deserialize<AppSettings>(JsonSerializer.Serialize(this, SettingsStore.JsonOptions), SettingsStore.JsonOptions)!;
+}
+
+/// <summary>Longshot's preferences.</summary>
+public sealed class LongshotSettings
+{
+    /// <summary>What happens after the box is drawn: "wait" (Extend by hand), "auto" or "follow".</summary>
+    public string AfterSelect { get; set; } = "wait";
+
+    /// <summary>How far each Extend scrolls: "small", "auto" or "large".</summary>
+    public string ScrollStep { get; set; } = "auto";
+
+    public bool CopyToClipboard { get; set; } = true;
+
+    /// <summary>Show the result window after Done.</summary>
+    public bool ShowResult { get; set; } = true;
+
+    /// <summary>Where captures are saved; null means Pictures\Screenshots.</summary>
+    public string? SaveFolder { get; set; }
+
+    /// <summary>"png" or "jpg".</summary>
+    public string Format { get; set; } = "png";
+
+    /// <summary>Seconds to wait for the delayed-capture shortcut.</summary>
+    public int DelaySeconds { get; set; } = 3;
+
+    /// <summary>Share of the scrolling area each Extend aims to move.</summary>
+    [JsonIgnore]
+    public double StepFraction => ScrollStep switch { "small" => 0.35, "large" => 0.75, _ => 0.55 };
 }
 
 /// <summary>A tool's on/off switch and its keyboard shortcuts.</summary>

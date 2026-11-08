@@ -171,3 +171,29 @@ Product direction lives in [`sead_idea.md`](../sead_idea.md) (the seed). This fi
 - **Window design.** Built in code like the other windows, on the same glass theme and shared styles. New shared styles: `Toolbox.Switch`, `Toolbox.NavItem`, `Toolbox.KeyCap`. Settings rows are grouped in cards, as in Windows Settings and PowerToys. The old Settings window is gone: its File Toolbox sections live on the tool's page, and Theme, Reduce motion, Start with Windows and Privacy live on General.
 - **Light-theme fix (found while building this).** The global `TextBlock` style forced `Brush.Text` on text inside accent buttons, selected segments and selected tabs, so white-on-accent text turned black in light mode. Those three templates now reset the implicit style for their content.
 - **Not done in phase 1:** a new brand icon (the File Toolbox glyph is kept for now), the quick-launcher flyout and the shortcut cheat sheet (both on the roadmap), and Longshot itself (phase 2).
+
+## Longshot (phase 2 — 8 Nov 2026)
+
+- **Rewritten in C#** from the Python prototype in `tools/LongshotPrototype`. The prototype stays as a reference with its live-test tools and isn't shipped.
+- **Where the code lives.**
+  - The stitching engine (`ShiftFinder`, `LongImage`, `ScrollStitcher`) is pure image maths in `Toolbox.Processing/Capture`. It stays platform-neutral, and the existing network guard covers it without changes.
+  - Screen reading, wheel input and the windows are in `Toolbox.Windows/Longshot`.
+  - The session loop works against `IScreenSource` and `IScroller`, so it is tested end to end with a simulated page and scroller, without touching the real mouse or screen.
+- **Matching** is the prototype's, with its three fixes from live tests in Chrome:
+  - Rows next to a sticky bar count as part of it, because their soft edge changes as the page scrolls.
+  - A match is refused when any 16-px stripe differs a lot, so look-alike rows (lists, tables) can't be joined in the wrong place.
+  - The usual step size is used only as a tie-breaker.
+- **Two more fixes found while porting:**
+  - A pixel-perfect match beats a near miss: the tie tolerance shrinks with the best score.
+  - "Nothing moved" now needs nearly identical frames. Before, a jump past the whole area could look like the end of the page and stop Auto early.
+- **Limits.** A screenful of identical rows (shifts a row apart match equally well) has no right answer when scrolling by hand. Extend and Auto break the tie with the usual step size; Follow can't.
+- **Capture:** GDI `BitBlt` with `CAPTUREBLT` on the area, in physical pixels (the app is PerMonitorV2). The selection screen is one window over the whole virtual screen, showing a frozen snapshot. Monitors with different scalings are untested, as for the wheel.
+- **Scrolling:** real wheel input (`SendInput`). The pointer moves to the middle of the box, the wheel turns, and the pointer goes back, so hover effects aren't captured.
+  - **Step size:** starts at one notch (half a notch for areas under 300 px), measures the pixels per notch, then aims for 55% of the area (35% "small", 75% "large").
+  - **Overshoot:** if a step overshoots, it scrolls back and halves the notches, then the wheel delta.
+  - **Can't scroll:** apps running as administrator, because Windows' UIPI blocks the input.
+- **Never in the picture:** the panel, the frame and the countdown are marked `WDA_EXCLUDEFROMCAPTURE`. The frame is click-through, and the panel never takes focus, so Follow can be used with the keyboard in the captured app.
+- **Output:** saved to `Pictures\Screenshots` (as Snipping Tool does) or a chosen folder, as "Longshot yyyy-MM-dd HHmmss.png"/".jpg". It is encoded on an STA worker, written to a temp file then renamed, never overwrites, and is copied to the clipboard by default.
+  - **Result window:** shows a downscaled copy (at most 16,000 px tall), because WPF can render very tall bitmaps blank. **Open in File Toolbox** hands the file to the palette for any File Toolbox action, such as OCR, PDF or compression.
+  - **Limits:** at most 40,000 px tall; Undo keeps the last 10 steps.
+- **Shortcuts (defaults):** Ctrl+Alt+S starts a capture. Ctrl+Alt+Shift+S starts one after a delay (3, 5 or 10 s), with a countdown that is itself left out of captures. "Capture the same area again" has no default.

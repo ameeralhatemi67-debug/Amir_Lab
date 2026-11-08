@@ -81,6 +81,31 @@ public class ToolSettingsTests
     }
 
     [Fact]
+    public void Longshot_settings_survive_saving_and_default_sensibly()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"amirlap-longshot-{Guid.NewGuid():N}.json");
+        try
+        {
+            var store = new SettingsStore(path);
+            Assert.Equal(("wait", "auto", "png", true, 0.55), (store.Current.Longshot.AfterSelect, store.Current.Longshot.ScrollStep,
+                store.Current.Longshot.Format, store.Current.Longshot.CopyToClipboard, store.Current.Longshot.StepFraction));
+            var next = store.Current.Clone();
+            next.Longshot.AfterSelect = "auto";
+            next.Longshot.ScrollStep = "small";
+            next.Longshot.SaveFolder = @"D:\Captures";
+            store.Save(next);
+            Assert.DoesNotContain("stepFraction", File.ReadAllText(path)); // derived, not stored
+
+            var reloaded = new SettingsStore(path).Current.Longshot;
+            Assert.Equal(("auto", "small", @"D:\Captures", 0.35), (reloaded.AfterSelect, reloaded.ScrollStep, reloaded.SaveFolder, reloaded.StepFraction));
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
     public void Settings_from_before_the_rename_load_with_tool_defaults()
     {
         var path = Path.Combine(Path.GetTempPath(), $"amirlap-old-settings-{Guid.NewGuid():N}.json");

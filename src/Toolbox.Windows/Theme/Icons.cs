@@ -35,6 +35,7 @@ internal static class Icons
         ["toolbox"] = "M3,8 L21,8 L21,20 L3,20 Z M9,8 L9,5 L15,5 L15,8 M3,13 L21,13 M10,12 L14,12 L14,15 L10,15 Z",
         ["keyboard"] = "M2,6 L22,6 L22,18 L2,18 Z M6,10 L6,10.5 M10,10 L10,10.5 M14,10 L14,10.5 M18,10 L18,10.5 M7,14 L17,14",
         ["info"] = "M12,3 A9,9 0 1 0 12,21 A9,9 0 1 0 12,3 Z M12,11 L12,16 M12,7.5 L12,8",
+        ["longshot"] = "M5,2 L19,2 L19,13 L5,13 Z M8,6 L16,6 M8,9 L13,9 M12,15.5 L12,22 M8.5,18.5 L12,22 L15.5,18.5",
     };
 
     public static Geometry Get(string key)

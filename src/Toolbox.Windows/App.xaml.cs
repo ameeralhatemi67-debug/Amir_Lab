@@ -96,7 +96,7 @@ public partial class App : Application
         _dispatcher.Editors = new EditorLauncher(_dispatcher);
 
         _fileToolbox = new FileToolboxTool(_host, _dispatcher, diagnostics);
-        _tools = new ToolRegistry(_host.Settings, [_fileToolbox]);
+        _tools = new ToolRegistry(_host.Settings, [_fileToolbox, new LongshotTool(_host)]);
 
         _channel = new InstanceChannel();
         _channel.Start(args => Dispatcher.BeginInvoke(() => HandleArguments(args, fromAnotherInstance: true)));
@@ -183,6 +183,18 @@ public partial class App : Application
         }
         if (page is not null) app._home.ShowPage(page);
         Foreground.Activate(app._home);
+    }
+
+    /// <summary>Minimizes the Amir Lap window (before a screen capture started from it).</summary>
+    internal static void MinimizeHome()
+    {
+        if (((App)Current)._home is { } home) home.WindowState = WindowState.Minimized;
+    }
+
+    internal static bool IsToolEnabled(string id)
+    {
+        var app = (App)Current;
+        return app._tools?.Find(id) is { } tool && app._tools.IsEnabled(tool);
     }
 
     /// <summary>File Toolbox's palette (its main window). When the tool is off, shows its page instead.</summary>
