@@ -39,6 +39,17 @@ _Last updated: 8 Nov 2026 — Amir Lap phases 1 and 2 complete: the multi-tool s
 | Real wheel scrolling of other apps and live use end to end | **Partial** | Live in Edge through the capture session (`LiveLongshotTests`); the whole app (panel, picker, hooks) still needs a live try by the owner. |
 | Monitors with different scalings | **Partial** | One window spans the virtual screen; untested on mixed-DPI setups. 125% on one monitor checked live. |
 
+## Longshot: the marker is the scroll cursor (14 Nov 2026)
+
+| Capability | State | Evidence / notes |
+|---|---|---|
+| A section scrolled by itself (no pointer, no wheel): exact result, end known, page around kept still or put back, Undo and Refresh by percent, wheel fallback when an app only says it scrolled | **Working** | `CaptureSessionTests` (4 more) on a simulated window. |
+| The marker as scroll cursor: starts on the section under the pointer; dropped on the page, the page is captured whole and the section left as it was | **Working** | `HomeWindowTests.CheckLongshotNested` through the real controller, panel and frame, on a simulated page whose wheel behaves like a browser's (it must never be used). |
+| Live in Edge: a page that scrolls with two sections that scroll inside it; each section and the page captured whole, every row once; the page and pointer untouched while a section is captured | **Working** | `LiveLongshotTests` (opt-in), with the three earlier live cases still passing. |
+| Frame and pick highlight without layering: holes where the app should get clicks, the band, pills and marker clickable | **Working** | Checked live on this PC (hit tests at the middle, marker centre, ring, band and pills). The dragging lag needs the owner's live try. |
+| Highlight of the section under the marker while dragging | **Partial** | Built; needs a live try. |
+| Apps that don't answer UI Automation's scroll pattern | **Partial** | They fall back to the wheel, now guarded (no text selection). Not tried on such an app live. |
+
 ## Preview, PDF viewer and PDF editor (13 Nov 2026)
 
 | Capability | State | Evidence / notes |

@@ -139,12 +139,13 @@ internal sealed class PickHighlight : Window
     private const double Pad = 12;
     private IntPtr _hwnd;
     private PixelRect _area;
+    private Border? _pill;
 
     public PickHighlight()
     {
         Title = "Longshot pick";
         WindowStyle = WindowStyle.None;
-        AllowsTransparency = true;
+        AllowsTransparency = false; // see SeeThrough: a ring-shaped window, not a layered one the size of the area
         Background = Brushes.Transparent;
         ResizeMode = ResizeMode.NoResize;
         ShowInTaskbar = false;
@@ -178,7 +179,28 @@ internal sealed class PickHighlight : Window
             Child = row,
             FlowDirection = Lang.Flow,
         };
+        _pill = pill;
+        pill.SizeChanged += (_, _) => UpdateShape();
         Content = new Grid { Children = { _line, pill } };
+    }
+
+    /// <summary>The ring and the label are the window; the inside is a hole (clicks go to the app).</summary>
+    private void UpdateShape()
+    {
+        if (_hwnd == IntPtr.Zero) return;
+        double scale = ScreenGeometry.MonitorAt(_area.Center.ToPoint()).Scale, dip = VisualTreeHelper.GetDpi(this).DpiScaleX;
+        int pad = (int)Math.Ceiling(Pad * scale);
+        double inset = 3 * scale;
+        using var shape = new WindowShape()
+            .Add(new Rect(0, 0, _area.Width + 2 * pad, _area.Height + 2 * pad))
+            .Cut(new Rect(pad + inset, pad + inset, Math.Max(0, _area.Width - 2 * inset), Math.Max(0, _area.Height - 2 * inset)));
+        if (_pill is { IsVisible: true, ActualWidth: > 0 } p && Content is Visual root)
+        {
+            var b = p.TransformToAncestor(root).TransformBounds(new Rect(0, 0, p.ActualWidth, p.ActualHeight));
+            b.Inflate(4, 4);
+            shape.Add(new Rect(b.X * dip, b.Y * dip, b.Width * dip, b.Height * dip), 16 * dip);
+        }
+        shape.ApplyTo(_hwnd);
     }
 
     public static string KindText(TargetKind kind) => kind switch
@@ -196,17 +218,17 @@ internal sealed class PickHighlight : Window
     };
 
     /// <summary>What the label says (also used by tests, which never show the window).</summary>
-    internal void SetLabel(PixelRect area, TargetKind kind)
+    internal void SetLabel(PixelRect area, TargetKind kind, string? label = null)
     {
         _area = area;
-        _kind.Text = KindText(kind);
+        _kind.Text = label ?? KindText(kind);
         _size.Text = $"{area.Width:N0} × {area.Height:N0}";
         _icon.Content = SettingsPage.Glyph(KindIcon(kind), 14, brush: Brushes.White, stroke: 2);
     }
 
-    public void ShowAt(PixelRect area, TargetKind kind)
+    public void ShowAt(PixelRect area, TargetKind kind, string? label = null)
     {
-        SetLabel(area, kind);
+        SetLabel(area, kind, label);
         if (!IsVisible) Show();
         Place();
         Opacity = 1;
@@ -222,14 +244,16 @@ internal sealed class PickHighlight : Window
         if (_hwnd == IntPtr.Zero) return;
         double scale = ScreenGeometry.MonitorAt(_area.Center.ToPoint()).Scale;
         CaptureWindows.Place(_hwnd, _area.Inflate((int)Math.Ceiling(Pad * scale)));
+        UpdateShape();
     }
 
     protected override void OnSourceInitialized(EventArgs e)
     {
         base.OnSourceInitialized(e);
         _hwnd = new WindowInteropHelper(this).Handle;
-        CaptureWindows.MakeClickThrough(_hwnd);
+        CaptureWindows.MakeNoActivate(_hwnd);
         CaptureWindows.ExcludeFromCapture(_hwnd);
+        SeeThrough.Enable(this, _hwnd);
         Place();
     }
 }

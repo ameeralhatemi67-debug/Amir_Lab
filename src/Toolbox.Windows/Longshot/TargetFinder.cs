@@ -77,43 +77,11 @@ internal static partial class TargetFinder
     public static PixelRect WorkAreaAt(PixelPoint p) => PixelRect.From(ScreenGeometry.MonitorAt(p.ToPoint()).WorkArea);
 
     /// <summary>
-    /// The innermost area at the point that can scroll up and down, kept inside its window, or null
-    /// (nothing there scrolls, the app doesn't say, or it is one of Amir Lap's own windows). Blocks
-    /// while UI Automation answers: call it off the UI thread.
+    /// The innermost area at the point that can scroll up and down (what of it shows, cut by the page
+    /// and window around it), or null (nothing there scrolls, the app doesn't say, or it is one of
+    /// Amir Lap's own windows). Blocks while UI Automation answers: call it off the UI thread.
     /// </summary>
-    public static PixelRect? ScrollAreaAt(PixelPoint p)
-    {
-        if (WindowAt(p) is not { } window) return null;
-        try
-        {
-            var element = AutomationElement.FromPoint(new System.Windows.Point(p.X, p.Y));
-            // The raw view: browsers expose a scrolling <div> as a plain container, which the
-            // control view leaves out (it would go straight from the text to the page).
-            var walker = TreeWalker.RawViewWalker;
-            for (int depth = 0; element is not null && depth < 40; depth++)
-            {
-                var current = element.Current;
-                if (current.ProcessId == Environment.ProcessId) return null;
-                if (element.TryGetCurrentPattern(ScrollPattern.Pattern, out var pattern)
-                    && pattern is ScrollPattern scroll && scroll.Current.VerticallyScrollable)
-                {
-                    var r = current.BoundingRectangle;
-                    if (!r.IsEmpty && double.IsFinite(r.Width) && double.IsFinite(r.Height))
-                    {
-                        var area = new PixelRect((int)Math.Round(r.X), (int)Math.Round(r.Y), (int)Math.Round(r.Width), (int)Math.Round(r.Height)).Intersect(window.Rect);
-                        if (area.Width >= MinWidth && area.Height >= MinHeight && area.Contains(p)) return area;
-                    }
-                }
-                if (current.NativeWindowHandle == (int)window.Hwnd) break; // reached the window itself
-                element = walker.GetParent(element);
-            }
-        }
-        catch (Exception ex) when (ex is ElementNotAvailableException or COMException or InvalidOperationException or ArgumentException or TimeoutException)
-        {
-            Log.Info($"Longshot: no scroll area from UI Automation ({ex.GetType().Name}).");
-        }
-        return null;
-    }
+    public static PixelRect? ScrollAreaAt(PixelPoint p) => ScrollTargets.At(p)?.Area;
 
     /// <summary>
     /// <see cref="ScrollAreaAt"/> on a worker thread, giving up after <paramref name="timeout"/>.
@@ -136,7 +104,7 @@ internal static partial class TargetFinder
         return null;
     }
 
-    private static bool IsBrowser(PixelPoint p)
+    internal static bool IsBrowser(PixelPoint p)
     {
         if (WindowAt(p) is not { } window) return false;
         var name = new char[64];

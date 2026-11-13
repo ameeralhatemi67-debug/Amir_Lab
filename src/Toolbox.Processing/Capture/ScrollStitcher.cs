@@ -426,7 +426,8 @@ public sealed class LongImage
 }
 
 /// <summary>How a step was taken, so Undo can scroll back the same amount.</summary>
-public readonly record struct StepInfo(int Notches, int WheelUnit);
+/// <summary>How a step scrolled: wheel notches and delta, or (when the area was scrolled by itself) where it was before.</summary>
+public readonly record struct StepInfo(int Notches, int WheelUnit, double PercentBefore = double.NaN);
 
 public sealed record StitchStep(byte[] Removed, int AddedRows, Frame PreviousFrame, StepInfo Info);
 

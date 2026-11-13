@@ -41,6 +41,7 @@ public sealed class LiveLongshotTests(ITestOutputHelper output)
 
     [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr hwnd);
     [DllImport("user32.dll")] private static extern bool ShowWindow(IntPtr hwnd, int cmd);
+    [DllImport("user32.dll", SetLastError = true)] private static extern bool SetWindowPos(IntPtr hwnd, IntPtr after, int x, int y, int cx, int cy, uint flags);
     [DllImport("dwmapi.dll")] private static extern int DwmGetWindowAttribute(IntPtr hwnd, int attribute, out Interop.Native.RECT value, int size);
 
     // ---- pages -----------------------------------------------------------------------------------
@@ -50,6 +51,7 @@ public sealed class LiveLongshotTests(ITestOutputHelper output)
         html,body{margin:0;font:15px "Segoe UI",sans-serif;background:#f4f5f7;color:#222}
         .row{height:32px;display:flex;align-items:center;padding:0 12px}
         .g{width:6px;height:12px;background:#ff0000;margin-right:8px;flex:none}
+        .blue .g{background:#0000ff}.green .g{background:#00c000}
         .b{width:10px;height:12px;flex:none}
         .t{margin-left:12px;white-space:nowrap;overflow:hidden}
         .top{position:fixed;left:0;right:0;top:0;height:52px;background:#2a3f8f;color:#fff;display:flex;align-items:center;padding:0 18px;z-index:2}
@@ -60,9 +62,9 @@ public sealed class LiveLongshotTests(ITestOutputHelper output)
 
     private const string Script = """
         <script>
-        function fill(box){
+        function fill(box, rows){
           const words = ["the","quick","brown","fox","jumps","over","a","lazy","dog","today"];
-          for (let i = 0; i < ROWS; i++) {
+          for (let i = 0; i < (rows || ROWS); i++) {
             const row = document.createElement("div"); row.className = "row";
             const g = document.createElement("span"); g.className = "g"; row.appendChild(g);
             for (let b = 9; b >= 0; b--) { const s = document.createElement("span"); s.className = "b"; s.style.background = (i >> b) & 1 ? "#000" : "#d0d0d0"; row.appendChild(s); }
@@ -98,6 +100,22 @@ public sealed class LiveLongshotTests(ITestOutputHelper output)
         {{Script.Replace("ROWS", Rows.ToString())}}<script>fill(document.getElementById("doc"))</script></body></html>
         """;
 
+    private const int PageRows = 70;
+
+    /// <summary>
+    /// The owner's page (the Salla order editor, 13 Nov 2026): the page scrolls, and two sections in
+    /// it scroll on their own (A: red rows, B: green rows); below them, the page's own rows (blue).
+    /// </summary>
+    private static string NestedPage() => $$"""
+        <!doctype html><html lang="en"><head><meta charset="utf-8"><title>Longshot live: nested</title>{{Style}}
+        <style>body{padding:0 18px}.head{height:70px;background:#2a3f8f;color:#fff;display:flex;align-items:center;padding:0 16px;margin-bottom:12px}
+        .cols{display:flex;gap:18px}#a,#b{height:300px;overflow-y:auto;background:#fff;border:1px solid #c4c8d0;border-radius:8px}#a{flex:3}#b{flex:2}
+        #page{margin-top:14px;background:#fff}</style></head>
+        <body><div class="head">Order editor: the page scrolls, and so do the two lists</div>
+        <div class="cols"><div id="a"></div><div id="b" class="green"></div></div><div id="page" class="blue"></div>
+        {{Script.Replace("ROWS", Rows.ToString())}}<script>fill(document.getElementById("a")); fill(document.getElementById("b"), 90); fill(document.getElementById("page"), {{PageRows}})</script></body></html>
+        """;
+
     /// <summary>A plain long page: everything scrolls (what worked before must still work).</summary>
     private static string PlainPage() => $$"""
         <!doctype html><html lang="en"><head><meta charset="utf-8"><title>Longshot live: plain</title>{{Style}}
@@ -122,7 +140,9 @@ public sealed class LiveLongshotTests(ITestOutputHelper output)
                 @"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
             }.First(System.IO.File.Exists);
             _process = Process.Start(new ProcessStartInfo(edge,
-                $"--app=\"{new Uri(file).AbsoluteUri}\" --user-data-dir=\"{profile}\" --no-first-run --no-default-browser-check --disable-features=msEdgeSidebarV2 --window-position=60,40 --window-size=1000,640 --disable-features=Translate")
+                // InPrivate: Edge would otherwise sign the throwaway profile in with the Windows account and
+                // cover the page with a "now syncing" prompt.
+                $"--inprivate --app=\"{new Uri(file).AbsoluteUri}\" --user-data-dir=\"{profile}\" --no-first-run --no-default-browser-check --disable-sync --disable-features=msEdgeSidebarV2,Translate,msImplicitSignin --window-position=60,40 --window-size=1000,640")
             { UseShellExecute = false })!;
             var deadline = DateTime.UtcNow.AddSeconds(20);
             while (DateTime.UtcNow < deadline)
@@ -136,10 +156,28 @@ public sealed class LiveLongshotTests(ITestOutputHelper output)
             Thread.Sleep(2500); // let the page load and paint
             ShowWindow(Hwnd, 9);
             SetForegroundWindow(Hwnd);
+            // On top of everything for the test (Windows may refuse to bring it to the front otherwise).
+            TopmostSet = SetWindowPos(Hwnd, new IntPtr(-1), 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010);
+            TopmostError = Marshal.GetLastWin32Error();
+            Thread.Sleep(300);
+            // Newer Edge shows the app in another top-level window than the one with the title: use
+            // the Edge window that is actually at the middle of it.
+            var middle = Rect.Center;
+            var shown = GetAncestorRaw(WindowFromPointRaw(new Interop.Native.POINT { X = middle.X, Y = middle.Y }), 2);
+            GetWindowThreadProcessId(shown, out uint shownPid);
+            if (shown != IntPtr.Zero && shown != Hwnd && Process.GetProcessById((int)shownPid).ProcessName == "msedge")
+            {
+                Hwnd = shown;
+                SetWindowPos(Hwnd, new IntPtr(-1), 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010);
+                Thread.Sleep(200);
+            }
             Thread.Sleep(500);
         }
 
         public IntPtr Hwnd { get; private set; }
+
+        public bool TopmostSet { get; }
+        public int TopmostError { get; }
 
         /// <summary>The window as Longshot sees it: its visible frame, kept inside the work area.</summary>
         public PixelRect Rect
@@ -163,11 +201,20 @@ public sealed class LiveLongshotTests(ITestOutputHelper output)
             {
                 var at = TargetFinder.WindowAt(p);
                 if (at is not { } w || w.Hwnd != Hwnd)
-                    throw new Xunit.Sdk.XunitException($"Edge isn't the window at {p}: another window covers it, so nothing was scrolled. Bring nothing to the front while the live tests run.");
+                {
+                    var raw = WindowFromPointRaw(new Interop.Native.POINT { X = p.X, Y = p.Y });
+                    var title = new System.Text.StringBuilder(256);
+                    GetWindowText(GetAncestorRaw(raw, 2), title, 256);
+                    GetWindowThreadProcessId(GetAncestorRaw(raw, 2), out uint pid);
+                    string who = $"'{title}' (process {Process.GetProcessById((int)pid).ProcessName}), usable: {at?.Hwnd.ToString() ?? "no"}";
+                    throw new Xunit.Sdk.XunitException($"Edge ({Hwnd}) isn't the window at {p}: {who} is. Bring nothing to the front while the live tests run.");
+                }
             }
         }
 
         [DllImport("user32.dll")] private static extern bool EnumWindows(EnumProc proc, IntPtr param);
+        [DllImport("user32.dll", EntryPoint = "WindowFromPoint")] private static extern IntPtr WindowFromPointRaw(Interop.Native.POINT p);
+        [DllImport("user32.dll", EntryPoint = "GetAncestor")] private static extern IntPtr GetAncestorRaw(IntPtr h, uint f);
         [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint pid);
         [DllImport("user32.dll")] private static extern bool IsWindowVisible(IntPtr hwnd);
         [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetWindowText(IntPtr hwnd, System.Text.StringBuilder text, int max);
@@ -198,7 +245,7 @@ public sealed class LiveLongshotTests(ITestOutputHelper output)
 
     // ---- capture and check -------------------------------------------------------------------------
 
-    private SessionFinished Capture(PixelRect area, PixelPoint anchor, bool keepRows, List<SessionEvent> seen)
+    private SessionFinished Capture(PixelRect area, PixelPoint anchor, bool keepRows, List<SessionEvent> seen, IAreaScroller? byItself = null)
     {
         var events = new BlockingCollection<SessionEvent>();
         using var session = new CaptureSession(area, a => new GdiScreenSource(a), new WheelScroller(), 0.55, 300, e => { lock (seen) seen.Add(e); events.Add(e); })
@@ -207,6 +254,8 @@ public sealed class LiveLongshotTests(ITestOutputHelper output)
             KeepRows = keepRows,
             RewindToTop = true, // start from the top, whatever the page was left at
             EscapePressed = () => false,
+            AreaScroller = byItself,
+            WholeAreaOnly = byItself is not null,
         };
         session.Start();
         T Next<T>(Func<T, bool>? where = null) where T : SessionEvent
@@ -230,15 +279,24 @@ public sealed class LiveLongshotTests(ITestOutputHelper output)
     }
 
     /// <summary>Reads the row numbers off the barcodes, top to bottom.</summary>
-    internal static List<int> Decode(byte[] px, int w, int h)
+    internal static List<int> Decode(byte[] px, int w, int h, char guard = 'r')
     {
-        bool Red(int x, int y) { int i = (y * w + x) * 4; return px[i + 2] > 200 && px[i + 1] < 60 && px[i] < 60; }
+        bool Red(int x, int y)
+        {
+            int i = (y * w + x) * 4;
+            return guard switch
+            {
+                'b' => px[i] > 200 && px[i + 1] < 60 && px[i + 2] < 60,
+                'g' => px[i + 1] > 150 && px[i] < 60 && px[i + 2] < 60,
+                _ => px[i + 2] > 200 && px[i + 1] < 60 && px[i] < 60,
+            };
+        }
         bool White(int x, int y) { int i = (y * w + x) * 4; return px[i] > 235 && px[i + 1] > 235 && px[i + 2] > 235; }
         var found = new List<int>();
         for (int y = 0; y < h; y++)
         {
             int gx = -1;
-            for (int x = 0; x < Math.Min(w, 200); x++) if (Red(x, y)) { gx = x; break; }
+            for (int x = 0; x < Math.Min(w, guard == 'r' ? 200 : w); x++) if (Red(x, y)) { gx = x; break; }
             if (gx < 0) continue;
             int gw = 0;
             while (gx + gw < w && Red(gx + gw, y)) gw++;
@@ -264,7 +322,7 @@ public sealed class LiveLongshotTests(ITestOutputHelper output)
         return found;
     }
 
-    private void Check(SessionFinished done, string name, int first = 0)
+    private void Check(SessionFinished done, string name, int first = 0, char guard = 'r', int rows = Rows)
     {
         var snapshots = Environment.GetEnvironmentVariable("AMIRLAP_SNAPSHOT_DIR");
         if (snapshots is not null)
@@ -275,10 +333,10 @@ public sealed class LiveLongshotTests(ITestOutputHelper output)
             System.IO.File.Delete(file);
             LongshotOutput.Save(bitmap, file);
         }
-        var rows = Decode(done.Pixels, done.Width, done.Height);
-        output.WriteLine($"{name}: {done.Width}x{done.Height}, rows read: {rows.Count} ({(rows.Count > 0 ? $"{rows[0]}..{rows[^1]}" : "none")})");
-        var expected = Enumerable.Range(first, Rows - first).ToList();
-        Assert.True(rows.SequenceEqual(expected), $"{name}: rows read {string.Join(",", rows)}");
+        var read = Decode(done.Pixels, done.Width, done.Height, guard);
+        output.WriteLine($"{name}: {done.Width}x{done.Height}, rows read: {read.Count} ({(read.Count > 0 ? $"{read[0]}..{read[^1]}" : "none")})");
+        var expected = Enumerable.Range(first, rows - first).ToList();
+        Assert.True(read.SequenceEqual(expected), $"{name}: rows read {string.Join(",", read)}");
     }
 
     private static PixelPoint Point(PixelRect r, double fx, double fy) => new(r.X + (int)(r.Width * fx), r.Y + (int)(r.Height * fy));
@@ -365,4 +423,55 @@ public sealed class LiveLongshotTests(ITestOutputHelper output)
         output.WriteLine("narrowed to: " + string.Join(", ", seen.OfType<SessionAreaChanged>().Select(a => a.Area.ToString())));
         Check(done, "plain-window");
     }
+
+    /// <summary>
+    /// The owner's case, live in Edge: with the scroll point over section A, just A is captured,
+    /// scrolled by itself (UI Automation, no pointer, no wheel), and the page doesn't move; over the
+    /// page's own rows, the page is captured and A stays where it was.
+    /// </summary>
+    [Fact]
+    public async Task Sections_in_a_page_that_scrolls_are_captured_on_their_own_and_the_page_whole()
+    {
+        if (!On) return;
+        var dir = System.IO.Directory.CreateTempSubdirectory("amirlap-live-");
+        var file = System.IO.Path.Combine(dir.FullName, "nested.html");
+        System.IO.File.WriteAllText(file, NestedPage());
+        using var edge = new Browser(file, System.IO.Path.Combine(dir.FullName, "profile"));
+        var window = edge.Rect;
+        output.WriteLine($"Edge window {edge.Hwnd} at {window}, topmost set: {edge.TopmostSet} (error {edge.TopmostError})");
+        var overA = Point(window, 0.25, 0.42);
+        var overPage = Point(window, 0.5, 0.88);
+        edge.MustBeUnder(overA, overPage);
+
+        // 1. What scrolls where: A under A, the page further down.
+        var a = await ScrollTargets.AtAsync(overA, TimeSpan.FromSeconds(4));
+        var page = await ScrollTargets.AtAsync(overPage, TimeSpan.FromSeconds(4));
+        output.WriteLine($"over A: {a?.Name} {a?.Area} page={a?.IsPage}; over the page: {page?.Name} {page?.Area} page={page?.IsPage}");
+        Assert.NotNull(a);
+        Assert.NotNull(page);
+        Assert.False(a!.IsPage);
+        Assert.True(page!.IsPage);
+        Assert.NotNull(a.Scroller);
+
+        // 2. Section A, scrolled by itself: every red row once, and the page left where it was.
+        double? pageBefore = page.Scroller!.Percent;
+        var pointerBefore = ScreenGeometryPointer();
+        var seen = new List<SessionEvent>();
+        var done = Capture(a.Area, overA, keepRows: true, seen, a.Scroller);
+        Check(done, "nested-section-a", guard: 'r');
+        Assert.Equal(pageBefore, page.Scroller.Percent);
+        Assert.Equal(pointerBefore, ScreenGeometryPointer()); // the pointer was never borrowed
+        // At most its own scrollbar was trimmed off the side; it never moved to another part.
+        Assert.All(seen.OfType<SessionAreaChanged>(), c => Assert.True(c.Area.Width >= a.Area.Width - 48 && c.Area.X >= a.Area.X && c.Area.Height >= a.Area.Height * 0.6, $"narrowed to {c.Area}"));
+
+        // 3. The page, scrolled by itself: every blue row once; A stays at its end.
+        double? aBefore = a.Scroller.Percent;
+        var whole = await ScrollTargets.AtAsync(overPage, TimeSpan.FromSeconds(4));
+        seen.Clear();
+        done = Capture(whole!.Area, overPage, keepRows: true, seen, whole.Scroller);
+        Check(done, "nested-page", guard: 'b', rows: PageRows);
+        Assert.Equal(aBefore, a.Scroller.Percent);
+    }
+
+    private static PixelPoint ScreenGeometryPointer() => PixelPoint.From(Interop.ScreenGeometry.CursorPosition());
 }

@@ -248,6 +248,36 @@ Product direction lives in [`sead_idea.md`](../sead_idea.md) (the seed). This fi
   - Not verified live: the run where the wheel starts over the sidebar, and capturing the scroll area UI Automation found, because the test's Edge window didn't come to the front. Both are covered on simulated screens.
   - The test now refuses to run unless Edge is the window under every point it scrolls.
 
+## Longshot: the marker is the scroll cursor (14 Nov 2026)
+
+From the owner's video of the Salla order editor (13 Nov): a page that scrolls, with sections in it that scroll on their own. Longshot broke on it, highlighted the page's text, and the frame lagged.
+
+- **Causes found:**
+  - **Scrolling:** the wheel scrolls whatever is under the pointer. When a section reaches its end, the browser hands the scroll on to the page, so everything moved and nothing lined up.
+  - **Retargeting:** the session also narrowed to whichever part it saw move, by itself, mid-capture.
+  - **The pointer was borrowed:** Longshot moved it to the scroll point for about a tenth of a second per step. A click on the panel in that moment went to the page, and the pointer jumping back made it a drag that selected text. That text then showed in the screenshot.
+  - **The frame** was a layered window the size of the capture area (docs/LESSONS.md).
+- **The owner's design, built:**
+  - **The marker decides:** the round marker is the scroll cursor. Over a section that scrolls on its own, that section is captured and the frame fits it; over the page (not on a section), the page is, and the sections in it are just part of its picture.
+  - **Dragging it** lights up what it is over (the section, or "Page").
+  - **Dropping it on another one** switches the capture there, starting again.
+  - **What is captured never changes by itself** mid-capture.
+- **Scrolled by itself (`IAreaScroller`, `ScrollTargets`):**
+  - **How:** the section under the marker is found through UI Automation (the innermost area that scrolls; what shows of it is its box cut by the page around it). It is then scrolled by setting where it is (0–100%), not with the wheel.
+  - **What that gives:**
+    - The pointer is never touched.
+    - The page around can't scroll by accident.
+    - Each step's expected distance is known (from how much of its content the area shows, then measured).
+    - The end is plain: the picture stops moving.
+  - **Positions come from where Longshot put the area.** Edge's own reading lagged a moment behind a scroll and once ended a capture a fifth of the way down.
+  - **Its own scrollbar,** inside its box, is trimmed off the side (thin strips only; it never narrows to some other part).
+- **Page guard:** where the scroll areas around it are is read at the start and after every step. If the page moved anyway (an app that scrolls its parent, or the wheel fallback), it is put back and the capture stops there with a clear message.
+- **Fallbacks:**
+  - If an app doesn't answer, or says it scrolled when nothing moved, the wheel is used as before.
+  - It is now guarded (`PointerGuard`): never while a mouse button is held, and presses during the borrow are held back.
+- **The frame and the pick highlight** are ordinary windows now (`SeeThrough`): the desktop compositor draws their see-through parts, and a window region makes the inside a hole. Dragging, resizing and the glow no longer copy a screen-sized picture each time. The marker's middle is a hole too, so what is under it can be looked up while it is dragged.
+- **The preview** sits in a dark well that always fills the same space, so a short, wide region no longer makes the panel look shorter.
+
 ## Polish round: wheel glow, Pulse Tap, Pro colour picker (13 Nov 2026)
 
 The owner proposed eight ideas. They were discussed and an order was agreed; this round is the first group.

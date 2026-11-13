@@ -148,6 +148,13 @@ internal sealed partial class GdiScreenSource : IScreenSource
 /// and the pointer put back (so hover effects aren't captured). If one of Amir Lap's own windows is
 /// at that point (the panel, a grip on the frame), the wheel would go to it, so a spot just beside
 /// it is used instead.
+/// <para>
+/// Only for apps that can't scroll an area by themselves (<see cref="IAreaScroller"/> comes first).
+/// The pointer is borrowed for about a tenth of a second, so: never while a mouse button is held,
+/// and a press meanwhile is held back (<see cref="PointerGuard"/>). Without that, a click on the
+/// panel landing in that moment went to the page, and the pointer jumping back made it a drag that
+/// selected the page's text (owner's video, 13 Nov 2026; docs/LESSONS.md).
+/// </para>
 /// </summary>
 internal sealed partial class WheelScroller : IScroller
 {
@@ -163,13 +170,22 @@ internal sealed partial class WheelScroller : IScroller
     [LibraryImport("user32.dll")]
     private static partial uint GetWindowThreadProcessId(IntPtr hwnd, out uint processId);
 
-    /// <summary>True when the window at the point belongs to Amir Lap (fully see-through parts don't count).</summary>
+    [LibraryImport("user32.dll", EntryPoint = "GetWindowTextW", StringMarshalling = StringMarshalling.Utf16)]
+    private static partial int GetWindowText(IntPtr hwnd, [Out] char[] text, int max);
+
+    /// <summary>
+    /// True when the window at the point belongs to Amir Lap (holes in a window's shape don't count,
+    /// nor does the ring that shows what is about to be picked: clicks there still pick).
+    /// </summary>
     internal static bool IsOurs(PixelPoint p)
     {
         var hwnd = WindowFromPoint(p.ToPoint());
         if (hwnd == IntPtr.Zero) return false;
         GetWindowThreadProcessId(hwnd, out uint pid);
-        return pid == (uint)Environment.ProcessId;
+        if (pid != (uint)Environment.ProcessId) return false;
+        var title = new char[32];
+        int n = GetWindowText(hwnd, title, title.Length);
+        return new string(title, 0, Math.Max(0, n)) != "Longshot pick";
     }
 
     /// <summary>The point, or the nearest spot around it that isn't covered by one of our windows.</summary>
@@ -187,20 +203,105 @@ internal sealed partial class WheelScroller : IScroller
 
     public void Scroll(PixelPoint at, int notches, bool down, int unit)
     {
-        Interop.Native.GetCursorPos(out var old);
-        at = Clear(at);
-        SetCursorPos(at.X, at.Y);
-        Thread.Sleep(30);
-        var input = new Interop.Native.INPUT[1];
-        input[0].type = Interop.Native.INPUT_MOUSE;
-        for (int i = 0; i < notches; i++)
+        PointerGuard.WaitForButtonsUp(TimeSpan.FromSeconds(3));
+        PointerGuard.Borrowing = true;
+        try
         {
-            input[0].u.mi = new Interop.Native.MOUSEINPUT { mouseData = unchecked((uint)(down ? -unit : unit)), dwFlags = MOUSEEVENTF_WHEEL };
-            Interop.Native.SendInput(1, input, Marshal.SizeOf<Interop.Native.INPUT>());
-            Thread.Sleep(12);
+            Interop.Native.GetCursorPos(out var old);
+            at = Clear(at);
+            SetCursorPos(at.X, at.Y);
+            Thread.Sleep(25);
+            var input = new Interop.Native.INPUT[1];
+            input[0].type = Interop.Native.INPUT_MOUSE;
+            for (int i = 0; i < notches; i++)
+            {
+                input[0].u.mi = new Interop.Native.MOUSEINPUT { mouseData = unchecked((uint)(down ? -unit : unit)), dwFlags = MOUSEEVENTF_WHEEL };
+                Interop.Native.SendInput(1, input, Marshal.SizeOf<Interop.Native.INPUT>());
+                Thread.Sleep(12);
+            }
+            Thread.Sleep(50); // let the wheel reach the window under the box before the pointer leaves it
+            SetCursorPos(old.X, old.Y);
         }
-        Thread.Sleep(60); // let the wheel reach the window under the box before the pointer leaves it
-        SetCursorPos(old.X, old.Y);
+        finally
+        {
+            PointerGuard.Borrowing = false;
+        }
+    }
+}
+
+/// <summary>
+/// While Longshot borrows the pointer to turn the wheel, mouse presses are held back (swallowed with
+/// their release), so a click can't land on the page under the scroll point and become a drag that
+/// selects its text. Installed on the UI thread for the length of a capture.
+/// </summary>
+internal static class PointerGuard
+{
+    private const int WH_MOUSE_LL = 14;
+    private const int WM_LBUTTONDOWN = 0x201, WM_LBUTTONUP = 0x202, WM_RBUTTONDOWN = 0x204, WM_RBUTTONUP = 0x205, WM_MBUTTONDOWN = 0x207, WM_MBUTTONUP = 0x208;
+    private const int VK_LBUTTON = 1, VK_RBUTTON = 2, VK_MBUTTON = 4;
+
+    private delegate IntPtr HookProc(int code, IntPtr wParam, IntPtr lParam);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern IntPtr SetWindowsHookEx(int id, HookProc proc, IntPtr module, uint thread);
+
+    [DllImport("user32.dll")]
+    private static extern bool UnhookWindowsHookEx(IntPtr hook);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr CallNextHookEx(IntPtr hook, int code, IntPtr wParam, IntPtr lParam);
+
+    private static readonly HookProc Proc = OnMouse;
+    private static IntPtr _hook;
+    private static int _users;
+    private static volatile bool _borrowing;
+    private static bool _left, _right, _middle; // a press was held back: hold back its release too
+
+    /// <summary>Set while the pointer is borrowed.</summary>
+    public static bool Borrowing { get => _borrowing; set => _borrowing = value; }
+
+    /// <summary>For tests: how many presses were held back.</summary>
+    internal static int HeldBack { get; private set; }
+
+    public static void Install()
+    {
+        if (_users++ > 0) return;
+        _hook = SetWindowsHookEx(WH_MOUSE_LL, Proc, Interop.Native.GetModuleHandle(null), 0);
+    }
+
+    public static void Uninstall()
+    {
+        if (_users == 0 || --_users > 0) return;
+        if (_hook != IntPtr.Zero) UnhookWindowsHookEx(_hook);
+        _hook = IntPtr.Zero;
+        _left = _right = _middle = false;
+    }
+
+    public static bool ButtonsDown() =>
+        (Interop.Native.GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0 || (Interop.Native.GetAsyncKeyState(VK_RBUTTON) & 0x8000) != 0 || (Interop.Native.GetAsyncKeyState(VK_MBUTTON) & 0x8000) != 0;
+
+    /// <summary>Waits (up to <paramref name="limit"/>) until no mouse button is held: a drag in progress isn't interrupted.</summary>
+    public static void WaitForButtonsUp(TimeSpan limit)
+    {
+        var until = DateTime.UtcNow + limit;
+        while (ButtonsDown() && DateTime.UtcNow < until) Thread.Sleep(15);
+    }
+
+    private static IntPtr OnMouse(int code, IntPtr wParam, IntPtr lParam)
+    {
+        if (code >= 0)
+        {
+            switch ((int)wParam)
+            {
+                case WM_LBUTTONDOWN when _borrowing: _left = true; HeldBack++; return 1;
+                case WM_RBUTTONDOWN when _borrowing: _right = true; HeldBack++; return 1;
+                case WM_MBUTTONDOWN when _borrowing: _middle = true; HeldBack++; return 1;
+                case WM_LBUTTONUP when _left: _left = false; return 1;
+                case WM_RBUTTONUP when _right: _right = false; return 1;
+                case WM_MBUTTONUP when _middle: _middle = false; return 1;
+            }
+        }
+        return CallNextHookEx(_hook, code, wParam, lParam);
     }
 }
 

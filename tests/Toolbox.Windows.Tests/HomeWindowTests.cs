@@ -106,6 +106,7 @@ public partial class HomeWindowTests
             CheckRealDock();
             CheckLongshotFlow(host, longshot);
             CheckLongshotTargets(host, longshot);
+            CheckLongshotNested(host, longshot);
             CheckVideoFlow(host, longshot);
             CheckVideoBlur(snapshots, app);
             app.Shutdown();
@@ -661,6 +662,13 @@ public partial class HomeWindowTests
         Layout(panelFrame, 344, 700);
         Assert.True(panel.FinishReady);
         Save(snapshots, panelFrame, 344, 700, $"longshot-panel-done-{theme}-{lang}");
+
+        // A short, wide region (the owner's 700 x 311): the preview stays in the same dark well.
+        var wide = CaptureSession.Downscale(px, w, 311, 300);
+        panel.SetFinishReady(false);
+        panel.ShowUpdate(wide, 700, 311, 1, lang == "ar" ? "جاهز." : "Ready. Press Auto to scroll to the end, or Extend for one step.");
+        Layout(panelFrame, 344, 700);
+        Save(snapshots, panelFrame, 344, 700, $"longshot-panel-short-{theme}-{lang}");
         panel.Close();
 
         if (lang != "en") return;

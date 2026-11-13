@@ -16,6 +16,12 @@ namespace Toolbox.Windows.Longshot;
 /// move or resize the frame, drag its scroll marker, or pick another target (window, scroll area,
 /// region) if needed → Auto / Extend / Follow → save, copy and show the result. Pressing the
 /// shortcut again saves. Only one runs at a time.
+/// <para>
+/// The round marker is the scroll cursor: over a section that scrolls on its own, that section is
+/// captured and scrolled by itself (the page around stays still); over the page, the page is. The
+/// section under it lights up while it is dragged, and dropping it on another one switches to it.
+/// What is captured never changes by itself mid-capture.
+/// </para>
 /// </summary>
 internal sealed class LongshotCapture
 {
@@ -45,6 +51,12 @@ internal sealed class LongshotCapture
     private long _carriedDelta;   // scrolling done by sessions replaced after the area changed (for Refresh)
     private bool _lookingUp;      // still finding the scroll area under the pointer
     private bool _startPending;   // "When Longshot starts: Auto or Follow" hasn't run yet (it waits for that)
+    private FoundTarget? _found;  // what scrolls, found through UI Automation (scrolled by itself); null: the wheel
+    private double? _startPercent; // where it was scrolled to when the capture began (Refresh goes back there)
+    private PickHighlight? _markerHighlight;
+    private bool _markerLooking;
+    private PixelPoint? _markerNext;
+    private bool _guarded;         // the pointer guard is installed for this capture
 
     private LongshotCapture(ToolboxHost host, LongshotTool tool)
     {
@@ -75,6 +87,12 @@ internal sealed class LongshotCapture
     /// <summary>For tests: the window in front and the pointer at the start, and the scroll area found under it.</summary>
     internal static (PixelRect Window, PixelPoint Pointer)? StartOverride { get; set; }
     internal static Func<PixelPoint, PixelRect?>? ScrollAreaOverride { get; set; }
+
+    /// <summary>For tests: what scrolls at a point (and whether the outermost was asked for), instead of UI Automation.</summary>
+    internal static Func<PixelPoint, bool, FoundTarget?>? TargetOverride { get; set; }
+
+    /// <summary>For tests: what the capture scrolls by itself (null: the wheel).</summary>
+    internal FoundTarget? Found => _found;
 
     public static void Start(ToolboxHost host, LongshotTool tool, PixelRect? area = null, int delaySeconds = 0) =>
         Start(host, tool, area is { } a ? new CaptureTarget(TargetKind.Region, a, a.Center) : null, delaySeconds);
@@ -192,6 +210,8 @@ internal sealed class LongshotCapture
         _panel.RefreshButton.Click += (_, _) => Refresh();
         _panel.TargetChosen += OnTargetChosen;
         _panel.VideoChosen += SwitchToVideo;
+        PointerGuard.Install();
+        _guarded = true;
         _panel.SetTarget(target.Kind);
         _panel.PlaceBeside(given is null ? _window : target.Area);
         _panel.Show();
@@ -208,28 +228,101 @@ internal sealed class LongshotCapture
     private async Task LookForScrollArea()
     {
         _lookingUp = true;
-        PixelRect? found;
-        try
-        {
-            found = ScrollAreaOverride is { } fake ? fake(_pointer) : await TargetFinder.ScrollAreaAtAsync(_pointer, TimeSpan.FromMilliseconds(900));
-        }
-        catch (Exception ex)
-        {
-            Log.Error("Longshot: looking for the scroll area failed", ex);
-            found = null;
-        }
+        var found = await Lookup(_pointer);
         _lookingUp = false;
         if (_ended) return;
         bool untouched = _busy is null && _parts <= 1 && _picker is null && _target.Kind == TargetKind.Window && _target.Area == _window;
-        if (found is { } area && untouched && !NearlySame(area, _window))
+        if (found is not null && untouched && (found.Scroller is not null || !NearlySame(found.Area, _window)))
         {
-            Log.Info($"Longshot: the part under the pointer scrolls: {area.Width}x{area.Height} at {area.X},{area.Y}.");
+            Log.Info($"Longshot: under the pointer, {found.Name} scrolls ({(found.IsPage ? "the page" : "a section")}): {found.Area.Width}x{found.Area.Height} at {found.Area.X},{found.Area.Y}.");
+            _found = found;
             // The new session runs "When Longshot starts" once it is ready, if it hasn't run yet.
-            Restart(new CaptureTarget(TargetKind.ScrollArea, area, area.Contains(_pointer) ? _pointer : area.Center),
-                Lang.T("Found the part that scrolls here. The Window button takes the whole window instead.", "وُجد الجزء الذي يتمرّر هنا. زر «نافذة» يلتقط النافذة كاملة بدلًا منه."),
+            Restart(TargetFor(found, _pointer), found.IsPage
+                    ? Lang.T("Capturing the page. Drag the round marker onto a section that scrolls on its own to capture just that.", "التقاط الصفحة. اسحب العلامة الدائرية فوق قسم يتمرّر وحده لالتقاطه وحده.")
+                    : Lang.T("Found the section that scrolls here: just it is captured, the page around stays still. Drag the marker onto the page to capture the page.", "وُجد القسم الذي يتمرّر هنا: يُلتقط وحده وتبقى الصفحة حوله ثابتة. اسحب العلامة فوق الصفحة لالتقاط الصفحة."),
                 rewind: false, carry: false, autoStart: _startPending);
         }
         else if (_ready && _startPending) AfterSelect(); // the session was ready and waiting for this
+    }
+
+    /// <summary>What scrolls at a point (UI Automation), or null. Never throws.</summary>
+    private async Task<FoundTarget?> Lookup(PixelPoint at, bool outermost = false)
+    {
+        try
+        {
+            if (TargetOverride is { } fake) return fake(at, outermost);
+            if (ScrollAreaOverride is { } old) return old(at) is { } a ? new FoundTarget(a, false, null, a.ToString(), "test area") : null;
+            return await ScrollTargets.AtAsync(at, TimeSpan.FromMilliseconds(900), outermost);
+        }
+        catch (Exception ex)
+        {
+            Log.Error("Longshot: looking for what scrolls failed", ex);
+            return null;
+        }
+    }
+
+    private static CaptureTarget TargetFor(FoundTarget found, PixelPoint at) =>
+        new(TargetKind.ScrollArea, found.Area, found.Area.Contains(at) ? at : found.Area.Center);
+
+    // ---- the marker is the scroll cursor ----------------------------------------------------------
+
+    /// <summary>While the marker is dragged: the section (or page) under it lights up, one lookup at a time.</summary>
+    private async void OnAnchorDragging(PixelPoint at)
+    {
+        if (_ended || _busy is not null) return;
+        if (_markerLooking) { _markerNext = at; return; }
+        _markerLooking = true;
+        try
+        {
+            var p = at;
+            while (true)
+            {
+                var found = await Lookup(p);
+                if (_ended) return;
+                ShowMarkerHighlight(found);
+                if (_markerNext is { } next && next != p) { p = next; _markerNext = null; continue; }
+                _markerNext = null;
+                break;
+            }
+        }
+        finally
+        {
+            _markerLooking = false;
+        }
+    }
+
+    private void ShowMarkerHighlight(FoundTarget? found)
+    {
+        if (found is null || found.Same(_found) || _frame is null || _frame.Anchor == default)
+        {
+            _markerHighlight?.HideAway();
+            return;
+        }
+        _markerHighlight ??= new PickHighlight();
+        _markerHighlight.ShowAt(found.Area, TargetKind.ScrollArea, found.IsPage ? Lang.T("Page", "الصفحة") : null);
+    }
+
+    /// <summary>
+    /// The marker was dropped: over another section (or the page) that one is captured from now on
+    /// (starting again); over the same one, scrolling just carries on.
+    /// </summary>
+    private async Task MarkerDropped(PixelPoint at)
+    {
+        _markerNext = null;
+        _markerHighlight?.HideAway();
+        var found = await Lookup(at);
+        if (_ended) return;
+        if (found is not null && !found.Same(_found) && _busy is null)
+        {
+            _found = found;
+            Log.Info($"Longshot: the marker is now over {found.Name}; capturing {(found.IsPage ? "the page" : "that section")} ({found.Area.Width}x{found.Area.Height} at {found.Area.X},{found.Area.Y}).");
+            Restart(TargetFor(found, at), found.IsPage
+                    ? Lang.T("Now capturing the page. Sections in it move with it as they are.", "يُلتقط الآن الصفحة. تتحرك الأقسام فيها معها كما هي.")
+                    : Lang.T("Now capturing this section on its own. The page around it stays still.", "يُلتقط الآن هذا القسم وحده. تبقى الصفحة حوله ثابتة."),
+                rewind: false, carry: false);
+            return;
+        }
+        UseAnchor(at);
     }
 
     private static bool NearlySame(PixelRect a, PixelRect b) =>
@@ -251,14 +344,12 @@ internal sealed class LongshotCapture
             _frame = new CaptureFrame(target.Area, target.Anchor, target.Kind);
             _frame.AreaChanged += OnAreaChanged;
             _frame.AnchorChanged += OnAnchorChanged;
+            _frame.AnchorDragging += OnAnchorDragging;
             _frame.Moving += area => _scrim?.SetHole(area);
             _frame.Show();
         }
-        else
-        {
-            _frame.SetKind(target.Kind);
-            _frame.AnimateTo(target.Area, target.Anchor);
-        }
+        else _frame.AnimateTo(target.Area, target.Anchor);
+        _frame.SetKind(target.Kind, page: _found?.IsPage == true && target.Kind == TargetKind.ScrollArea);
         _panel?.SetTarget(target.Kind);
     }
 
@@ -270,6 +361,7 @@ internal sealed class LongshotCapture
         _parts = 0;
         var settings = _host.Settings.Current.Longshot;
         double scale = ScreenGeometry.MonitorAt(target.Area.Center.ToPoint()).Scale;
+        var byItself = _found?.Scroller;
         _session = new CaptureSession(target.Area, Screen, Scroller(target.Area), settings.StepFraction,
             (int)(CapturePanel.PreviewWidth * scale),
             e => _ui.BeginInvoke(() => { if (generation == _generation) Handle(e, autoStart); }), TimingOverride)
@@ -277,8 +369,12 @@ internal sealed class LongshotCapture
             KnownPxPerDelta = _pxPerDelta,
             RewindDelta = rewindDelta,
             RewindToTop = rewindToTop,
+            RewindToPercent = rewindDelta != 0 || rewindToTop ? _startPercent : null,
             Anchor = target.Anchor,
             KeepRows = target.Kind != TargetKind.Window,
+            AreaScroller = byItself,
+            // Scrolled by itself, the area is exactly what scrolls: it is never narrowed or moved by the session.
+            WholeAreaOnly = byItself is not null && target.Kind != TargetKind.Region,
         };
         _session.Start();
     }
@@ -303,13 +399,21 @@ internal sealed class LongshotCapture
             return;
         }
         Log.Info($"Longshot area changed to {area.Width}x{area.Height} at {area.X},{area.Y}; starting again.");
-        Restart(new CaptureTarget(TargetKind.Region, area, anchor), Lang.T("Starting again from the new area…", "البدء من جديد من المنطقة الجديدة…"), rewind: false, carry: true);
+        // What scrolls there is still scrolled by itself (looked up again at the marker).
+        _ = RestartLookingUp(new CaptureTarget(TargetKind.Region, area, anchor), anchor, outermost: false, takeArea: false, Lang.T("Starting again from the new area…", "البدء من جديد من المنطقة الجديدة…"));
     }
 
     /// <summary>The scroll marker was dropped somewhere new: the wheel turns there from now on.</summary>
     private void OnAnchorChanged(PixelPoint at)
     {
         if (_ended) return;
+        _ = MarkerDropped(at);
+    }
+
+    /// <summary>The wheel turns at <paramref name="at"/> from now on (the same area).</summary>
+    private void UseAnchor(PixelPoint at)
+    {
+        if (!_target.Area.Contains(at)) at = _target.Area.Clamp(at, 18);
         _target = _target with { Anchor = at };
         _tool.LastAnchor = at;
         _session?.SetAnchor(at);
@@ -331,8 +435,9 @@ internal sealed class LongshotCapture
         {
             if (_picker is not null) { _picker.Dispose(); EndPick(); }
             if (_target.Kind == TargetKind.Window && _target.Area == _window) { RestoreAfterPick(); return; }
-            Restart(new CaptureTarget(TargetKind.Window, _window, _window.Contains(_pointer) ? _pointer : _window.Center),
-                Lang.T("Capturing the whole window.", "التقاط النافذة كاملة."), rewind: false, carry: false);
+            var anchor = _window.Contains(_pointer) ? _pointer : _window.Center;
+            _ = RestartLookingUp(new CaptureTarget(TargetKind.Window, _window, anchor), anchor, outermost: true, takeArea: false,
+                Lang.T("Capturing the whole window.", "التقاط النافذة كاملة."));
             return;
         }
         StartPick(kind);
@@ -354,13 +459,32 @@ internal sealed class LongshotCapture
             {
                 EndPick();
                 Log.Info($"Longshot picked {t.Kind} {t.Area.Width}x{t.Area.Height} at {t.Area.X},{t.Area.Y}.");
-                Restart(t, t.Kind == TargetKind.Region
-                    ? Lang.T("Region chosen. Press Auto to scroll to the end, or Done for just this.", "اختيرت المنطقة. اضغط «تلقائي» للتمرير حتى النهاية، أو «تم» لها وحدها.")
-                    : Lang.T("Ready. Press Auto to scroll to the end, or Extend for one step.", "جاهز. اضغط «تلقائي» للتمرير حتى النهاية، أو «مدّ» لخطوة واحدة."),
-                    rewind: false, carry: false);
+                // A region keeps the area drawn (what scrolls in it is scrolled by itself); a scroll
+                // area takes exactly what UI Automation says scrolls there.
+                _ = RestartLookingUp(t, t.Kind == TargetKind.Region ? t.Area.Center : t.Anchor, outermost: false, takeArea: t.Kind != TargetKind.Region,
+                    t.Kind == TargetKind.Region
+                        ? Lang.T("Region chosen. Press Auto to scroll to the end, or Done for just this.", "اختيرت المنطقة. اضغط «تلقائي» للتمرير حتى النهاية، أو «تم» لها وحدها.")
+                        : Lang.T("Ready. Press Auto to scroll to the end, or Extend for one step.", "جاهز. اضغط «تلقائي» للتمرير حتى النهاية، أو «مدّ» لخطوة واحدة."));
             },
             cancelled: () => { EndPick(); RestoreAfterPick(); });
         _picker.Start();
+    }
+
+    /// <summary>
+    /// Starts again on <paramref name="target"/> once it is known what scrolls at <paramref name="at"/>
+    /// (so the new capture scrolls it by itself); <paramref name="takeArea"/>: the area becomes exactly
+    /// that scroll area. The frame goes there at once.
+    /// </summary>
+    private async Task RestartLookingUp(CaptureTarget target, PixelPoint at, bool outermost, bool takeArea, string message)
+    {
+        _frame?.SetKind(target.Kind);
+        _frame?.AnimateTo(target.Area, target.Anchor);
+        _scrim?.SetHole(target.Area);
+        var found = await Lookup(at, outermost);
+        if (_ended) return;
+        _found = found;
+        if (found is not null && takeArea) target = TargetFor(found, target.Anchor);
+        Restart(target, message, rewind: false, carry: false);
     }
 
     private void EndPick()
@@ -414,6 +538,7 @@ internal sealed class LongshotCapture
             _pxPerDelta = null;
         }
         _carriedDelta = rewind ? 0 : delta;
+        if (!carry) _startPercent = null;
         ShowTarget(target);
         _panel?.ClearPreview();
         _panel?.SetStatus(message);
@@ -428,6 +553,7 @@ internal sealed class LongshotCapture
         {
             case SessionReady:
                 _ready = true;
+                if (_startPercent is null && _session?.StartPercent is { } started) _startPercent = started;
                 SetBusy(null);
                 if (autoStart && _startPending && !_lookingUp) AfterSelect(); // else the scroll-area lookup runs it
                 break;
@@ -590,6 +716,8 @@ internal sealed class LongshotCapture
     {
         _picker?.Dispose();
         _picker = null;
+        _markerHighlight?.Close();
+        _markerHighlight = null;
         _countdown?.Close();
         _panel?.Close();
         _frame?.Close();
@@ -604,6 +732,11 @@ internal sealed class LongshotCapture
 
     private void End()
     {
+        if (_guarded)
+        {
+            PointerGuard.Uninstall();
+            _guarded = false;
+        }
         _ended = true;
         CloseWindows();
         if (_current == this) _current = null;

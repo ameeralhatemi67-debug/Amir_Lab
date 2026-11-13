@@ -21,6 +21,32 @@ Mistakes that cost a release, what caused them, and the rule that keeps them fro
 - Fix a shared cause in the shared class. A fix in one copy leaves the others broken.
 - A window that sizes to its content needs a test that lays it out with a large backdrop picture and checks that its size stays the content's size: `HomeWindowTests.RenderColour`.
 
+## Borrowing the pointer turns clicks into drags
+
+**Seen:** owner's video, 13 Nov 2026. The finished long screenshot had the page's text highlighted in blue.
+
+**Cause:**
+- To scroll, Longshot moved the real pointer to the scroll point, turned the wheel, waited about a tenth of a second and moved it back.
+- The owner was clicking Extend on the panel. A press landing in that moment went to the page under the scroll point. The pointer jumping back while the button was still down made it a drag from there to the panel, which selected the text between them.
+
+**Fix (0.6.1):**
+- An area that scrolls on its own is scrolled through UI Automation, so the pointer is never touched.
+- Where the wheel is still needed, Longshot waits until no mouse button is held, and a press during the borrow is swallowed with its release (`PointerGuard`).
+
+**Rules:**
+- Never move the user's pointer to make something happen if there is another way.
+- If the pointer must be borrowed, check that no button is held and hold back clicks while it is away.
+
+## A reported position can lag behind the screen
+
+**Seen:** the first live run of the nested-page test, 14 Nov 2026. A section was captured only to row 19 of 120.
+
+**Cause:** right after a scroll, Edge sometimes still reported the old scroll percent through UI Automation; the accessibility data catches up a moment later. Longshot read "+0%" and took it for the end, though the picture had moved 199 px.
+
+**Fix:** Longshot remembers where it put the area itself, and judges "nothing moved" (the end) by the picture.
+
+**Rule:** another app's reports about its own state are hints. Check them against what the screen shows.
+
 ## Windows' media pipeline: three traps
 
 **Seen:** building Longshot video, 13 Nov 2026. All three were caught by `VideoRecorderTests` before the owner saw them, but each one cost a round of guessing.
@@ -59,3 +85,9 @@ Mistakes that cost a release, what caused them, and the rule that keeps them fro
 **Rules:**
 - Keep layered (see-through) windows small. Anything that follows the pointer across the whole screen belongs in an ordinary window over a frozen photo, or in a small window of its own that is moved.
 - Drive pointer-following visuals from the frame clock, not from every mouse message.
+
+**Seen again:** Longshot's frame and pick highlight, which were layered windows the size of the capture area (owner's video, 13 Nov 2026). Dragging and resizing the frame lagged, and its breathing glow kept copying the whole picture.
+
+**Fix (0.6.1):** `SeeThrough`. They are ordinary windows whose frame is extended over the whole window, with no backdrop, so the desktop compositor draws their see-through pixels with no copy back. A window region (`WindowShape`) makes the inside of the frame a hole, so clicks go to the app below.
+
+**Rule:** a see-through window bigger than a panel uses `SeeThrough` with a shape, not AllowsTransparency.

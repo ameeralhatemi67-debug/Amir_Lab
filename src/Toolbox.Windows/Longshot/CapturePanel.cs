@@ -71,6 +71,8 @@ internal sealed class CaptureFrame : Window
     private DateTime _tweenStart;
     private bool _hidden;
     private FrameMode _mode;
+    private Border? _movePill;
+    private bool _pulsing, _flashing;
 
     public CaptureFrame(PixelRect area, PixelPoint? anchor = null, TargetKind kind = TargetKind.Window)
     {
@@ -78,8 +80,10 @@ internal sealed class CaptureFrame : Window
         _anchor = area.Clamp(anchor ?? area.Center, 18);
         Title = "Longshot frame";
         WindowStyle = WindowStyle.None;
-        AllowsTransparency = true;
-        Background = Brushes.Transparent; // fully transparent: clicks pass through to the app below
+        // Not layered (see SeeThrough): the see-through parts are left to the desktop compositor and
+        // the inside of the frame is a hole in the window's shape, so clicks go to the app below.
+        AllowsTransparency = false;
+        Background = Brushes.Transparent;
         ResizeMode = ResizeMode.NoResize;
         ShowInTaskbar = false;
         ShowActivated = false;
@@ -129,6 +133,9 @@ internal sealed class CaptureFrame : Window
     /// <summary>Raised when the scroll marker is dropped somewhere new (physical pixels).</summary>
     public event Action<PixelPoint>? AnchorChanged;
 
+    /// <summary>Raised while the scroll marker is dragged (physical pixels): what is under it can be shown.</summary>
+    public event Action<PixelPoint>? AnchorDragging;
+
     public PixelRect Area => _area;
 
     public PixelPoint Anchor => _anchor;
@@ -156,6 +163,7 @@ internal sealed class CaptureFrame : Window
         _marker.Visibility = mode is FrameMode.Video or FrameMode.Recording ? Visibility.Collapsed : Visibility.Visible;
         _marker.Opacity = mode == FrameMode.Follow ? 0 : 1;
         if (!idle) HideGrab();
+        UpdateShape();
         // Auto and Recording: the glow breathes while it works.
         if (mode is FrameMode.Auto or FrameMode.Recording && !Motion.IsReduced)
             _glow.BeginAnimation(DropShadowEffect.BlurRadiusProperty, new DoubleAnimation(12, 26, TimeSpan.FromMilliseconds(700)) { AutoReverse = true, RepeatBehavior = RepeatBehavior.Forever, EasingFunction = Motion.InOut });
@@ -171,10 +179,10 @@ internal sealed class CaptureFrame : Window
 
     private string? _label;
 
-    /// <summary>Window, scroll area or region: shown in the label at the bottom.</summary>
-    public void SetKind(TargetKind kind)
+    /// <summary>Window, scroll area (or the page) or region: shown in the label at the bottom.</summary>
+    public void SetKind(TargetKind kind, bool page = false)
     {
-        _kindText.Text = PickHighlight.KindText(kind);
+        _kindText.Text = page ? Lang.T("Page", "الصفحة") : PickHighlight.KindText(kind);
         _kindIcon.Content = SettingsPage.Glyph(PickHighlight.KindIcon(kind), 13, brush: Brushes.White, stroke: 2);
     }
 
@@ -198,6 +206,9 @@ internal sealed class CaptureFrame : Window
     public void PulseAnchor()
     {
         if (Motion.IsReduced || _mode == FrameMode.Follow) return;
+        _pulsing = true;
+        UpdateShape();
+        After(560, () => { _pulsing = false; UpdateShape(); });
         var grow = new DoubleAnimation(0.6, 2.1, TimeSpan.FromMilliseconds(520)) { EasingFunction = Motion.Out };
         _markerPulse.RenderTransform = new ScaleTransform(1, 1);
         ((ScaleTransform)_markerPulse.RenderTransform).BeginAnimation(ScaleTransform.ScaleXProperty, grow);
@@ -213,6 +224,10 @@ internal sealed class CaptureFrame : Window
         _added.Height = Math.Clamp(rows / _scale, 6, inner);
         _added.Opacity = Motion.IsReduced ? 0 : 1;
         _added.BeginAnimation(OpacityProperty, Motion.IsReduced ? null : new DoubleAnimation(1, 0, TimeSpan.FromMilliseconds(1100)) { EasingFunction = Motion.InOut });
+        if (Motion.IsReduced) return;
+        _flashing = true;
+        Dispatcher.BeginInvoke(UpdateShape, System.Windows.Threading.DispatcherPriority.Render); // once its height is laid out
+        After(1150, () => { _flashing = false; UpdateShape(); });
     }
 
     /// <summary>Glides to a new area (the part that scrolls was found, or another one was picked).</summary>
@@ -280,6 +295,10 @@ internal sealed class CaptureFrame : Window
             var now = ScreenGeometry.CursorPosition();
             _anchor = _area.Clamp(new PixelPoint(_anchorFrom.X + now.X - _cursorFrom.X, _anchorFrom.Y + now.Y - _cursorFrom.Y), 18);
             PlaceMarker();
+            // Inside the frame: the marker's middle (a hole in the window, so what is under it can be
+            // looked up). Dragged out past the frame: where the pointer is.
+            var pointer = PixelPoint.From(now);
+            AnchorDragging?.Invoke(_area.Contains(pointer) ? _anchor : pointer);
         };
         void Drop()
         {
@@ -287,7 +306,8 @@ internal sealed class CaptureFrame : Window
             _drag = Edge.None;
             if (_marker.IsMouseCaptured) _marker.ReleaseMouseCapture();
             Pop(_marker, 1);
-            if (_anchor != _anchorFrom) AnchorChanged?.Invoke(_anchor);
+            var dropped = PixelPoint.From(ScreenGeometry.CursorPosition());
+            if (_anchor != _anchorFrom) AnchorChanged?.Invoke(_area.Contains(dropped) ? _anchor : dropped);
         }
         _marker.MouseLeftButtonUp += (_, _) => Drop();
         _marker.LostMouseCapture += (_, _) => Drop();
@@ -303,6 +323,48 @@ internal sealed class CaptureFrame : Window
         Canvas.SetTop(_marker, y);
         Canvas.SetLeft(_markerPulse, x);
         Canvas.SetTop(_markerPulse, y);
+        UpdateShape();
+    }
+
+    /// <summary>For tests: the window's shape as last set (device pixels from its top-left corner).</summary>
+    internal List<(bool Add, bool Round, Rect Box)> ShapeParts { get; private set; } = [];
+
+    /// <summary>
+    /// The window's shape: a band around the edge of the area (the line, its glow and the handles),
+    /// the Move and size pills, and the marker (a ring: its middle is a hole, so the wheel and lookups
+    /// reach the app under it). Everything else is a hole: clicks and the wheel go to the app below.
+    /// </summary>
+    private void UpdateShape()
+    {
+        if (_hwnd == IntPtr.Zero || _hidden) return;
+        double dip = VisualTreeHelper.GetDpi(this).DpiScaleX;
+        int reach = (int)Math.Ceiling(Reach * _scale);
+        int w = _area.Width + 2 * reach, h = _area.Height + 2 * reach;
+        bool idle = _mode is FrameMode.Idle or FrameMode.Video;
+        // Inside the area, the band takes only the line while Longshot works (the app stays usable up to its edge).
+        double inset = (idle ? 14 : Line + 1) * _scale;
+        using var shape = new WindowShape()
+            .Add(new Rect(0, 0, w, h))
+            .Cut(new Rect(reach + inset, reach + inset, Math.Max(0, _area.Width - 2 * inset), Math.Max(0, _area.Height - 2 * inset)));
+        Rect Px(FrameworkElement e, double pad)
+        {
+            if (!e.IsVisible || e.ActualWidth <= 0 || Content is not Visual root || !e.IsDescendantOf(root)) return Rect.Empty;
+            var b = e.TransformToAncestor(root).TransformBounds(new Rect(0, 0, e.ActualWidth, e.ActualHeight));
+            b.Inflate(pad, pad);
+            return new Rect(b.X * dip, b.Y * dip, b.Width * dip, b.Height * dip);
+        }
+        if (_movePill is not null && idle) shape.Add(Px(_movePill, 7), 20 * dip);
+        shape.Add(Px(_sizePill, 3), 15 * dip);
+        if (_marker.Visibility == Visibility.Visible && _marker.Opacity > 0)
+        {
+            double cx = Canvas.GetLeft(_marker) + MarkerSize / 2, cy = Canvas.GetTop(_marker) + MarkerSize / 2;
+            double r = _pulsing ? MarkerSize * 1.1 : MarkerSize / 2 + 6;
+            shape.AddEllipse(new Rect((cx - r) * dip, (cy - r) * dip, 2 * r * dip, 2 * r * dip));
+            shape.CutEllipse(new Rect((cx - 5) * dip, (cy - 5) * dip, 10 * dip, 10 * dip));
+        }
+        if (_flashing) shape.Add(Px(_added, 0));
+        ShapeParts = [.. shape.Parts];
+        shape.ApplyTo(_hwnd);
     }
 
     private void BuildHandles()
@@ -378,11 +440,14 @@ internal sealed class CaptureFrame : Window
             RenderTransform = new ScaleTransform(1, 1),
         };
         pill.SetResourceReference(Border.BackgroundProperty, "Brush.AccentButton");
+        _movePill = pill;
+        pill.SizeChanged += (_, _) => UpdateShape();
         pill.MouseEnter += (_, _) => Pop(pill, 1.08);
         pill.MouseLeave += (_, _) => { if (_drag == Edge.None) Pop(pill, 1); };
         Add(pill, Edge.Move, Cursors.SizeAll);
 
         _sizePill.Margin = new Thickness(0, 0, 0, edge + 10);
+        _sizePill.SizeChanged += (_, _) => UpdateShape();
         _handles.Children.Add(_sizePill);
     }
 
@@ -531,7 +596,7 @@ internal sealed class CaptureFrame : Window
         }
         _scale = ScreenGeometry.MonitorAt(new Native.POINT { X = _area.CenterX, Y = _area.CenterY }).Scale;
         CaptureWindows.Place(_hwnd, _area.Inflate((int)Math.Ceiling(Reach * _scale)));
-        PlaceMarker();
+        PlaceMarker(); // and the shape
         Moving?.Invoke(_area);
     }
 
@@ -541,6 +606,7 @@ internal sealed class CaptureFrame : Window
         _hwnd = new WindowInteropHelper(this).Handle;
         CaptureWindows.MakeNoActivate(_hwnd);
         CaptureWindows.ExcludeFromCapture(_hwnd);
+        SeeThrough.Enable(this, _hwnd);
         _scale = ScreenGeometry.MonitorAt(new Native.POINT { X = _area.CenterX, Y = _area.CenterY }).Scale;
         Place();
     }
@@ -573,6 +639,7 @@ internal sealed class CapturePanel : Window
     private readonly TextBlock _info = new() { FontSize = 13, FontWeight = FontWeights.SemiBold, Margin = new Thickness(2, 12, 0, 0) };
     private readonly TextBlock _status = new() { MinHeight = 34, Margin = new Thickness(2, 2, 0, 0) };
     private readonly TextBlock _keysHint = new();
+    private readonly TextBlock _empty = new() { TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(24), FontSize = 12.5, IsHitTestVisible = false, Foreground = new SolidColorBrush(Color.FromRgb(0x8C, 0x95, 0xA4)) };
     private readonly DispatcherTimer _keepUp = new() { Interval = TimeSpan.FromMilliseconds(700) };
     private readonly Dictionary<TargetKind, RadioButton> _targets = [];
     private readonly Style _plain, _accent;
@@ -685,6 +752,7 @@ internal sealed class CapturePanel : Window
     public void ClearPreview()
     {
         _preview.Source = null;
+        _empty.Visibility = Visibility.Visible;
         _info.Text = "";
         _seam.BeginAnimation(OpacityProperty, null);
         _seam.Opacity = 0;
@@ -848,12 +916,15 @@ internal sealed class CapturePanel : Window
         _live.VerticalAlignment = VerticalAlignment.Top;
         _live.Background = new SolidColorBrush(Color.FromArgb(0xCC, 0x10, 0x12, 0x18));
 
+        // The preview sits in a dark well that always fills the same space: a short or wide capture
+        // shows at the top of it, the rest stays dark, so the panel never seems to change size.
         var frame = new Grid();
-        var card = new Border { CornerRadius = new CornerRadius(14), BorderThickness = new Thickness(1), Child = _scroll, Padding = new Thickness(1) };
-        card.SetResourceReference(Border.BackgroundProperty, "Brush.Card2");
+        var card = new Border { CornerRadius = new CornerRadius(14), BorderThickness = new Thickness(1), Child = _scroll, Padding = new Thickness(1), Background = new SolidColorBrush(Color.FromRgb(0x10, 0x13, 0x19)) };
         card.SetResourceReference(Border.BorderBrushProperty, "Brush.Line2");
+        _empty.Text = Lang.T("The capture shows here as it grows.", "تظهر اللقطة هنا وهي تكبر.");
         card.SizeChanged += (_, e) => _scroll.Clip = new RectangleGeometry(new Rect(0, 0, Math.Max(0, e.NewSize.Width - 2), Math.Max(0, e.NewSize.Height - 2)), 13, 13);
         frame.Children.Add(card);
+        frame.Children.Add(_empty);
         frame.Children.Add(_live);
         dock.Children.Add(frame);
         root.Children.Add(dock);
@@ -899,6 +970,7 @@ internal sealed class CapturePanel : Window
     /// </summary>
     public void ShowUpdate(BitmapSource preview, int width, int height, int parts, string? message, int addedRows = 0)
     {
+        _empty.Visibility = Visibility.Collapsed;
         _preview.Source = preview;
         _info.Text = $"{width:N0} × {height:N0} px  ·  " + Lang.T(parts == 1 ? "1 part" : $"{parts} parts", parts == 1 ? "جزء واحد" : $"{parts} أجزاء");
         if (message is not null) _status.Text = message;

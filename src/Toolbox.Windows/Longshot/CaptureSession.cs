@@ -88,6 +88,10 @@ internal sealed class CaptureSession : IDisposable
     private readonly object _anchorLock = new();
     private PixelPoint _anchor;
     private bool _anchorSet;
+    private readonly List<double> _pxPerPercent = []; // pixels the area moves per 1% (scrolled by itself)
+    private IReadOnlyList<double?>? _around;         // where the scroll areas around were at the start
+    private bool _areaOff;                            // the area doesn't scroll by itself after all: the wheel is used
+    private double? _setTo;                           // where this session last put the area (its own reading can lag)
 
     public CaptureSession(PixelRect area, Func<PixelRect, IScreenSource> openScreen, IScroller scroller, double stepFraction,
         int previewWidth, Action<SessionEvent> post, SessionTiming? timing = null)
@@ -123,6 +127,21 @@ internal sealed class CaptureSession : IDisposable
 
     /// <summary>Don't look for a part that scrolls (the whole area must line up, as before).</summary>
     public bool WholeAreaOnly { get; init; }
+
+    /// <summary>
+    /// Scrolls the area by itself (UI Automation), without the pointer or the wheel: the page around
+    /// can't scroll by accident and the end is known exactly. Null: the wheel at the scroll point.
+    /// </summary>
+    public IAreaScroller? AreaScroller { get; init; }
+
+    /// <summary>Refresh for an area scrolled by itself: back to this percent before the first part.</summary>
+    public double? RewindToPercent { get; init; }
+
+    /// <summary>Where the area was scrolled to when this session began (read on its thread; null until then or when unknown).</summary>
+    public double? StartPercent { get; private set; }
+
+    /// <summary>True while the area is scrolled by itself (not with the wheel).</summary>
+    public bool ScrollsByItself => AreaScroller is not null && !_areaOff;
 
     /// <summary>Where the wheel turns (screen pixels). Starts in the middle of the area unless set.</summary>
     public PixelPoint Anchor
@@ -193,6 +212,13 @@ internal sealed class CaptureSession : IDisposable
         try
         {
             _screen = _openScreen(_area);
+            if (AreaScroller is { } scroller)
+            {
+                StartPercent = scroller.Percent;
+                _setTo = StartPercent;
+                _around = scroller.AncestorPercents();
+                if (StartPercent is null) _areaOff = true; // it doesn't say where it is: the wheel it is
+            }
             if (KnownPxPerDelta is { } known && known > 0)
             {
                 _pxPerDelta.Add(known);
@@ -306,6 +332,13 @@ internal sealed class CaptureSession : IDisposable
     private bool Rewind()
     {
         var at = Anchor;
+        if (AreaScroller is { } area && !_areaOff && (RewindToTop || RewindToPercent is not null))
+        {
+            _setTo = RewindToTop ? 0 : RewindToPercent!.Value;
+            area.SetPercent(_setTo.Value);
+            StartPercent = _setTo;
+            return true;
+        }
         if (RewindToTop)
         {
             var prev = GrabSettled();
@@ -349,7 +382,17 @@ internal sealed class CaptureSession : IDisposable
     {
         var (m, gray) = St.Match(frame, expected);
         bool whole = m.Moved && m.Ok && (m.Worst <= ShiftFinder.WorstTolerance || St.Steps > 0);
-        if (whole || St.Steps > 0 || WholeAreaOnly) return (m, gray, "");
+        if (whole || St.Steps > 0) return (m, gray, "");
+        if (WholeAreaOnly)
+        {
+            if (AreaScroller is null) return (m, gray, "");
+            // Scrolled by itself, the area is what scrolls, but its own scrollbar sits inside its box
+            // and doesn't move with it (its arrows would repeat down the side): thin strips at the
+            // sides are trimmed, nothing more (it never narrows to some other part).
+            var trimmed = ShiftFinder.FindPart(St.LastGray, gray, expected, keepRows: true, out _);
+            if (trimmed?.Part is { } p && p.Width >= gray.Width - Math.Max(48, gray.Width / 8) && p.Height >= gray.Height * 0.6) return (trimmed, gray, "");
+            return (m, gray, "");
+        }
         var part = ShiftFinder.FindPart(St.LastGray, gray, expected, KeepRows, out string why);
         if (part is not null) return (part, gray, "");
         return (m, gray, why);
@@ -402,9 +445,128 @@ internal sealed class CaptureSession : IDisposable
             if (Math.Abs(p.X - tried.X) > 40 || Math.Abs(p.Y - tried.Y) > 40) yield return p;
     }
 
+    private static string FullText => Lang.T($"Stopped at {MaxHeight:N0} px, the size limit. Press Done to save.", $"توقفت عند {MaxHeight:N0} بكسل، وهو الحد الأقصى. اضغط «تم» للحفظ.");
+
+    private static string EndText(bool first) => first
+        ? Lang.T("Nothing scrolled. Drag the round scroll marker onto what should scroll, or choose Scroll area.", "لم يتحرك شيء. اسحب علامة التمرير الدائرية فوق ما يجب أن يتمرّر، أو اختر «منطقة تمرير».")
+        : Lang.T("Reached the end. Press Done to save.", "وصلنا إلى النهاية. اضغط «تم» للحفظ.");
+
+    /// <summary>
+    /// The page around the area scrolled (the wheel handed the scroll on to it, or the app did): it
+    /// is put back where it was, and the step doesn't count.
+    /// </summary>
+    private bool PageMoved()
+    {
+        if (AreaScroller is not { } area || _around is not { Count: > 0 } before) return false;
+        var now = area.AncestorPercents();
+        bool moved = false;
+        for (int i = 0; i < Math.Min(now.Count, before.Count); i++)
+            if (now[i] is { } n && before[i] is { } b && Math.Abs(n - b) > 0.05) moved = true;
+        if (!moved) return false;
+        Log.Info($"Longshot: the page around the area moved ({string.Join(",", before.Select(b => b?.ToString("F2") ?? "-"))} -> {string.Join(",", now.Select(n => n?.ToString("F2") ?? "-"))}); putting it back.");
+        area.RestoreAncestors(before);
+        return true;
+    }
+
+    private static string PageMovedText => Lang.T(
+        "The page around this part started to move, so Longshot put it back and stopped here. Press Done to save, or drag the marker onto the page to capture all of it.",
+        "بدأت الصفحة حول هذا الجزء بالتحرك، فأعادتها اللقطة الطويلة وتوقفت هنا. اضغط «تم» للحفظ، أو اسحب العلامة فوق الصفحة لالتقاطها كلها.");
+
+    /// <summary>Pixels the area moves per 1%, measured so far, else worked out from how much of its content it shows.</summary>
+    private double? PerPercent()
+    {
+        if (_pxPerPercent.Count > 0) return Median(_pxPerPercent);
+        if (AreaScroller is { ViewSize: { } view } area)
+        {
+            double content = area.ViewHeight * 100.0 / view;
+            double range = content - area.ViewHeight;
+            if (range > 0) return range / 100.0;
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// One step for an area scrolled by itself: about <c>stepFraction</c> of the area further down,
+    /// set by percent, then lined up with what came before (the distance the percent should have moved
+    /// is the expected shift). A step that can't be lined up goes back and is halved.
+    /// <para>
+    /// Where the area is comes from where this session put it: an app's own reading can lag behind a
+    /// scroll (Edge's did, by a moment, which once ended a capture a fifth of the way down). Whether
+    /// anything moved, and so the end, is judged by the picture.
+    /// </para>
+    /// </summary>
+    private (StepOutcome Outcome, string Message) ExtendByItself()
+    {
+        var area = AreaScroller!;
+        if (St.Image.Height >= MaxHeight) return (StepOutcome.Full, FullText);
+        if ((_setTo ?? area.Percent) is not { } before) { _areaOff = true; return ExtendOnce(); }
+        if (before >= 99.95) return (StepOutcome.End, EndText(St.Steps == 0));
+        double? per = PerPercent();
+        int want = Math.Max(24, (int)(_stepFraction * _region));
+        double step = per is { } p && p > 0 ? want / p : 4;
+        ShiftMatch? match = null;
+        for (int attempt = 0; attempt < 8; attempt++)
+        {
+            _post(new SessionWheel(Anchor, true));
+            double target = Math.Min(100, before + step);
+            if (!area.SetPercent(target))
+            {
+                Log.Info("Longshot: the area refused to scroll by itself; using the wheel.");
+                _areaOff = true;
+                return ExtendOnce();
+            }
+            var frame = GrabSettled();
+            if (PageMoved())
+            {
+                area.SetPercent(before);
+                _setTo = before;
+                GrabSettled();
+                return (StepOutcome.End, PageMovedText);
+            }
+            double moved = target - before;
+            double? expected = per is { } pp && target < 100 ? moved * pp : null;
+            var (m, gray, note) = MatchFrame(frame, expected);
+            match = m;
+            Log.Info($"Longshot step by itself {before:F2}% -> {target:F2}% expected={expected:F0} -> moved={m.Moved} ok={m.Ok} d={m.Distance} score={m.Score:F2} worst={m.Worst:F1} top={m.Top} bottom={m.Bottom} est={m.Estimated} {m.Reason}{(note.Length > 0 ? " | part: " + note : "")}");
+            if (!m.Moved)
+            {
+                if (St.Steps == 0 && _pxPerPercent.Count == 0 && before < 99)
+                {
+                    // Told to scroll, not at its end, and nothing on the screen moved: it doesn't act
+                    // on it (or says it does and doesn't). The wheel it is.
+                    area.SetPercent(before);
+                    _areaOff = true;
+                    Log.Info("Longshot: the area didn't move when asked to scroll by itself; using the wheel.");
+                    return ExtendOnce();
+                }
+                _setTo = 100; // nothing moved: this is the end
+                return (StepOutcome.End, EndText(St.Steps == 0));
+            }
+            if (m.Ok)
+            {
+                Add(frame, gray, m, new StepInfo(0, 0, before));
+                _setTo = target;
+                if (!m.Estimated && m.Distance > 0 && target < 100)
+                {
+                    _pxPerPercent.Add(m.Distance / moved);
+                    if (_pxPerPercent.Count > 8) _pxPerPercent.RemoveAt(0);
+                }
+                return (StepOutcome.Added, Lang.T($"Added {m.Distance} px", $"أُضيف {m.Distance} بكسل") + (m.Estimated ? Lang.T(" (blank area, estimated).", " (منطقة فارغة، بالتقدير).") : "."));
+            }
+            area.SetPercent(before);
+            _setTo = before;
+            GrabSettled();
+            step /= 2;
+            if (step < 0.005) break;
+        }
+        string reason = match?.Reason is { Length: > 0 } r ? Lang.T(r, "تعذّرت مطابقة الجزء الجديد") : Lang.T("Couldn't line it up", "تعذّرت المطابقة");
+        return (StepOutcome.Failed, reason + Lang.T(". Try Extend again, or make the frame taller.", ". جرّب «مدّ» مرة أخرى، أو اجعل الإطار أطول."));
+    }
+
     internal (StepOutcome Outcome, string Message) ExtendOnce()
     {
-        if (St.Image.Height >= MaxHeight) return (StepOutcome.Full, Lang.T($"Stopped at {MaxHeight:N0} px, the size limit. Press Done to save.", $"توقفت عند {MaxHeight:N0} بكسل، وهو الحد الأقصى. اضغط «تم» للحفظ."));
+        if (AreaScroller is not null && !_areaOff) return ExtendByItself();
+        if (St.Image.Height >= MaxHeight) return (StepOutcome.Full, FullText);
         int n = Notches();
         ShiftMatch? match = null;
         var start = Anchor;
@@ -415,6 +577,12 @@ internal sealed class CaptureSession : IDisposable
             double? expected = PerNotch * n;
             Scroll(n, down: true, _unit);
             var frame = GrabSettled();
+            if (PageMoved())
+            {
+                // The wheel reached the end of the area and scrolled the page around it instead.
+                GrabSettled();
+                return (StepOutcome.End, PageMovedText);
+            }
             var (m, gray, note) = MatchFrame(frame, expected);
             match = m;
             Log.Info($"Longshot extend n={n} unit={_unit} at={Anchor.X},{Anchor.Y} expected={expected:F0} -> moved={m.Moved} ok={m.Ok} d={m.Distance} score={m.Score:F2} worst={m.Worst:F1} top={m.Top} bottom={m.Bottom} est={m.Estimated} part={m.Part?.ToString() ?? "-"} {m.Reason}{(note.Length > 0 ? " | part: " + note : "")}");
@@ -495,6 +663,7 @@ internal sealed class CaptureSession : IDisposable
     private void RunFollow()
     {
         _followUsed = true;
+        _setTo = null; // the user scrolls: where it ends up is read afresh
         Update(Lang.T("Scroll it yourself: Longshot adds as you go. Stop or Esc when done.", "مرّر بنفسك وستُضاف الأجزاء تباعًا. «إيقاف» أو Esc عند الانتهاء."));
         var prev = Grab();
         Frame? reported = null; // the still frame we last complained about
@@ -543,7 +712,14 @@ internal sealed class CaptureSession : IDisposable
             Update(Lang.T("Nothing to undo.", "لا شيء للتراجع عنه."));
             return;
         }
-        if (step.Info.Notches > 0)
+        if (!double.IsNaN(step.Info.PercentBefore) && AreaScroller is { } area)
+        {
+            _setTo = step.Info.PercentBefore;
+            area.SetPercent(step.Info.PercentBefore);
+            GrabSettled();
+            Update(Lang.T("Removed the last part.", "أُزيل آخر جزء."));
+        }
+        else if (step.Info.Notches > 0)
         {
             Scroll(step.Info.Notches, down: false, step.Info.WheelUnit);
             GrabSettled();

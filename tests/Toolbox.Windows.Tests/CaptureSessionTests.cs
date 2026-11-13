@@ -21,7 +21,7 @@ public sealed class AppLanguageCollection
 /// and other spots are tried when nothing moves at first.
 /// </summary>
 [Collection(AppLanguageCollection.Name)]
-public class CaptureSessionTests
+public partial class CaptureSessionTests
 {
     private const int W = 300;
     private const int View = 240;
@@ -366,14 +366,17 @@ public class CaptureSessionTests
         public readonly Desk.Wheel Wheel;
         public readonly CaptureSession Session;
 
-        public DeskRun(Desk desk, PixelPoint anchor, int pxPerNotch = 70)
+        public DeskRun(Desk desk, PixelPoint anchor, int pxPerNotch = 70, PixelRect? area = null, IAreaScroller? byItself = null, double? rewindToPercent = null)
         {
             Desk = desk;
             Wheel = new Desk.Wheel(desk, pxPerNotch);
-            Session = new CaptureSession(new PixelRect(0, 0, Desk.DW, Desk.DH), area => new Desk.Screen(desk, area), Wheel, 0.55, 120, e => { lock (Seen) Seen.Add(e); Events.Add(e); }, Fast)
+            Session = new CaptureSession(area ?? new PixelRect(0, 0, Desk.DW, Desk.DH), a => new Desk.Screen(desk, a), Wheel, 0.55, 120, e => { lock (Seen) Seen.Add(e); Events.Add(e); }, Fast)
             {
                 EscapePressed = () => false,
                 Anchor = anchor,
+                AreaScroller = byItself,
+                WholeAreaOnly = byItself is not null,
+                RewindToPercent = rewindToPercent,
             };
             Session.Start();
             Next<SessionReady>();
