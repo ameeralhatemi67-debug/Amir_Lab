@@ -19,7 +19,7 @@ namespace Toolbox.Windows.Tests;
 /// and Arabic. Set AMIRLAP_SNAPSHOT_DIR to also save each one as a PNG for visual review.
 /// </summary>
 [Collection(AppLanguageCollection.Name)]
-public class HomeWindowTests
+public partial class HomeWindowTests
 {
     [Fact]
     public void Every_page_and_window_builds_in_light_and_dark()
@@ -93,6 +93,7 @@ public class HomeWindowTests
                 window.Close();
 
                 RenderLongshotWindows(snapshots, theme, lang);
+                RenderVideoWindows(snapshots, theme, lang);
                 if (lang == "en") RenderWheel(snapshots, theme);
                 RenderPulse(snapshots, theme, lang, host);
                 RenderColour(snapshots, theme, lang);
@@ -105,6 +106,7 @@ public class HomeWindowTests
             CheckRealDock();
             CheckLongshotFlow(host, longshot);
             CheckLongshotTargets(host, longshot);
+            CheckVideoFlow(host, longshot);
             app.Shutdown();
         }
         finally
@@ -642,22 +644,22 @@ public class HomeWindowTests
         var panelContent = (FrameworkElement)panel.Content;
         panel.Content = null;
         var panelFrame = new Border { Child = panelContent, Background = Desktop() };
-        Layout(panelFrame, 344, 660);
+        Layout(panelFrame, 344, 700);
         panel.ShowUpdate(preview, w, h, 4, lang == "ar" ? "أُضيف 466 بكسل." : "Added 466 px.", addedRows: 466);
         panel.SetLive(lang == "ar" ? "تلقائي" : "Auto");
         CapturePanel.SetButton(panel.Auto, "lap-stop", lang == "ar" ? "إيقاف" : "Stop");
-        Layout(panelFrame, 344, 660);
+        Layout(panelFrame, 344, 700);
         Assert.True(panelContent.ActualHeight > 540, "the panel should lay out its preview and buttons");
         Assert.Equal(TargetKind.ScrollArea, panel.ShownTarget);
-        Save(snapshots, panelFrame, 344, 660, $"longshot-panel-{theme}-{lang}");
+        Save(snapshots, panelFrame, 344, 700, $"longshot-panel-{theme}-{lang}");
 
         panel.SetLive(null);
         CapturePanel.SetButton(panel.Auto, "lap-play", lang == "ar" ? "تلقائي" : "Auto");
         panel.SetFinishReady(true);
         panel.ShowUpdate(preview, w, h, 9, lang == "ar" ? "وصلنا إلى النهاية. اضغط «تم» للحفظ." : "Reached the end. Press Done to save.");
-        Layout(panelFrame, 344, 660);
+        Layout(panelFrame, 344, 700);
         Assert.True(panel.FinishReady);
-        Save(snapshots, panelFrame, 344, 660, $"longshot-panel-done-{theme}-{lang}");
+        Save(snapshots, panelFrame, 344, 700, $"longshot-panel-done-{theme}-{lang}");
         panel.Close();
 
         if (lang != "en") return;

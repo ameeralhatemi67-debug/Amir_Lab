@@ -365,6 +365,28 @@ This is idea 2 of the owner's list, for photos first; video follows. The image e
   - **Honest note:** recognition can miss handwriting and small print, so the panel asks for a check by eye.
 - **Not in this round:** blur for video (the plan: keyframes as the data, an "anchor" that follows the content as the interface, tracking by Longshot's shift finder).
 
+## Longshot video (13 Nov 2026)
+
+Idea 1 of the owner's list: Longshot also records video of an area, and only that area.
+
+- **One tool, two modes:** a **Screenshot | Video** switch sits at the top of both Longshot panels. Switching keeps the area (a scroll area becomes a region). The video shortcut (**Alt+Shift+R**) during a long screenshot switches it to Video; the screenshot shortcut while a video is open works the video.
+- **The flow:**
+  - **Setup:** the frame opens on the window in front with the Video panel beside it. The area can be moved or resized, or chosen with **Window / Region / Screen** (Screen is the whole monitor, taskbar included). The panel holds 30/60 fps, Show the pointer, Show clicks, Count 3, 2, 1, the size and **Record**.
+  - **Recording:** the panel goes away. The frame turns red with "● REC 0:12" in its label, and a small pill just outside the area shows the time with **Pause**, **Discard** and **Stop**. The frame, the pill and the dimming are left out of the recording by Windows (`WDA_EXCLUDEFROMCAPTURE`), never take focus, and let clicks through where they should.
+  - **The shortcut:** first press frames, the next records, the next stops. During the countdown it (or Discard) goes back to the panel.
+  - **After:** the result window plays the video at once and loops the part kept. A trim bar with a strip of frames has a handle at each end (I and O set them at the playhead). **Save trimmed copy** (MP4), **Save as GIF**, **Copy** (the file, for chats and folders), **Open**, **Show in folder**, **New recording**. The recording itself is never changed.
+- **No FFmpeg, no new library:**
+  - **Frames:** GDI `BitBlt` of the area on a thread of its own, at a steady 30 or 60 fps (`timeBeginPeriod(1)`). The pointer is drawn in (`DrawIconEx` at its hotspot), and clicks as a yellow ring that grows and fades.
+  - **Encoding:** Windows' own `MediaTranscoder` with a `MediaStreamSource` of raw frames, to H.264 MP4, on the graphics card when there is one. About 0.1 bit per pixel per frame (1080p at 30 fps ≈ 6 Mbit/s).
+  - **Timing:** frames sit on a fixed grid. If the encoder falls behind, frames are dropped (a bounded queue of 6), never bunched, so the video keeps time. Pause leaves the gap out.
+  - **Sizes** are rounded down to even numbers, which the H.264 encoder needs.
+  - **Trim** uses the same transcoder (frame-accurate); **GIF** frames are read with `MediaComposition` and written by libvips (looping, at most 800 px wide, 12 fps; 10 fps over 20 s; a minute at most).
+- **Saved to** Videos\Screen Recordings (where Windows' Snipping Tool keeps recordings) as "Longshot video 2026-11-13 214512.mp4", never overwriting. Settings has the folder and the four options.
+- **Not in this round:**
+  - **Sound** (microphone and system sound): the panel says so.
+  - **Blur for video:** next, as planned (keyframes as the data, an anchor that follows as the interface).
+  - **GDI speed** at 60 fps on a large area hasn't been measured on the owner's PC yet. The recorder drops frames rather than drift if it can't keep up, and logs how many.
+
 ## App icon (8 Nov 2026)
 
 - **"Tool tiles", chosen by the owner** from three options (tool tiles, an AL monogram, a lab flask). It shows four tiles on an accent square:

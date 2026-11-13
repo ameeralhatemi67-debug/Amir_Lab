@@ -15,7 +15,7 @@ using Toolbox.Windows.Theme;
 
 namespace Toolbox.Windows.Longshot;
 
-internal enum FrameMode { Idle, Auto, Follow }
+internal enum FrameMode { Idle, Auto, Follow, Video, Recording }
 
 /// <summary>
 /// The glowing frame around the capture area. Hover an edge and a handle appears under the pointer
@@ -140,6 +140,7 @@ internal sealed class CaptureFrame : Window
         {
             FrameMode.Auto => Color.FromRgb(0xFF, 0xB2, 0x24),
             FrameMode.Follow => Color.FromRgb(0x30, 0xC2, 0x7A),
+            FrameMode.Recording => Color.FromRgb(0xEF, 0x44, 0x44),
             _ => ThemeResources.Lap.Accent,
         };
         _line.BorderBrush = new SolidColorBrush(color);
@@ -148,16 +149,27 @@ internal sealed class CaptureFrame : Window
         _added.Background = new LinearGradientBrush(Color.FromArgb(0x10, color.R, color.G, color.B), Color.FromArgb(0x48, color.R, color.G, color.B), 90);
         _markerPulse.Stroke = new SolidColorBrush(color);
         // While Longshot scrolls or follows, the area stays put; in Follow you scroll, so no marker.
-        bool idle = mode == FrameMode.Idle;
+        // Video: the area can still be moved and resized, but nothing scrolls, so no marker.
+        bool idle = mode is FrameMode.Idle or FrameMode.Video;
         _handles.Visibility = idle ? Visibility.Visible : Visibility.Collapsed;
-        _marker.IsHitTestVisible = idle;
+        _marker.IsHitTestVisible = mode == FrameMode.Idle;
+        _marker.Visibility = mode is FrameMode.Video or FrameMode.Recording ? Visibility.Collapsed : Visibility.Visible;
         _marker.Opacity = mode == FrameMode.Follow ? 0 : 1;
         if (!idle) HideGrab();
-        // Auto: the glow breathes while it works.
-        if (mode == FrameMode.Auto && !Motion.IsReduced)
+        // Auto and Recording: the glow breathes while it works.
+        if (mode is FrameMode.Auto or FrameMode.Recording && !Motion.IsReduced)
             _glow.BeginAnimation(DropShadowEffect.BlurRadiusProperty, new DoubleAnimation(12, 26, TimeSpan.FromMilliseconds(700)) { AutoReverse = true, RepeatBehavior = RepeatBehavior.Forever, EasingFunction = Motion.InOut });
         else _glow.BeginAnimation(DropShadowEffect.BlurRadiusProperty, null);
     }
+
+    /// <summary>Text instead of the size in the label at the bottom ("● REC 0:12"); null puts the size back.</summary>
+    public void SetLabel(string? text)
+    {
+        _label = text;
+        UpdateSizeText();
+    }
+
+    private string? _label;
 
     /// <summary>Window, scroll area or region: shown in the label at the bottom.</summary>
     public void SetKind(TargetKind kind)
@@ -507,7 +519,7 @@ internal sealed class CaptureFrame : Window
         if (_area != _dragFrom) AreaChanged?.Invoke(_area);
     }
 
-    private void UpdateSizeText() => _sizeText.Text = $"{_area.Width:N0} × {_area.Height:N0}";
+    private void UpdateSizeText() => _sizeText.Text = _label ?? $"{_area.Width:N0} × {_area.Height:N0}";
 
     private void Place()
     {
@@ -580,7 +592,7 @@ internal sealed class CapturePanel : Window
         ShowActivated = false;
         Topmost = true;
         Width = 316 + 2 * Shadow;
-        Height = 660;
+        Height = 700;
         MinWidth = 292 + 2 * Shadow;
         MinHeight = 540;
         MaxWidth = 560;
@@ -626,6 +638,9 @@ internal sealed class CapturePanel : Window
 
     /// <summary>The user chose what to capture (it may be the one already chosen: pick again).</summary>
     public event Action<TargetKind>? TargetChosen;
+
+    /// <summary>The Video mode was chosen on the switch at the top.</summary>
+    public event Action? VideoChosen;
 
     private Button Make(string icon, string text, string tip, bool accent = false)
     {
@@ -745,6 +760,11 @@ internal sealed class CapturePanel : Window
         };
         DockPanel.SetDock(head, Dock.Top);
         dock.Children.Add(head);
+
+        // Long screenshot or Video.
+        var modes = Video.ModeSwitch.Build(video: false, v => { if (v) VideoChosen?.Invoke(); });
+        DockPanel.SetDock(modes, Dock.Top);
+        dock.Children.Add(modes);
 
         // What to capture.
         var bar = new Border { Style = SettingsPage.Res("Lap.SegmentBar"), HorizontalAlignment = HorizontalAlignment.Stretch, Margin = new Thickness(0, 0, 0, 12) };

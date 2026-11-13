@@ -83,6 +83,9 @@ internal static class Icons
         ["lap-down"] = "M12,4 V19 M6,13 L12,19 L18,13",
         ["lap-play"] = "M7.5,5 L18.5,12 L7.5,19 Z",
         ["lap-stop"] = RoundRect(6.5, 6.5, 11, 11, 2.5),
+        ["pause"] = "M9,6 V18 M15,6 V18",
+        // Longshot's Video mode: a camera.
+        ["video"] = RoundRect(3, 6.5, 13, 11, 2.5) + " M16,10.5 L21,7.5 V16.5 L16,13.5",
         ["lap-follow"] = Circle(12, 12, 8.5) + Circle(12, 12, 3),
         // Longshot's targets: a window, a scroll area inside it (with its scrollbar), a region drawn by hand.
         ["lap-window"] = RoundRect(3.5, 4.5, 17, 15, 2.5) + " M3.5,8.5 H20.5 M6.5,6.5 V6.6 M9,6.5 V6.6",

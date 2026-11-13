@@ -59,6 +59,17 @@ _Last updated: 8 Nov 2026 — Amir Lap phases 1 and 2 complete: the multi-tool s
 | Long screenshots read in strips | **Partial** | Built (`OcrService.RecognizeTall`); not yet measured on a real long capture. |
 | Entry points: wheel Blur tile, Longshot result (Blur…, Hide personal info), image Preview | **Working** | Built; the buttons open the same editor step. Live try pending. |
 
+## Longshot video (13 Nov 2026)
+
+| Capability | State | Evidence / notes |
+|---|---|---|
+| Recording engine: MP4 (H.264) from raw frames, upright, in time, pause, drops instead of drift, even sizes | **Working** | `VideoRecorderTests`: 1.3 s at 20 fps of made-up frames, read back by Windows (frame count, length, colours top and bottom, the change at 0.6 s). |
+| Trimmed copy (MP4) and GIF | **Working** | `VideoRecorderTests`: the trimmed part's length and first frame; the GIF's width and total playing time. |
+| Video panel, Screenshot / Video switch, recording pill, result window with trim bar; light/dark, English/Arabic | **Working** | `HomeWindowTests` builds them off-screen; snapshots reviewed. |
+| The whole flow: window → region → Window, countdown and Discard back, record, pause, resume, Stop; the shortcut alone; Discard deletes; switching modes keeps the area | **Working** | `HomeWindowTests.CheckVideoFlow` through the real controller, panel, frame, pill and recorder on made-up frames, every window off-screen. |
+| Recording the real screen (pointer, click rings, speed at 30/60 fps), Region picking, the dimming, playback in the result window | **Partial** | Built. They need the real screen, mouse and media player: a live try by the owner. |
+| Sound | **Not started** | Deferred; the panel says no sound is recorded. |
+
 ## Pulse (tool #3)
 
 | Capability | State | Evidence / notes |

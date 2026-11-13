@@ -92,6 +92,25 @@ internal sealed class LongshotCapture
 
     public static void CancelActive() => _current?.Cancel();
 
+    /// <summary>The video shortcut during a long screenshot: switches it to Video. False when none is open.</summary>
+    public static bool SwitchActiveToVideo()
+    {
+        if (_current is null) return false;
+        _current.SwitchToVideo();
+        return true;
+    }
+
+    /// <summary>Video on the panel's switch: the same area (a scroll area becomes a region), as a recording.</summary>
+    private void SwitchToVideo()
+    {
+        if (_ended || _busy == SessionCommand.Finish) return;
+        var target = _target;
+        var window = _window;
+        Log.Info("Longshot: switching to Video.");
+        Cancel();
+        Video.VideoCapture.Start(_host, _tool, target.Kind == TargetKind.Window ? Video.VideoTarget.Window : Video.VideoTarget.Region, target.Area, window);
+    }
+
     private void ShortcutAgain()
     {
         if (_picker is not null) { _picker.Dispose(); EndPick(); RestoreAfterPick(); return; }
@@ -172,6 +191,7 @@ internal sealed class LongshotCapture
         _panel.CloseButton.Click += (_, _) => Cancel();
         _panel.RefreshButton.Click += (_, _) => Refresh();
         _panel.TargetChosen += OnTargetChosen;
+        _panel.VideoChosen += SwitchToVideo;
         _panel.SetTarget(target.Kind);
         _panel.PlaceBeside(given is null ? _window : target.Area);
         _panel.Show();

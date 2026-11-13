@@ -132,6 +132,23 @@ public sealed class LongshotSettings
     /// <summary>Seconds to wait for the delayed-capture shortcut.</summary>
     public int DelaySeconds { get; set; } = 3;
 
+    // ---- Video (Longshot's Video mode) ----
+
+    /// <summary>Frames a second of a recording: 30 or 60.</summary>
+    public int VideoFps { get; set; } = 30;
+
+    /// <summary>Draw the pointer into recordings.</summary>
+    public bool VideoCursor { get; set; } = true;
+
+    /// <summary>A ring where the mouse is clicked, in recordings.</summary>
+    public bool VideoClicks { get; set; } = true;
+
+    /// <summary>Count 3, 2, 1 before recording starts.</summary>
+    public bool VideoCountdown { get; set; } = true;
+
+    /// <summary>Where recordings are saved; null means Videos\Screen Recordings.</summary>
+    public string? VideoFolder { get; set; }
+
     /// <summary>Share of the scrolling area each Extend aims to move.</summary>
     [JsonIgnore]
     public double StepFraction => ScrollStep switch { "small" => 0.35, "large" => 0.75, _ => 0.55 };

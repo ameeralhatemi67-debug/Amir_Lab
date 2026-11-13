@@ -21,6 +21,27 @@ Mistakes that cost a release, what caused them, and the rule that keeps them fro
 - Fix a shared cause in the shared class. A fix in one copy leaves the others broken.
 - A window that sizes to its content needs a test that lays it out with a large backdrop picture and checks that its size stays the content's size: `HomeWindowTests.RenderColour`.
 
+## Windows' media pipeline: three traps
+
+**Seen:** building Longshot video, 13 Nov 2026. All three were caught by `VideoRecorderTests` before the owner saw them, but each one cost a round of guessing.
+
+**1. Raw frames are upside down.**
+- **Cause:** raw RGB frames given to Windows' encoder are read bottom row first (Media Foundation's RGB32 always is). Screen captures are top row first.
+- **Fix:** `ScreenRecorder.FlipRows` turns each frame over before it is queued.
+- **Rule:** a test that reads the video back must check which way up it is (different colours top and bottom), not only that a file was written.
+
+**2. `TrimStopTime` is a position, not an amount.**
+- **Cause:** `MediaTranscoder.TrimStopTime` was read as "cut this much off the end", as the documentation suggests. The transcoder took it as the time to stop at, so the trimmed copies came out empty ("no samples processed").
+- **Fix:** pass the end position itself, or zero to keep to the end.
+
+**3. Recordings report a size of 0 × 0.**
+- **Cause:** a file written from a `MediaStreamSource` reports a 0 × 0 picture to `MediaClip`, and an encoding profile built from it fails with a bare E_POINTER.
+- **Fix:** take the size from the first frame when the reported one is zero (`VideoFiles.TrimAsync`). `MediaComposition.RenderToFileAsync` also failed with a bare COM error in this desktop app; the transcoder works.
+
+**Rules:**
+- Treat every number Windows' media classes report about our own recordings as unverified until read back.
+- Test media code end to end on made-up frames with known colours and timing, and check the result frame by frame.
+
 ## A see-through window the size of the screen is slow
 
 **Seen:** 0.5.5, the colour picker's magnifier. It lagged behind the pointer and left ghosts (owner's video, 13 Nov 2026).

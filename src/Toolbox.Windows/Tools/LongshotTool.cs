@@ -6,6 +6,7 @@ using System.Windows.Threading;
 using Toolbox.Core.Settings;
 using Toolbox.Windows.Home;
 using Toolbox.Windows.Longshot;
+using Toolbox.Windows.Longshot.Video;
 using Toolbox.Windows.Shell;
 using Toolbox.Windows.Theme;
 
@@ -29,12 +30,13 @@ internal sealed class LongshotTool : ToolModule
             new ToolCommand("capture", "Start a scrolling capture", "Alt+Shift+S", () => Capture()) { TitleAr = "بدء لقطة طويلة", Alternatives = ["Ctrl+Alt+L", "Alt+Shift+L"] },
             new ToolCommand("captureDelayed", "Scrolling capture after a delay", "Ctrl+Alt+Shift+S", () => Capture(delayed: true)) { TitleAr = "لقطة طويلة بعد مهلة", Alternatives = ["Ctrl+Alt+Shift+L"] },
             new ToolCommand("repeat", "Capture the same area again", null, CaptureSameArea) { TitleAr = "التقاط المنطقة نفسها مجددًا" },
+            new ToolCommand("video", "Record a video", "Alt+Shift+R", () => RecordVideo()) { TitleAr = "تسجيل فيديو", Alternatives = ["Ctrl+Alt+R"] },
         ];
     }
 
     public override string Id => ToolId;
     public override string Name => Lang.T("Longshot", "اللقطة الطويلة");
-    public override string Summary => Lang.T("Scrolling screenshots of a whole page, a part that scrolls (a chat, a list, a panel) or any area. Press the shortcut, then Auto.", "لقطات شاشة طويلة لصفحة كاملة، أو لجزء يتمرّر (محادثة أو قائمة أو لوحة)، أو لأي منطقة. اضغط الاختصار ثم «تلقائي».");
+    public override string Summary => Lang.T("Scrolling screenshots of a whole page, a part that scrolls (a chat, a list, a panel) or any area, and videos of any area. Press the shortcut, then Auto or Record.", "لقطات شاشة طويلة لصفحة كاملة، أو لجزء يتمرّر (محادثة أو قائمة أو لوحة)، أو لأي منطقة، وفيديو لأي منطقة. اضغط الاختصار ثم «تلقائي» أو «تسجيل».");
     public override string Icon => "lap-longshot";
     public override IReadOnlyList<ToolCommand> Commands { get; }
 
@@ -49,10 +51,28 @@ internal sealed class LongshotTool : ToolModule
 
     protected override void OnStart() { } // nothing to load: a capture starts from scratch each time
 
-    protected override void OnStop() => LongshotCapture.CancelActive();
+    protected override void OnStop()
+    {
+        LongshotCapture.CancelActive();
+        VideoCapture.CancelActive();
+    }
 
-    public void Capture(bool delayed = false) =>
+    /// <summary>The screenshot shortcut; while a video is open it works the video (record, then stop).</summary>
+    public void Capture(bool delayed = false)
+    {
+        if (VideoCapture.Active) { VideoCapture.ShortcutAgainActive(); return; }
         LongshotCapture.Start(_host, this, delaySeconds: delayed ? Math.Clamp(_host.Settings.Current.Longshot.DelaySeconds, 1, 30) : 0);
+    }
+
+    /// <summary>
+    /// The video shortcut: frames the window in front for a recording; again starts recording, and
+    /// again stops it. During a long screenshot it switches that to Video, on the same area.
+    /// </summary>
+    public void RecordVideo()
+    {
+        if (LongshotCapture.SwitchActiveToVideo()) return;
+        VideoCapture.Start(_host, this);
+    }
 
     private void CaptureSameArea()
     {
@@ -75,7 +95,9 @@ internal sealed class LongshotTool : ToolModule
         yield return new TrayItem(Commands[0].Label, () => Capture(), Shortcut: shortcutText(Commands[0]));
         yield return new TrayItem(Lang.T($"Capture after {delay} seconds", $"التقاط بعد {delay} ث"), () => Capture(delayed: true), Shortcut: shortcutText(Commands[1]));
         yield return new TrayItem(Commands[2].Label, LastArea is null ? null : CaptureSameArea, Shortcut: shortcutText(Commands[2]));
+        yield return new TrayItem(Commands[3].Label, () => RecordVideo(), Shortcut: shortcutText(Commands[3]));
         yield return new TrayItem(Lang.T("Open screenshots folder", "فتح مجلد اللقطات"), OpenFolder);
+        yield return new TrayItem(Lang.T("Open videos folder", "فتح مجلد الفيديو"), OpenVideoFolder);
     }
 
     /// <summary>Where captures are saved.</summary>
@@ -85,6 +107,15 @@ internal sealed class LongshotTool : ToolModule
     {
         Directory.CreateDirectory(Folder);
         Process.Start(new ProcessStartInfo("explorer.exe", $"\"{Folder}\"") { UseShellExecute = true });
+    }
+
+    /// <summary>Where recordings are saved.</summary>
+    public string VideoFolder => _host.Settings.Current.Longshot.VideoFolder is { Length: > 0 } f ? f : VideoFiles.DefaultFolder;
+
+    private void OpenVideoFolder()
+    {
+        Directory.CreateDirectory(VideoFolder);
+        Process.Start(new ProcessStartInfo("explorer.exe", $"\"{VideoFolder}\"") { UseShellExecute = true });
     }
 
     public override void BuildSettings(SettingsPage page)
@@ -141,6 +172,32 @@ internal sealed class LongshotTool : ToolModule
         page.Stacked(Lang.T("Save to", "الحفظ في"), where,
             Lang.T("Files are named like \"Longshot 2026-11-08 143012.png\". Existing files are never overwritten.", "تُسمّى الملفات مثل «Longshot 2026-11-08 143012.png». لا تُستبدل الملفات الموجودة أبدًا."));
 
+        page.Section(Lang.T("Video", "الفيديو"));
+        page.Card();
+        page.Row(Lang.T("Frames a second", "إطارات في الثانية"), SettingsPage.Choice(["30", "60"], s.VideoFps == 60 ? "60" : "30", v => Edit(x => x.VideoFps = v == "60" ? 60 : 30)),
+            Lang.T("30 suits most screen recordings. 60 is smoother for fast movement, with bigger files.", "30 يناسب معظم تسجيلات الشاشة. 60 أنعم للحركة السريعة، بملفات أكبر."));
+        page.Toggle(Lang.T("Show the pointer", "إظهار المؤشر"), s.VideoCursor, on => Edit(x => x.VideoCursor = on));
+        page.Toggle(Lang.T("Show clicks", "إظهار النقرات"), s.VideoClicks, on => Edit(x => x.VideoClicks = on),
+            Lang.T("A yellow ring where the mouse is clicked, so people can follow along.", "حلقة صفراء حيث تُنقر الفأرة، ليتابع المشاهدون."));
+        page.Toggle(Lang.T("Count 3, 2, 1 before recording", "العدّ 3، 2، 1 قبل التسجيل"), s.VideoCountdown, on => Edit(x => x.VideoCountdown = on));
+        var videoFolderText = SettingsPage.Ltr(new TextBlock { Text = VideoFolder, Style = SettingsPage.Res("Lap.Help"), TextTrimming = TextTrimming.CharacterEllipsis, TextWrapping = TextWrapping.NoWrap });
+        var videoButtons = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 10, 0, 0) };
+        videoButtons.Children.Add(SettingsPage.Button(Lang.T("Choose folder…", "اختيار مجلد…"), () =>
+        {
+            using var dialog = new System.Windows.Forms.FolderBrowserDialog { SelectedPath = VideoFolder, UseDescriptionForTitle = true, Description = Lang.T("Save recordings in", "حفظ التسجيلات في") };
+            if (dialog.ShowDialog() != System.Windows.Forms.DialogResult.OK) return;
+            Edit(x => x.VideoFolder = dialog.SelectedPath);
+            videoFolderText.Text = dialog.SelectedPath;
+        }));
+        var videoReset = SettingsPage.Button(Lang.T(@"Use Videos\Screen Recordings", @"استخدام Videos\Screen Recordings"), () => { Edit(x => x.VideoFolder = null); videoFolderText.Text = VideoFiles.DefaultFolder; }, ghost: true);
+        videoReset.Margin = new Thickness(8, 0, 0, 0);
+        videoButtons.Children.Add(videoReset);
+        var videoWhere = new StackPanel();
+        videoWhere.Children.Add(videoFolderText);
+        videoWhere.Children.Add(videoButtons);
+        page.Stacked(Lang.T("Save recordings to", "حفظ التسجيلات في"), videoWhere,
+            Lang.T("MP4 (H.264) files named like \"Longshot video 2026-11-13 214512.mp4\", which play everywhere. Existing files are never overwritten.", "ملفات MP4 (H.264) تُسمّى مثل «Longshot video 2026-11-13 214512.mp4» وتعمل في كل مكان. لا تُستبدل الملفات الموجودة أبدًا."));
+
         page.Section(Lang.T("Good to know", "معلومات مفيدة"));
         page.Card();
         page.Note(Lang.T("Sticky headers and footers (menus, cookie bars) are found automatically and kept once, at the top and bottom.",
@@ -153,6 +210,8 @@ internal sealed class LongshotTool : ToolModule
             "قد توقف مقاطع الفيديو والرسوم المتحركة والعروض الدوّارة داخل الإطار عملية الالتقاط. غيّر حجم الإطار لتتجنّبها."));
         page.Note(Lang.T("Longshot's panel and frame never appear in your screenshots, and nothing leaves this computer.",
             "لا تظهر لوحة اللقطة الطويلة وإطارها في لقطاتك أبدًا، ولا يغادر أي شيء هذا الحاسوب."));
+        page.Note(Lang.T("Videos: the frame, the recording pill and the dimming stay out of the recording. Sound isn't recorded yet.",
+            "الفيديو: الإطار وشريط التسجيل والتعتيم لا تظهر في التسجيل. لا يُسجَّل الصوت بعد."));
         page.Note(Lang.T("Apps running as administrator (Task Manager, for example) can't be scrolled by Longshot: Windows blocks it.",
             "لا تستطيع اللقطة الطويلة تمرير التطبيقات التي تعمل كمسؤول (مثل إدارة المهام)، لأن ويندوز يمنع ذلك."));
     }
