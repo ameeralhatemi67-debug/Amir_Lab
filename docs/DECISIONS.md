@@ -248,6 +248,24 @@ Product direction lives in [`sead_idea.md`](../sead_idea.md) (the seed). This fi
   - Not verified live: the run where the wheel starts over the sidebar, and capturing the scroll area UI Automation found, because the test's Edge window didn't come to the front. Both are covered on simulated screens.
   - The test now refuses to run unless Edge is the window under every point it scrolls.
 
+## Installing says what happened (14 Nov 2026)
+
+The owner's report from people installing: after "Run with PowerShell", a console opened and closed and nothing else happened, so they ran it again and again.
+
+- **Cause:** the installer only started Amir Lap when given `-Launch`, which the right-click command never passes. Amir Lap is a tray app, so once installed nothing showed at all. An error closed the window just as fast.
+- **The installer, run from Explorer:**
+  - **While it works:** a titled window ("Installing Amir Lap") says what it is doing ("installing 0.6.2" or "updating to 0.6.2", for you only) and shows four numbered steps, each followed by "done".
+  - **When it's done:** it starts Amir Lap, says where it lives, and closes after a 12-second countdown (any key closes it sooner).
+  - **If something fails:** the window stays open with the reason in red until Enter is pressed.
+  - **Scripts:** use `-Quiet` (plain output, errors thrown, no countdown, no welcome).
+- **The welcome (`WelcomeWindow`):** the installer starts Amir Lap with `--installed` or `--updated`, and it opens a window that says:
+  - that it is installed (or updated) and ready, with its version;
+  - that it lives in the notification area by the clock (maybe under the ^ arrow) and in the Start Menu;
+  - three things to try, for the tools that are on, with their real shortcuts;
+  - plus a "Start with Windows" switch, off unless chosen.
+- **The download mark:** the installed copies don't keep the "downloaded from the internet" mark the extracted zip carried, as with any installer's files, so Amir Lap starts straight after installing.
+- Checked for real: the published zip extracted and marked as downloaded, the installer run as Explorer runs it, the steps, the welcome and the countdown seen on screen.
+
 ## Longshot: the marker is the scroll cursor (14 Nov 2026)
 
 From the owner's video of the Salla order editor (13 Nov): a page that scrolls, with sections in it that scroll on their own. Longshot broke on it, highlighted the page's text, and the frame lagged.

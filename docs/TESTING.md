@@ -112,8 +112,9 @@ This generates large fixtures and runs each heavy operation in its own process (
 
 ## Manual checklist (owner)
 
-Install with `artifacts/publish/install.ps1 -Launch` (or run the Debug build). The app sits in the notification area. Then:
+Install by right-clicking `artifacts/publish/install.ps1` > Run with PowerShell (as people do from the zip): a window shows four steps, Amir Lap opens its welcome, and the window closes after a countdown. Scripts use `install.ps1 -Quiet -Launch`. Or run the Debug build. The app sits in the notification area. Then:
 
+0. **Installing from the zip:** extract the release zip, right-click install.ps1 > Run with PowerShell. You should see the steps with "done", then the welcome (installed or updated, where it lives, what to try). Run it with a file in use to see an error stay on screen.
 1. Drag a PDF from File Explorer, tap **Shift** mid-drag → the wheel appears at the pointer. Drop on **JPG**.
 2. Same from the **Desktop**.
 3. Drag an image, tap Shift twice → the **Tools** ring.

@@ -94,6 +94,7 @@ public partial class HomeWindowTests
 
                 RenderLongshotWindows(snapshots, theme, lang);
                 RenderVideoWindows(snapshots, theme, lang);
+                RenderWelcome(snapshots, theme, lang);
                 if (lang == "en") RenderWheel(snapshots, theme);
                 RenderPulse(snapshots, theme, lang, host);
                 RenderColour(snapshots, theme, lang);

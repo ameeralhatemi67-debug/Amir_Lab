@@ -25,8 +25,10 @@ powershell -ExecutionPolicy Bypass -File tools/publish.ps1
 ```
 
 ```bash
-powershell -ExecutionPolicy Bypass -File artifacts/publish/install.ps1 -Launch
+powershell -ExecutionPolicy Bypass -File artifacts/publish/install.ps1 -Quiet -Launch
 ```
+
+From the release zip: extract it, right-click `install.ps1` > Run with PowerShell. A window shows the steps, then Amir Lap opens a welcome (installed or updated, where it lives, what to try) and the window closes by itself.
 
 - **Where it goes:** Amir Lap installs to `%LOCALAPPDATA%\Programs\AmirLap`, with a Start Menu shortcut and an entry in Settings > Apps > Installed apps.
 - **Coming from File Toolbox:** the installer replaces it: the old program folder, shortcut and Installed apps entry are removed. Your settings, history, recipes and brand styles are copied into Amir Lap the first time it starts, and the old data folder is left untouched. Explorer menu, Send to and start-with-Windows carry over if you had them on.

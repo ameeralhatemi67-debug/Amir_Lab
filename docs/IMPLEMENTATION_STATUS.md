@@ -39,6 +39,13 @@ _Last updated: 8 Nov 2026 — Amir Lap phases 1 and 2 complete: the multi-tool s
 | Real wheel scrolling of other apps and live use end to end | **Partial** | Live in Edge through the capture session (`LiveLongshotTests`); the whole app (panel, picker, hooks) still needs a live try by the owner. |
 | Monitors with different scalings | **Partial** | One window spans the virtual screen; untested on mixed-DPI setups. 125% on one monitor checked live. |
 
+## Installing (14 Nov 2026)
+
+| Capability | State | Evidence / notes |
+|---|---|---|
+| Installer run from Explorer: steps shown, Amir Lap started with its welcome, countdown, errors kept on screen | **Working** | Run for real from the extracted 0.6.2 zip (files marked as downloaded), as "Run with PowerShell" does; seen on screen. `tools/test-install.ps1` (quiet mode) still passes. |
+| Welcome window (installed or updated, where it lives, what to try, start with Windows), light/dark, English/Arabic | **Working** | `HomeWindowTests` builds it off-screen; snapshots reviewed. |
+
 ## Longshot: the marker is the scroll cursor (14 Nov 2026)
 
 | Capability | State | Evidence / notes |

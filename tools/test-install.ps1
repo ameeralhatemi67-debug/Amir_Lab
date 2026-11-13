@@ -61,7 +61,7 @@ try {
     $lnk = $shell.CreateShortcut((Join-Path $common.SendToDir 'File Toolbox.lnk')); $lnk.TargetPath = $oldExe; $lnk.Save()
 
     Write-Host 'Install (replacing File Toolbox):'
-    & (Join-Path $Published 'install.ps1') -Source (Join-Path $Published 'AmirLap') -Destination $dest @common @legacy | Out-Host
+    & (Join-Path $Published 'install.ps1') -Source (Join-Path $Published 'AmirLap') -Destination $dest @common @legacy -Quiet | Out-Host
     Check (Test-Path $exe) 'program files copied'
     Check (Test-Path (Join-Path $dest 'uninstall.ps1')) 'uninstaller copied'
     Check (Test-Path (Join-Path $common.StartMenuDir 'Amir Lap.lnk')) 'Start Menu shortcut'
@@ -88,7 +88,7 @@ try {
     Remove-Item Env:\AMIRLAP_DATA
 
     Write-Host 'Install again (update):'
-    & (Join-Path $Published 'install.ps1') -Source (Join-Path $Published 'AmirLap') -Destination $dest @common @legacy | Out-Host
+    & (Join-Path $Published 'install.ps1') -Source (Join-Path $Published 'AmirLap') -Destination $dest @common @legacy -Quiet | Out-Host
     Check (Test-Path $exe) 'update keeps a working installation'
     Check ((Get-ItemProperty "$reg\Run").AmirLap -like "*$exe*") 'start with Windows kept on update'
 

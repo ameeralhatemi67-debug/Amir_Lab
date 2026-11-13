@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.Windows;
 using System.Windows.Threading;
 using Microsoft.Win32;
@@ -171,8 +172,70 @@ public partial class App : Application
             ShowPalette(); // File Toolbox's window directly (scripts, the QA harness)
             return;
         }
+        // The installer starts Amir Lap with one of these when it is done: say so, plainly.
+        if (args.Any(a => a is "--installed" or "--updated"))
+        {
+            ShowWelcome(updated: args.Contains("--updated"));
+            return;
+        }
         bool quiet = args.Any(a => a is "--background" or "--diag");
         if (fromAnotherInstance || (!quiet && args.Length == 0)) ShowHome();
+    }
+
+    private Home.WelcomeWindow? _welcome;
+
+    /// <summary>After the installer: installed (or updated) and running, where it lives, what to try first.</summary>
+    private void ShowWelcome(bool updated)
+    {
+        if (_tools is null) return;
+        if (_welcome is not null)
+        {
+            Shell.Foreground.Activate(_welcome);
+            return;
+        }
+        string version = typeof(App).Assembly.GetCustomAttribute<System.Reflection.AssemblyInformationalVersionAttribute>()?.InformationalVersion.Split('+')[0] ?? "";
+        _welcome = new Home.WelcomeWindow(updated, version, WelcomeTips(), Shell.ShellIntegration.IsStartWithWindows, on =>
+        {
+            Shell.ShellIntegration.SetStartWithWindows(on);
+            var next = _host.Settings.Current.Clone();
+            next.StartWithWindows = on;
+            _host.Settings.Save(next);
+        }, () => ShowHome());
+        _welcome.Closed += (_, _) => _welcome = null;
+        _welcome.Show();
+        Shell.Foreground.Activate(_welcome);
+        Log.Info($"Welcome shown ({(updated ? "updated" : "installed")} {version}).");
+    }
+
+    /// <summary>The first things to try, for the tools that are on, with their real keys.</summary>
+    internal List<Home.WelcomeTip> WelcomeTips()
+    {
+        var tips = new List<Home.WelcomeTip>();
+        if (_tools is null) return tips;
+        foreach (var tool in _tools.Tools.Where(_tools.IsEnabled))
+        {
+            switch (tool.Id)
+            {
+                case FileToolboxTool.ToolId:
+                    string key = _host.Settings.Current.ActivationKey;
+                    tips.Add(new(tool.Icon, tool.Name, Lang.T(
+                        $"Drag any file and tap {key} while you hold it: a wheel of tools opens at the pointer (convert, compress, blur, preview…).",
+                        $"اسحب أي ملف واضغط {key} وأنت تمسكه: تُفتح عجلة الأدوات عند المؤشر (تحويل، ضغط، تمويه، معاينة…)."), [key]));
+                    break;
+                case LongshotTool.ToolId:
+                    var keys = new[] { ShortcutText(tool.Id, "capture"), ShortcutText(tool.Id, "video") }.OfType<string>().ToList();
+                    tips.Add(new(tool.Icon, tool.Name, Lang.T(
+                        "A screenshot of a whole page that scrolls, or a video of any area.",
+                        "لقطة لصفحة كاملة تتمرّر، أو فيديو لأي منطقة."), keys));
+                    break;
+                case PulseTool.ToolId:
+                    tips.Add(new(tool.Icon, tool.Name, Lang.T(
+                        "The dock on the edge of your screen: your Claude and Codex limits, and your shortcuts.",
+                        "الشريط على حافة الشاشة: حدود Claude وCodex واختصاراتك."), []));
+                    break;
+            }
+        }
+        return tips;
     }
 
     private void OnTrayClick()
