@@ -206,7 +206,10 @@ public static class StudioRenderer
                 }
                 case RedactionMode.Pixelate:
                 {
-                    int block = Math.Max(4, Math.Min(w, h) / 10);
+                    // Blocks about half the box's height: a line of text becomes a row of a few
+                    // blocks per letter group, with nothing left to read (a tenth of it, as before,
+                    // still showed the letters).
+                    int block = Math.Max(6, (int)Math.Round(Math.Min(w, h) / 2.2));
                     using var region = img.ExtractArea(x, y, w, h);
                     using var small = region.Resize(1.0 / block, kernel: Enums.Kernel.Nearest);
                     using var big = small.Resize((double)w / small.Width, kernel: Enums.Kernel.Nearest, vscale: (double)h / small.Height);
@@ -216,8 +219,16 @@ public static class StudioRenderer
                 }
                 case RedactionMode.Blur:
                 {
+                    // Strong enough that text inside is gone, not just soft: the radius follows the
+                    // box's height (the old eighth of it left a line of text readable), and the
+                    // blurred area is pixelated finely first so no letter shapes survive in it.
                     using var region = img.ExtractArea(x, y, w, h);
-                    using var blurred = region.Gaussblur(Math.Max(3, Math.Min(w, h) / 8.0)).Cast(Enums.BandFormat.Uchar);
+                    double sigma = Math.Max(4, Math.Min(w, h) * 0.42);
+                    int cell = Math.Max(2, (int)Math.Round(Math.Min(w, h) / 6.0));
+                    using var small = region.Resize(1.0 / cell, kernel: Enums.Kernel.Linear);
+                    using var back = small.Resize((double)w / small.Width, kernel: Enums.Kernel.Linear, vscale: (double)h / small.Height);
+                    using var sized = back.Width >= w && back.Height >= h ? back.ExtractArea(0, 0, w, h) : back.Embed(0, 0, w, h, extend: Enums.Extend.Copy);
+                    using var blurred = sized.Gaussblur(sigma).Cast(Enums.BandFormat.Uchar);
                     img = Swap(img, img.Insert(blurred, x, y));
                     break;
                 }

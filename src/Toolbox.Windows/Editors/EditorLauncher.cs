@@ -29,6 +29,8 @@ internal sealed class EditorLauncher : IEditorLauncher
         _ => null,
     };
 
+    public void OpenBlur(string path, bool findPersonalInfo, Native.POINT? anchor) => _studio.OpenBlur(path, findPersonalInfo, anchor);
+
     public void Open(ActionDefinition action, IReadOnlyList<string> paths, Native.POINT? anchor)
     {
         if (action.Id == CapabilityMap.Ids.Metadata)

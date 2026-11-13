@@ -337,6 +337,34 @@ These are ideas 6, 7 and 8 of the owner's list. The owner added a spec for the P
   - A drawn signature is a picture, not a certificate signature.
   - Password-protected PDFs don't open.
 
+## Blur for photos: click text, find personal info (13 Nov 2026)
+
+This is idea 2 of the owner's list, for photos first; video follows. The image editor's Redact step became **Blur**, and it is one tool wherever it is opened.
+
+- **Where it opens:**
+  - the wheel's Blur tile (the old Redact seat);
+  - Longshot's result window: **Blur…** and **Hide personal info**;
+  - the image Preview's toolbar.
+- **Stronger by default:**
+  - **Before:** a blur radius of an eighth of the box and pixel blocks of a tenth, so a line of text stayed readable.
+  - **Blur:** the area is now first reduced to cells of a sixth of its height, then blurred with a radius of about 0.42 of its height.
+  - **Pixelate:** blocks are about half its height.
+  - **Test:** a row of letter-like strokes keeps less than 1/12 of its contrast in both (`StudioTests`).
+  - **Wording:** blur is offered as hiding from a glance; **Solid** is labelled the safe choice for passwords, cards and IDs.
+- **Click text:**
+  - When the step opens, the picture's text is read with Windows OCR in the background. Long screenshots are read in 2400 px strips with overlap (`OcrService.RecognizeTall`), because the engine would otherwise shrink them past its 10,000 px limit until small text can't be read.
+  - Pointing at a word lights it up, and a click hides it (Shift: the whole line).
+  - Dragging across text snaps to the words it covers, one tidy area per line; brushing a word's edge (under a third of it) doesn't take it.
+  - Dragging away from text draws a free area as before.
+- **Find personal info** (`SensitiveText`):
+  - **What it finds:** e-mail addresses (spaces around @ allowed), phone numbers, card numbers (Luhn), IBANs (mod 97), IP addresses, and secrets. Secrets are API keys and tokens with known shapes, values after "password:", "token:", "كلمة المرور:" and similar, and long random-looking strings (entropy at least 3.6 bits per character).
+  - **Arabic-Indic digits** count as digits.
+  - **Phone rules:** dates, amounts like 1.250.000 and bare order numbers are not phone numbers.
+  - **One hit each:** a card number is never also a phone number.
+  - **The list:** each finding is listed dotted out ("am•••@example.com"), checked by default, and drawn as an amber dashed box. "Hide these N" hides them in one undo step; unchecking leaves one visible.
+  - **Honest note:** recognition can miss handwriting and small print, so the panel asks for a check by eye.
+- **Not in this round:** blur for video (the plan: keyframes as the data, an "anchor" that follows the content as the interface, tracking by Longshot's shift finder).
+
 ## App icon (8 Nov 2026)
 
 - **"Tool tiles", chosen by the owner** from three options (tool tiles, an AL monogram, a lab flask). It shows four tiles on an accent square:

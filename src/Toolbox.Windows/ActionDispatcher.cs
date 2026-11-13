@@ -17,6 +17,9 @@ internal interface IEditorLauncher
     bool CanOpen(ActionDefinition action);
 
     void Open(ActionDefinition action, IReadOnlyList<string> paths, Native.POINT? anchor);
+
+    /// <summary>Opens the image editor on its Blur step; with <paramref name="findPersonalInfo"/>, it looks for personal information at once.</summary>
+    void OpenBlur(string path, bool findPersonalInfo, Native.POINT? anchor);
 }
 
 /// <summary>

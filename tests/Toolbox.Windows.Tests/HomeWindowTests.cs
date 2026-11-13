@@ -97,6 +97,7 @@ public class HomeWindowTests
                 RenderPulse(snapshots, theme, lang, host);
                 RenderColour(snapshots, theme, lang);
                 RenderViewer(snapshots, theme, lang, dispatcher);
+                if (lang == "en") RenderBlur(snapshots, theme);
             }
             Lang.Set("en");
             ThemeResources.Apply(app, "light");
@@ -902,7 +903,7 @@ public class HomeWindowTests
                 using var surface = SkiaSharp.SKSurface.Create(new SkiaSharp.SKImageInfo(240, 160));
                 surface.Canvas.DrawRect(0, 0, 240, 160, photo);
                 using var image = surface.Snapshot();
-                canvas.DrawImage(image, new SkiaSharp.SKRect(300, 690, 540, 810));
+                canvas.DrawImage(image, new SkiaSharp.SKRect(300, 690, 540, 810), new SkiaSharp.SKSamplingOptions(SkiaSharp.SKFilterMode.Linear), null);
             }
             doc.EndPage();
         }
@@ -976,6 +977,89 @@ public class HomeWindowTests
             Assert.Equal(3, result.PageCount);
             Assert.Contains(lang == "ar" ? "أمير" : "Reviewed and approved", result.GetText(1));
             window.Discard();
+        }
+        finally
+        {
+            window.Close();
+        }
+    }
+
+    /// <summary>
+    /// The image editor's Blur step on a "chat screenshot": the words as recognition would give them
+    /// (drawn with Skia, boxes measured), personal info found and suggested, then hidden in one step.
+    /// The real editor window is shown far off-screen.
+    /// </summary>
+    private static void RenderBlur(string? snapshots, string theme)
+    {
+        var dir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "amirlap-blur-" + Guid.NewGuid().ToString("N"));
+        System.IO.Directory.CreateDirectory(dir);
+        var path = System.IO.Path.Combine(dir, "chat.png");
+        string[] lines =
+        [
+            "Hi Amir, here are the details for the booking:",
+            "Email me at amir.alhatemi@example.com when you land",
+            "My number is +964 770 123 4567 (WhatsApp too)",
+            "Card for the deposit 4242 4242 4242 4242 exp 12/28",
+            "Wi-Fi password: Qw8!xz77 and the router is 192.168.1.20",
+            "See you on Thursday!",
+        ];
+        var ocrLines = new List<Processing.Ocr.OcrLine>();
+        using (var surface = SkiaSharp.SKSurface.Create(new SkiaSharp.SKImageInfo(900, 420)))
+        {
+            var canvas = surface.Canvas;
+            canvas.Clear(new SkiaSharp.SKColor(0xF4, 0xF5, 0xF7));
+            using var typeface = SkiaSharp.SKTypeface.FromFamilyName("Segoe UI") ?? SkiaSharp.SKTypeface.Default;
+            using var font = new SkiaSharp.SKFont(typeface, 24);
+            using var ink = new SkiaSharp.SKPaint { Color = new SkiaSharp.SKColor(0x1A, 0x1C, 0x22), IsAntialias = true };
+            using var bubble = new SkiaSharp.SKPaint { Color = SkiaSharp.SKColors.White, IsAntialias = true };
+            float space = font.MeasureText(" ");
+            for (int i = 0; i < lines.Length; i++)
+            {
+                float y = 60 + i * 60;
+                canvas.DrawRoundRect(30, y - 34, font.MeasureText(lines[i]) + 40, 48, 16, 16, bubble);
+                float x = 50;
+                var words = new List<Processing.Ocr.OcrWord>();
+                foreach (var word in lines[i].Split(' '))
+                {
+                    float w = font.MeasureText(word);
+                    canvas.DrawText(word, x, y, SkiaSharp.SKTextAlign.Left, font, ink);
+                    words.Add(new Processing.Ocr.OcrWord(word, x, y - 20, w, 26));
+                    x += w + space;
+                }
+                ocrLines.Add(new Processing.Ocr.OcrLine(lines[i], words, "en"));
+            }
+            using var image = surface.Snapshot();
+            using var data = image.Encode(SkiaSharp.SKEncodedImageFormat.Png, 100);
+            System.IO.File.WriteAllBytes(path, data.ToArray());
+        }
+        var steps = new[] { Studio.StudioStep.Crop, Studio.StudioStep.Adjust, Studio.StudioStep.Background, Studio.StudioStep.Annotate, Studio.StudioStep.Redact, Studio.StudioStep.Export };
+        var window = new Studio.StudioWindow(new Studio.StudioEntry(Studio.StudioStep.Redact, "Hide personal info", steps), "chat.png", null, (_, _, _) => { })
+        {
+            WindowStartupLocation = WindowStartupLocation.Manual,
+            Left = -30000,
+            Top = -30000,
+            Width = 1120,
+            Height = 700,
+            ShowActivated = false,
+        };
+        window.Show();
+        try
+        {
+            var source = Processing.Studio.StudioSource.Open(path);
+            window.Attach(new Studio.StudioSession(new Processing.Studio.EditDocument { SourcePath = path }, source));
+            window.UseText(new Processing.Ocr.OcrPage(ocrLines, 900, 420));
+            window.FindPersonalNow();
+            Assert.Equal(5, window.FoundCount); // e-mail, phone, card, password, IP address
+            DoEvents();
+            DoEvents();
+            Save(snapshots, (FrameworkElement)window.Content, 1120, 700, $"blur-found-{theme}");
+            window.HideFoundNow();
+            Assert.Equal(5, window.HiddenCount);
+            Assert.Equal(0, window.FoundCount);
+            DoEvents();
+            DoEvents();
+            DoEvents();
+            Save(snapshots, (FrameworkElement)window.Content, 1120, 700, $"blur-hidden-{theme}");
         }
         finally
         {

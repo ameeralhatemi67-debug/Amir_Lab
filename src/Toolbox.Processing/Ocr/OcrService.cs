@@ -85,6 +85,32 @@ public static class OcrService
         return codes;
     }
 
+    /// <summary>
+    /// Recognises a tall image (a long screenshot) in overlapping strips, so its text keeps a
+    /// readable size instead of being shrunk to the engine's limit. Each strip keeps the lines whose
+    /// middle falls in its own part (the overlap is split between neighbours), so nothing is read
+    /// twice and nothing cut by a strip edge is lost.
+    /// </summary>
+    public static OcrPage RecognizeTall(Image image, string languages, int strip = 2400, int overlap = 220)
+    {
+        if (image.Height <= strip + overlap) return Recognize(image, languages);
+        var lines = new List<OcrLine>();
+        for (int top = 0; top < image.Height; top += strip)
+        {
+            int from = Math.Max(0, top - overlap), to = Math.Min(image.Height, top + strip + overlap);
+            using var part = image.ExtractArea(0, from, image.Width, to - from);
+            var page = Recognize(part, languages);
+            int ownTop = top, ownBottom = Math.Min(image.Height, top + strip);
+            foreach (var line in page.Lines)
+            {
+                double middle = from + (line.Top + line.Bottom) / 2;
+                if (middle < ownTop || middle >= ownBottom) continue;
+                lines.Add(line with { Words = line.Words.Select(w => w with { Y = w.Y + from }).ToList() });
+            }
+        }
+        return new OcrPage(lines, image.Width, image.Height);
+    }
+
     /// <summary>Recognises text. <paramref name="languages"/> is "ara+eng", "ara" or "eng".</summary>
     public static OcrPage Recognize(Image image, string languages, MixedStrategy? strategy = null)
     {

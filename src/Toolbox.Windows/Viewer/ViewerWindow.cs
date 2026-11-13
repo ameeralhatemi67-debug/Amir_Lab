@@ -331,6 +331,9 @@ internal sealed partial class ViewerWindow : GlassWindow
         bar.Children.Add(Separator());
         bar.Children.Add(IconButton("rotate-left", Lang.T("Turn left", "تدوير لليسار"), () => _image?.Turn(-1)));
         bar.Children.Add(IconButton("rotate", Lang.T("Turn right", "تدوير لليمين"), () => _image?.Turn(1)));
+        bar.Children.Add(Separator());
+        bar.Children.Add(IconButton("eye-off", Lang.T("Blur or hide parts of it", "تمويه أجزاء منها أو إخفاؤها"), () => { _dispatcher.Editors?.OpenBlur(Path, false, ScreenGeometry.CursorPosition()); Close(); }));
+        bar.Children.Add(IconButton("scan", Lang.T("Find and hide personal info", "البحث عن المعلومات الشخصية وإخفاؤها"), () => { _dispatcher.Editors?.OpenBlur(Path, true, ScreenGeometry.CursorPosition()); Close(); }));
         ShowZoom();
         return bar;
     }

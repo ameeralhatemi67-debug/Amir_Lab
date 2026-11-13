@@ -288,8 +288,8 @@ public static class CapabilityMap
         list.Add(Tool(Ids.Crop, "Crop", "Crop", "crop", " Cropped",
             "A copy containing only the selected rectangle, optionally constrained to an aspect ratio.", lossy: true,
             inputs: WithPdf(ImageInputs), limitations: [pdfPageNote]));
-        list.Add(Tool(Ids.Redact, "Redact", "Redact (image)", "eye-off", " Redacted",
-            "A copy with chosen areas permanently covered with solid colour in the exported pixels. Blur and pixelate are offered as obscuring only, not secure removal.", lossy: true,
+        list.Add(Tool(Ids.Redact, "Blur", "Blur or hide", "eye-off", " Redacted",
+            "A copy with chosen areas blurred, pixelated or covered with solid colour in the exported pixels. Click a word to hide it, drag across text, or let it find e-mails, phone numbers, card numbers, IBANs, IP addresses and keys. Blur and pixelate hide from a glance; Solid is the secure choice.", lossy: true,
             limitations: ["Redacts pictures only. PDF redaction (removing underlying text) is not available.", "Metadata is not changed by redaction; use Metadata to remove it."]));
 
         // ---- OCR (Windows' built-in recogniser; languages are installed in Windows) ----------

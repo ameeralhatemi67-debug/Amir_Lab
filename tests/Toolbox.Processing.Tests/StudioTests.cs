@@ -117,6 +117,49 @@ public sealed class StudioTests : IDisposable
         Assert.Equal(0, region.Max());
     }
 
+    /// <summary>
+    /// A line of "text" (thin black strokes on white, like letters 24 px tall) under Blur and Pixelate:
+    /// nothing letter-shaped may survive. Measured as the contrast left between neighbouring columns,
+    /// which strokes make large and a smudge or big blocks make small.
+    /// </summary>
+    [Theory]
+    [InlineData(RedactionMode.Blur)]
+    [InlineData(RedactionMode.Pixelate)]
+    public void Blur_and_pixelate_leave_no_letters(RedactionMode mode)
+    {
+        var path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"amirlap-letters-{Guid.NewGuid():N}.png");
+        using (var white = (NetVips.Image.Black(400, 60) + 255).Cast(NetVips.Enums.BandFormat.Uchar))
+        {
+            var img = white.Bandjoin(white, white);
+            for (int x = 20; x < 380; x += 7)
+                img = img.Mutate(m => m.DrawRect(new double[] { 0, 0, 0 }, x, 18, 2, 24, fill: true));
+            img.WriteToFile(path);
+            img.Dispose();
+        }
+        try
+        {
+            using var source = StudioSource.Open(path);
+            var area = new PixelRect(10, 12, 380, 36);
+            using var result = StudioRenderer.Render(Doc(path) with { Redactions = [new Redaction(area, mode)] }, source, RenderStage.Final, null, out _);
+            using var before = StudioRenderer.Render(Doc(path), source, RenderStage.Final, null, out _);
+            double Ripple(NetVips.Image image)
+            {
+                using var row = image.ExtractArea(30, 30, 300, 1).Colourspace(NetVips.Enums.Interpretation.Bw);
+                var bytes = row.WriteToMemory();
+                double sum = 0;
+                for (int i = 1; i < bytes.Length; i++) sum += Math.Abs(bytes[i] - bytes[i - 1]);
+                return sum / (bytes.Length - 1);
+            }
+            double original = Ripple(before), hidden = Ripple(result);
+            Assert.True(original > 40, $"the strokes should be visible first ({original:F1})");
+            Assert.True(hidden < original / 12, $"{mode} should leave no strokes: {hidden:F1} vs {original:F1} before");
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
     [Fact]
     public void Annotations_draw_into_the_pixels()
     {

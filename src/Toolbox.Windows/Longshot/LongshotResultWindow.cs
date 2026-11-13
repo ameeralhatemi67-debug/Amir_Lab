@@ -63,6 +63,12 @@ internal sealed class LongshotResultWindow : GlassWindow
         void Add(Button b) { b.Margin = new Thickness(0, 0, 6, 6); bar.Children.Add(b); }
         Add(SettingsPage.Button("New capture", () => { Close(); newCapture(); }, accent: true));
         Add(SettingsPage.Button("Copy", Copy));
+        var blur = SettingsPage.Button("Blur…", () => { App.Actions.Editors?.OpenBlur(path, false, ScreenGeometry.CursorPosition()); Close(); });
+        blur.ToolTip = "Blur, pixelate or cover parts of it: click words, drag across text or areas. Saves a new copy.";
+        Add(blur);
+        var personal = SettingsPage.Button("Hide personal info", () => { App.Actions.Editors?.OpenBlur(path, true, ScreenGeometry.CursorPosition()); Close(); });
+        personal.ToolTip = "Finds e-mails, phone numbers, card numbers, IBANs, IP addresses and keys in it, for you to check and hide.";
+        Add(personal);
         if (fileToolboxOn) Add(SettingsPage.Button("Open in File Toolbox", () => { Close(); App.ShowPalette([path]); }));
         Add(SettingsPage.Button("Save as…", SaveAs));
         Add(SettingsPage.Button("Open", () => Process.Start(new ProcessStartInfo(path) { UseShellExecute = true })));

@@ -26,7 +26,11 @@ internal enum StudioStep
 }
 
 /// <summary>How the Studio was opened: which step comes first and what the window is called.</summary>
-internal sealed record StudioEntry(StudioStep Start, string Title, IReadOnlyList<StudioStep> Steps, string? SuffixOverride = null);
+internal sealed record StudioEntry(StudioStep Start, string Title, IReadOnlyList<StudioStep> Steps, string? SuffixOverride = null)
+{
+    /// <summary>Open the Blur step and look for personal information straight away (Longshot's "Hide personal info").</summary>
+    public bool FindPersonalInfo { get; init; }
+}
 
 /// <summary>
 /// Focused, non-destructive editor. Each step keeps its parameters; switching steps never writes
@@ -234,7 +238,7 @@ internal sealed partial class StudioWindow : GlassWindow
         _crop.Committed += rect => _session?.Update(d => d with { Crop = d.Crop with { Rect = IsWhole(rect) ? null : rect } });
         _crop.Changing += rect => UpdateCropFields(rect);
         _draw.AnnotationAdded += a => _session?.Update(d => d with { Annotations = [.. d.Annotations, a] });
-        _draw.RedactionAdded += r => _session?.Update(d => d with { Redactions = [.. d.Redactions, r] });
+        _draw.RedactionsAdded += list => _session?.Update(d => d with { Redactions = [.. d.Redactions, .. list] });
 
         var border = new Border { Child = root };
         border.SetResourceReference(Border.BackgroundProperty, "Brush.Surface");
@@ -245,6 +249,7 @@ internal sealed partial class StudioWindow : GlassWindow
     {
         StudioStep.Background => "Background",
         StudioStep.Export => "Export",
+        StudioStep.Redact => "Blur",
         _ => step.ToString(),
     };
 
@@ -261,6 +266,7 @@ internal sealed partial class StudioWindow : GlassWindow
         RebuildPanel();
         RequestPreview();
         if (step == StudioStep.Crop) _crop.Focus();
+        if (step == StudioStep.Redact) ReadText();
     }
 
     private RenderStage StageFor(StudioStep step) => step switch

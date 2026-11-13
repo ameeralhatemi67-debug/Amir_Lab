@@ -49,6 +49,16 @@ _Last updated: 8 Nov 2026 — Amir Lap phases 1 and 2 complete: the multi-tool s
 | Pictures, text, video/audio and other files in Preview; Edit to the image editor, Word, the text editor | **Partial** | Built; needs a live try with real files (codecs and Office installs vary). |
 | Peek at links, split, overview, present, full screen, page colours with "keep photos", remembered place | **Partial** | Built; peek and present need a live try with real PDFs. |
 
+## Blur for photos (13 Nov 2026)
+
+| Capability | State | Evidence / notes |
+|---|---|---|
+| Stronger blur and pixelate (no letters left) | **Working** | `StudioTests` (contrast below 1/12 of the original on letter-like strokes). |
+| Find personal info (e-mail, phone, card, IBAN, IP, keys and passwords; Arabic digits) | **Working** | `SensitiveTextTests` (19). Accuracy on real screenshots depends on Windows OCR reading them; needs the owner's live try. |
+| Click a word, Shift for the line, drag snaps to words; the Blur step panel; hide all found in one step | **Working** (real OCR and mouse: **Partial**) | `BlurToolTests`, `HomeWindowTests` (the real editor window off-screen with given words; snapshots reviewed). |
+| Long screenshots read in strips | **Partial** | Built (`OcrService.RecognizeTall`); not yet measured on a real long capture. |
+| Entry points: wheel Blur tile, Longshot result (Blur…, Hide personal info), image Preview | **Working** | Built; the buttons open the same editor step. Live try pending. |
+
 ## Pulse (tool #3)
 
 | Capability | State | Evidence / notes |

@@ -8,6 +8,8 @@ using System.Windows.Shapes;
 using Toolbox.Core;
 using Toolbox.Core.Inputs;
 using Toolbox.Processing.Studio;
+using Toolbox.Processing.Ocr;
+using Toolbox.Core.Actions;
 using Toolbox.Windows.Theme;
 
 namespace Toolbox.Windows.Studio;
@@ -278,31 +280,69 @@ internal sealed partial class StudioWindow
         return panel;
     }
 
-    // ---- Redact -------------------------------------------------------------------------------
+    // ---- Blur (the Redact step) -------------------------------------------------------------------
+
+    private OcrPage? _text;
+    private string? _textKey;
+    private bool _reading;
+    private bool _autoFound;
+    private string _textStatus = "";
+    private IReadOnlyList<SensitiveHit> _found = [];
+    private readonly HashSet<int> _chosen = [];
 
     private UIElement RedactPanel()
     {
         var doc = _session!.Document;
         var panel = Column();
-        if (_draw.Tool < DrawTool.RedactSolid) _draw.Tool = DrawTool.RedactSolid;
-        panel.Children.Add(Heading("Method"));
+        if (_draw.Tool < DrawTool.RedactSolid) _draw.Tool = DrawTool.RedactBlur;
+        panel.Children.Add(Heading("Style"));
         foreach (var (tool, label, note) in new[]
         {
-            (DrawTool.RedactSolid, "Solid box", "Replaces the pixels with black in the saved copy."),
-            (DrawTool.RedactPixelate, "Pixelate", "Obscures only — not secure removal."),
-            (DrawTool.RedactBlur, "Blur", "Obscures only — not secure removal."),
+            (DrawTool.RedactBlur, "Blur", "Smudges it past reading. Hides from a glance."),
+            (DrawTool.RedactPixelate, "Pixelate", "Big blocks. Hides from a glance."),
+            (DrawTool.RedactSolid, "Solid", "Covers it for good: the safe choice for passwords, cards and IDs."),
         })
         {
             var rb = new RadioButton { Style = Res("Toolbox.Radio"), GroupName = "redact", IsChecked = _draw.Tool == tool, Margin = new Thickness(0, 0, 0, 6) };
             var text = new StackPanel();
             text.Children.Add(new TextBlock { Text = label });
-            text.Children.Add(new TextBlock { Text = note, Style = (Style)Application.Current.Resources["Text.Caption"] });
+            text.Children.Add(new TextBlock { Text = note, Style = (Style)Application.Current.Resources["Text.Caption"], TextWrapping = TextWrapping.Wrap, MaxWidth = 230 });
             rb.Content = text;
             rb.Checked += (_, _) => _draw.Tool = tool;
             panel.Children.Add(rb);
         }
 
-        panel.Children.Add(Heading(doc.Redactions.Count == 1 ? "1 area" : $"{doc.Redactions.Count} areas"));
+        // Personal information found in the picture's text.
+        panel.Children.Add(Heading("Personal info"));
+        if (_found.Count > 0)
+        {
+            foreach (var (hit, i) in _found.Select((h, i) => (h, i)))
+            {
+                var check = new CheckBox { IsChecked = _chosen.Contains(i), Margin = new Thickness(0, 0, 0, 4), Content = $"{KindName(hit.Kind)} · {hit.Masked}", ToolTip = "Uncheck to leave it visible" };
+                check.Checked += (_, _) => { _chosen.Add(i); ShowSuggestions(); };
+                check.Unchecked += (_, _) => { _chosen.Remove(i); ShowSuggestions(); };
+                panel.Children.Add(check);
+            }
+            var row = new WrapPanel { Margin = new Thickness(0, 6, 0, 0) };
+            var hide = SmallButton(_chosen.Count == 1 ? "Hide it" : $"Hide these {_chosen.Count}", HideFound, _chosen.Count > 0);
+            hide.Style = Res("Toolbox.Button.Accent");
+            row.Children.Add(hide);
+            row.Children.Add(SmallButton("Not now", () => { _found = []; _chosen.Clear(); ShowSuggestions(); RebuildPanel(); }));
+            panel.Children.Add(row);
+        }
+        else
+        {
+            var find = SmallButton(_reading ? "Reading the text…" : "Find personal info", FindPersonal, _text is not null && !_reading);
+            find.ToolTip = "E-mail addresses, phone numbers, card numbers, IBANs, IP addresses, keys and passwords in the picture";
+            panel.Children.Add(find);
+            if (_lastHidden > 0) panel.Children.Add(Caption($"Hid {_lastHidden} {(_lastHidden == 1 ? "thing" : "things")}. Check the rest by eye too: recognition can miss handwriting and small print."));
+            else if (_searched) panel.Children.Add(Caption("Nothing personal found. Check by eye too: recognition can miss handwriting and small print."));
+        }
+
+        panel.Children.Add(Heading("Text"));
+        panel.Children.Add(new TextBlock { Text = _textStatus, Style = (Style)Application.Current.Resources["Text.Caption"], TextWrapping = TextWrapping.Wrap });
+
+        panel.Children.Add(Heading(doc.Redactions.Count == 1 ? "1 area hidden" : $"{doc.Redactions.Count} areas hidden"));
         var actions = new WrapPanel();
         actions.Children.Add(SmallButton("Remove last", () => Apply(d => d with { Redactions = d.Redactions.Take(Math.Max(0, d.Redactions.Count - 1)).ToList() }), doc.Redactions.Count > 0));
         actions.Children.Add(SmallButton("Clear all", () => Apply(d => d with { Redactions = [] }), doc.Redactions.Count > 0));
@@ -312,13 +352,138 @@ internal sealed partial class StudioWindow
         card.Child = new TextBlock
         {
             Text = _session.Source.File.Kind == FileKind.Pdf
-                ? "The saved result is an image of the page with the areas covered. The original PDF is not changed and still contains its text."
-                : "Only the saved copy is changed. Metadata is not included in Studio exports.",
+                ? "The saved result is an image of the page with the areas hidden. The original PDF is not changed and still contains its text."
+                : "Only the saved copy is changed; metadata is not included. Blur and pixelate hide from a glance but are not a guarantee: use Solid for anything that must never be read.",
             Style = (Style)Application.Current.Resources["Text.Caption"],
+            TextWrapping = TextWrapping.Wrap,
         };
         panel.Children.Add(card);
-        panel.Children.Add(Caption("Drag over the areas to hide."));
+        panel.Children.Add(Caption("Point at text and click to hide a word (Shift: the whole line), drag across text to hide it, or drag anywhere to hide an area."));
         return panel;
+    }
+
+    private bool _searched;
+    private int _lastHidden;
+
+    // ---- for tests: the words as if read, and the finder ----
+    internal void UseText(OcrPage page)
+    {
+        _text = page;
+        _textKey = _session?.Document.Crop.ToString();
+        _textStatus = $"{page.Lines.Sum(l => l.Words.Count)} words read. Point at one and click to hide it.";
+        ApplyWords();
+        RebuildPanel();
+    }
+
+    internal void FindPersonalNow() => FindPersonal();
+
+    internal int FoundCount => _found.Count;
+
+    internal void HideFoundNow() => HideFound();
+
+    internal int HiddenCount => _session?.Document.Redactions.Count ?? 0;
+
+    private static string KindName(SensitiveKind kind) => kind switch
+    {
+        SensitiveKind.Email => "E-mail",
+        SensitiveKind.Phone => "Phone",
+        SensitiveKind.Card => "Card number",
+        SensitiveKind.Iban => "IBAN",
+        SensitiveKind.IpAddress => "IP address",
+        _ => "Key or password",
+    };
+
+    /// <summary>
+    /// Recognises the picture's text once (in the background, strip by strip for long screenshots),
+    /// so words can be clicked to hide and personal information found. Read again only if the crop changes.
+    /// </summary>
+    private async void ReadText()
+    {
+        if (_session is null || _reading) return;
+        var doc = _session.Document;
+        string key = doc.Crop.ToString();
+        if (_text is not null && _textKey == key) { ApplyWords(); return; }
+        if (OcrService.Engine is null || !RuntimeFeatures.IsAvailable(RuntimeFeatures.Ocr))
+        {
+            _textStatus = "Clicking on text and finding personal info need Windows text recognition (Settings > Time & language > Language & region > a language with Optical character recognition). Dragging still works.";
+            RebuildPanel();
+            return;
+        }
+        _reading = true;
+        _textStatus = "Reading the text on the picture…";
+        RebuildPanel();
+        var source = _session.Source;
+        var clean = doc with { Redactions = [], Annotations = [] };
+        try
+        {
+            var page = await Task.Run(() =>
+            {
+                using var image = StudioRenderer.Render(clean, source, RenderStage.Content, null, out _);
+                return OcrService.RecognizeTall(image, "ara+eng");
+            });
+            _text = page;
+            _textKey = key;
+            int words = page.Lines.Sum(l => l.Words.Count);
+            _textStatus = words == 0
+                ? "No text found on the picture. Drag over what to hide."
+                : $"{words} words read. Point at one and click to hide it.";
+        }
+        catch (Exception ex) when (ex is ProcessingException or NetVips.VipsException or InvalidOperationException)
+        {
+            _textStatus = "The text could not be read: " + ex.Message;
+        }
+        finally
+        {
+            _reading = false;
+        }
+        ApplyWords();
+        if (_entry.FindPersonalInfo && !_autoFound && _text is not null)
+        {
+            _autoFound = true;
+            FindPersonal();
+            return;
+        }
+        RebuildPanel();
+    }
+
+    private void ApplyWords()
+    {
+        if (_text is null) return;
+        var words = new List<(Rect, int)>();
+        for (int i = 0; i < _text.Lines.Count; i++)
+            foreach (var w in _text.Lines[i].Words)
+                words.Add((new Rect(w.X, w.Y, Math.Max(1, w.Width), Math.Max(1, w.Height)), i));
+        _draw.SetWords(words);
+    }
+
+    private void FindPersonal()
+    {
+        if (_text is null) return;
+        _found = SensitiveText.Find(_text);
+        _lastHidden = 0;
+        _chosen.Clear();
+        for (int i = 0; i < _found.Count; i++) _chosen.Add(i);
+        _searched = true;
+        ShowSuggestions();
+        RebuildPanel();
+    }
+
+    private void ShowSuggestions() =>
+        _draw.SetSuggestions(_found.Where((_, i) => _chosen.Contains(i)).Select(h => new Rect(h.X, h.Y, h.Width, h.Height)).ToList());
+
+    /// <summary>Hides the chosen findings in one step (undone together).</summary>
+    private void HideFound()
+    {
+        var mode = _draw.Tool switch { DrawTool.RedactPixelate => RedactionMode.Pixelate, DrawTool.RedactSolid => RedactionMode.Solid, _ => RedactionMode.Blur };
+        var areas = _found.Where((_, i) => _chosen.Contains(i))
+            .Select(h => new Redaction(new PixelRect((int)Math.Floor(h.X), (int)Math.Floor(h.Y), (int)Math.Ceiling(h.Width), (int)Math.Ceiling(h.Height)), mode))
+            .ToList();
+        _found = [];
+        _chosen.Clear();
+        _lastHidden = areas.Count;
+        ShowSuggestions();
+        if (areas.Count > 0) Apply(d => d with { Redactions = [.. d.Redactions, .. areas] });
+        RebuildPanel();
     }
 
     // ---- Export -------------------------------------------------------------------------------

@@ -41,6 +41,20 @@ internal sealed class StudioLauncher : IEditorLauncher
         });
     }
 
+    /// <summary>The Blur step on one picture (Longshot's result, Preview); optionally finding personal information at once.</summary>
+    public void OpenBlur(string path, bool findPersonalInfo, Native.POINT? anchor)
+    {
+        var entry = new StudioEntry(StudioStep.Redact, findPersonalInfo ? "Hide personal info" : "Blur & hide", AllSteps) { FindPersonalInfo = findPersonalInfo };
+        var settings = App.Host.Settings.Current;
+        Show(entry, path, anchor, [], source => new EditDocument
+        {
+            SourcePath = path,
+            Page = source.Page,
+            Dpi = source.Dpi > 0 ? source.Dpi : settings.PdfDpi,
+            Export = new ExportSettings { Quality = settings.JpegQuality },
+        });
+    }
+
     /// <summary>Interactive recipe: the editor opens on the crop step with the recipe's framing and export applied.</summary>
     public void OpenRecipe(Recipe recipe, IReadOnlyList<string> paths, Native.POINT? anchor)
     {
@@ -106,7 +120,7 @@ internal sealed class StudioLauncher : IEditorLauncher
         Ids.Edit => new StudioEntry(StudioStep.Adjust, "Edit Image", AllSteps),
         Ids.Background => new StudioEntry(StudioStep.Background, "Add Background", AllSteps),
         Ids.Annotate => new StudioEntry(StudioStep.Annotate, "Annotate", AllSteps),
-        Ids.Redact => new StudioEntry(StudioStep.Redact, "Redact", AllSteps),
+        Ids.Redact => new StudioEntry(StudioStep.Redact, "Blur & hide", AllSteps),
         Ids.Compress => new StudioEntry(StudioStep.Export, "Compress", [StudioStep.Export], " Compressed"),
         _ => null,
     };

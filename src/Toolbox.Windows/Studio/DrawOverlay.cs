@@ -51,13 +51,120 @@ internal sealed class DrawOverlay : Canvas
     public double FontSize { get; set; } = 48;
 
     public event Action<Annotation>? AnnotationAdded;
-    public event Action<Redaction>? RedactionAdded;
+
+    /// <summary>Areas to hide, all from one gesture (one undo step).</summary>
+    public event Action<IReadOnlyList<Redaction>>? RedactionsAdded;
+
+    // ---- text awareness (the Blur step): words found by text recognition, in full content pixels ----
+
+    private IReadOnlyList<(Rect Box, int Line)> _words = [];
+    private IReadOnlyList<Rect> _suggestions = [];
+    private readonly List<Shape> _marks = [];   // hover and suggestion boxes (not ghosts)
+    private int _startWord = -1;
+
+    /// <summary>The words on the picture (box and line number), so a click can hide a word and a drag snaps to words.</summary>
+    public void SetWords(IReadOnlyList<(Rect Box, int Line)> words)
+    {
+        _words = words;
+        DrawMarks(null);
+    }
+
+    /// <summary>Suggested areas (personal information found), drawn as dashed boxes until accepted or dismissed.</summary>
+    public void SetSuggestions(IReadOnlyList<Rect> boxes)
+    {
+        _suggestions = boxes;
+        DrawMarks(null);
+    }
+
+    private int WordAt(Point screen)
+    {
+        if (_words.Count == 0) return -1;
+        var f = ToFull(screen);
+        for (int i = 0; i < _words.Count; i++)
+        {
+            var b = _words[i].Box;
+            b.Inflate(b.Height * 0.15, b.Height * 0.2);
+            if (b.Contains(f)) return i;
+        }
+        return -1;
+    }
+
+    private Rect ToScreen(Rect full) => new(
+        ImageRect.X + full.X / FullWidth * ImageRect.Width,
+        ImageRect.Y + full.Y / FullHeight * ImageRect.Height,
+        full.Width / FullWidth * ImageRect.Width,
+        full.Height / FullHeight * ImageRect.Height);
+
+    /// <summary>Draws the suggestion boxes and, when given, the hover box over a word or line.</summary>
+    private void DrawMarks(Rect? hover)
+    {
+        foreach (var s in _marks) Children.Remove(s);
+        _marks.Clear();
+        var amber = new SolidColorBrush(System.Windows.Media.Color.FromRgb(0xF5, 0x9E, 0x0B));
+        foreach (var box in _suggestions)
+        {
+            var r = ToScreen(box);
+            var shape = new Rectangle { Width = r.Width, Height = r.Height, Stroke = amber, StrokeThickness = 1.6, StrokeDashArray = [4, 2], Fill = new SolidColorBrush(System.Windows.Media.Color.FromArgb(0x33, 0xF5, 0x9E, 0x0B)), IsHitTestVisible = false, RadiusX = 3, RadiusY = 3 };
+            SetLeft(shape, r.X);
+            SetTop(shape, r.Y);
+            Children.Add(shape);
+            _marks.Add(shape);
+        }
+        if (hover is { } h)
+        {
+            var r = ToScreen(h);
+            var accent = (SolidColorBrush)Application.Current.Resources["Brush.Accent"];
+            var shape = new Rectangle { Width = r.Width, Height = r.Height, Stroke = accent, StrokeThickness = 1.4, Fill = new SolidColorBrush(System.Windows.Media.Color.FromArgb(0x30, accent.Color.R, accent.Color.G, accent.Color.B)), IsHitTestVisible = false, RadiusX = 3, RadiusY = 3 };
+            SetLeft(shape, r.X);
+            SetTop(shape, r.Y);
+            Children.Add(shape);
+            _marks.Add(shape);
+        }
+    }
+
+    /// <summary>The box to hide for a word (or its whole line), padded a little, in full pixels.</summary>
+    private Rect HideBox(int word, bool wholeLine)
+    {
+        var box = _words[word].Box;
+        if (wholeLine)
+            foreach (var (b, line) in _words)
+                if (line == _words[word].Line) box.Union(b);
+        return Padded(box);
+    }
+
+    internal static Rect Padded(Rect box)
+    {
+        double pad = Math.Max(2, box.Height * 0.18);
+        box.Inflate(pad, pad);
+        return box;
+    }
+
+    /// <summary>Words a dragged box touches, one area per line; none touched: the box itself.</summary>
+    internal static List<Rect> SnapToWords(Rect drag, IReadOnlyList<(Rect Box, int Line)> words)
+    {
+        var lines = new Dictionary<int, Rect>();
+        foreach (var (b, line) in words)
+        {
+            if (!b.IntersectsWith(drag)) continue;
+            // At least a third of the word inside the drag, so brushing an edge does not take it.
+            var inside = Rect.Intersect(b, drag);
+            if (inside.Width * inside.Height < b.Width * b.Height / 3) continue;
+            lines[line] = lines.TryGetValue(line, out var r) ? Rect.Union(r, b) : b;
+        }
+        return lines.Count == 0 ? [drag] : lines.Values.Select(Padded).ToList();
+    }
+
+    private RedactionMode Mode => Tool switch { DrawTool.RedactPixelate => RedactionMode.Pixelate, DrawTool.RedactBlur => RedactionMode.Blur, _ => RedactionMode.Solid };
+
+    private static Redaction ToRedaction(Rect r, RedactionMode mode) =>
+        new(new PixelRect((int)Math.Floor(r.X), (int)Math.Floor(r.Y), (int)Math.Ceiling(r.Width), (int)Math.Ceiling(r.Height)), mode);
 
     public void SetLayout(Rect imageRect, double fullWidth, double fullHeight)
     {
         ImageRect = imageRect;
         FullWidth = Math.Max(1, fullWidth);
         FullHeight = Math.Max(1, fullHeight);
+        DrawMarks(null);
     }
 
     private double Scale => ImageRect.Width / FullWidth;
@@ -70,6 +177,7 @@ internal sealed class DrawOverlay : Canvas
         if (!ImageRect.Contains(p)) return;
         Focus();
         _start = p;
+        _startWord = IsRedact ? WordAt(p) : -1;
 
         if (Tool == DrawTool.Step)
         {
@@ -95,6 +203,7 @@ internal sealed class DrawOverlay : Canvas
             _ => new Rectangle { Stroke = brush, StrokeThickness = Math.Max(1, Stroke * Scale), RadiusX = Stroke * Scale, RadiusY = Stroke * Scale },
         };
         _ghost.IsHitTestVisible = false;
+        _ghost.Tag = "ghost";
         _penPoints.Clear();
         _penPoints.Add(p);
         if (_ghost is Polyline pl) pl.Points.Add(p);
@@ -106,6 +215,13 @@ internal sealed class DrawOverlay : Canvas
     protected override void OnMouseMove(MouseEventArgs e)
     {
         base.OnMouseMove(e);
+        if (IsRedact && !IsMouseCaptured)
+        {
+            // Point at text: the word under the pointer (its line with Shift) lights up.
+            int word = WordAt(e.GetPosition(this));
+            DrawMarks(word >= 0 ? HideBox(word, Keyboard.Modifiers.HasFlag(ModifierKeys.Shift)) : null);
+            Cursor = word >= 0 ? Cursors.Hand : Cursors.Cross;
+        }
         if (_ghost is null || !IsMouseCaptured) return;
         var p = Clamp(e.GetPosition(this));
         switch (_ghost)
@@ -138,13 +254,20 @@ internal sealed class DrawOverlay : Canvas
         var b = ToFull(end);
         bool tiny = Math.Abs(end.X - _start.X) < 3 && Math.Abs(end.Y - _start.Y) < 3;
 
+        if (IsRedact && tiny && _startWord >= 0)
+        {
+            // A click on text hides that word (Shift: its whole line).
+            RedactionsAdded?.Invoke([ToRedaction(HideBox(_startWord, Keyboard.Modifiers.HasFlag(ModifierKeys.Shift)), Mode)]);
+            DrawMarks(null);
+            return;
+        }
         if (!tiny || Tool == DrawTool.Pen)
         {
             if (IsRedact)
             {
-                var rect = new Rect(a, b);
-                var mode = Tool switch { DrawTool.RedactPixelate => RedactionMode.Pixelate, DrawTool.RedactBlur => RedactionMode.Blur, _ => RedactionMode.Solid };
-                RedactionAdded?.Invoke(new Redaction(new PixelRect((int)Math.Floor(rect.X), (int)Math.Floor(rect.Y), (int)Math.Ceiling(rect.Width), (int)Math.Ceiling(rect.Height)), mode));
+                // Dragged across text: snapped to the words it covers, one area per line.
+                RedactionsAdded?.Invoke(SnapToWords(new Rect(a, b), _words).Select(r => ToRedaction(r, Mode)).ToList());
+                DrawMarks(null);
             }
             else
             {
@@ -171,7 +294,7 @@ internal sealed class DrawOverlay : Canvas
     public void ClearGhosts()
     {
         if (IsMouseCaptured) return;
-        foreach (var shape in Children.OfType<Shape>().ToList()) Children.Remove(shape);
+        foreach (var shape in Children.OfType<Shape>().Where(s => s.Tag as string == "ghost").ToList()) Children.Remove(shape);
         _ghost = null;
     }
 
