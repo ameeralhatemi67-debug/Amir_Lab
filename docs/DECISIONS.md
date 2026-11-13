@@ -369,7 +369,7 @@ This is idea 2 of the owner's list, for photos first; video follows. The image e
 
 Idea 1 of the owner's list: Longshot also records video of an area, and only that area.
 
-- **One tool, two modes:** a **Screenshot | Video** switch sits at the top of both Longshot panels. Switching keeps the area (a scroll area becomes a region). The video shortcut (**Alt+Shift+R**) during a long screenshot switches it to Video; the screenshot shortcut while a video is open works the video.
+- **One tool, two modes:** a **Screenshot | Video** switch sits at the top of both Longshot panels. Switching keeps the area (a scroll area becomes a region). The video shortcut is **Alt+Shift+V**, next to Alt+Shift+S (Alt+Shift+R and Ctrl+Alt+R were the first choice, but another program holds both on the owner's PC). During a long screenshot it switches that to Video; the screenshot shortcut while a video is open works the video.
 - **The flow:**
   - **Setup:** the frame opens on the window in front with the Video panel beside it. The area can be moved or resized, or chosen with **Window / Region / Screen** (Screen is the whole monitor, taskbar included). The panel holds 30/60 fps, Show the pointer, Show clicks, Count 3, 2, 1, the size and **Record**.
   - **Recording:** the panel goes away. The frame turns red with "● REC 0:12" in its label, and a small pill just outside the area shows the time with **Pause**, **Discard** and **Stop**. The frame, the pill and the dimming are left out of the recording by Windows (`WDA_EXCLUDEFROMCAPTURE`), never take focus, and let clicks through where they should.

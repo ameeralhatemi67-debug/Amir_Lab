@@ -20,7 +20,7 @@ public partial class HomeWindowTests
             : new LinearGradientBrush(Color.FromRgb(0xD6, 0xE0, 0xF6), Color.FromRgb(0xF4, 0xE4, 0xEC), 30);
 
         var settings = new LongshotSettings();
-        var panel = new VideoPanel(() => settings, edit => edit(settings), "Alt+Shift+R");
+        var panel = new VideoPanel(() => settings, edit => edit(settings), "Alt+Shift+V");
         panel.SetTarget(VideoTarget.Window);
         panel.SetArea(new PixelRect(0, 0, 1281, 721));
         panel.SetStatus(lang == "ar" ? "حرّك الإطار أو غيّر حجمه إن لزم، ثم اضغط «تسجيل»." : "Move or resize the frame if needed, then press Record.");

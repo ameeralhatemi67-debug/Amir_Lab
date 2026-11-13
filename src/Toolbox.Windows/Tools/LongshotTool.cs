@@ -30,7 +30,7 @@ internal sealed class LongshotTool : ToolModule
             new ToolCommand("capture", "Start a scrolling capture", "Alt+Shift+S", () => Capture()) { TitleAr = "بدء لقطة طويلة", Alternatives = ["Ctrl+Alt+L", "Alt+Shift+L"] },
             new ToolCommand("captureDelayed", "Scrolling capture after a delay", "Ctrl+Alt+Shift+S", () => Capture(delayed: true)) { TitleAr = "لقطة طويلة بعد مهلة", Alternatives = ["Ctrl+Alt+Shift+L"] },
             new ToolCommand("repeat", "Capture the same area again", null, CaptureSameArea) { TitleAr = "التقاط المنطقة نفسها مجددًا" },
-            new ToolCommand("video", "Record a video", "Alt+Shift+R", () => RecordVideo()) { TitleAr = "تسجيل فيديو", Alternatives = ["Ctrl+Alt+R"] },
+            new ToolCommand("video", "Record a video", "Alt+Shift+V", () => RecordVideo()) { TitleAr = "تسجيل فيديو", Alternatives = ["Ctrl+Alt+V", "Ctrl+Alt+Shift+R"] },
         ];
     }
 
