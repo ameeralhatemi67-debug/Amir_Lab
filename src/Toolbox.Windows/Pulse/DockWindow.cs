@@ -998,7 +998,8 @@ internal sealed class DockBackdrop : Border
 
     /// <summary>
     /// Takes no room of its own: the picture fills whatever the dock is. (Its picture is the size of
-    /// the dock in pixels; counting it made the dock bigger on every refresh.)
+    /// the dock in pixels; counting it made the dock bigger on every refresh.) The same rule is in
+    /// Longshot's ScreenBackdrop: docs/LESSONS.md, "Glass that grows the window".
     /// </summary>
     protected override Size MeasureOverride(Size constraint)
     {

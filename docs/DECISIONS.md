@@ -284,6 +284,12 @@ The owner proposed eight ideas. They were discussed and an order was agreed; thi
   - **Picking again** from the window hides it first, so it is never in the way of what is picked.
 - **Not done in this round:** a nearest Tailwind class (it needs Tailwind's palette as data, to be checked against the source) and live checks of the dock, picker and window with the real mouse.
 - **Found on the way:** two of Pulse's Arabic tooltips (the dock's dots and its size handle) were stored as garbled text (UTF-8 read as Windows-1252). They are fixed.
+- **Owner's first live try (0.5.5, video):** the magnifier lagged and left ghosts, and the Pro window opened as wide as the screen. Both were fixed in 0.5.6. Causes and rules are in [LESSONS.md](LESSONS.md):
+  - **Picker:** it now photographs the screen once and moves the magnifier over that frozen photo every frame.
+  - **Glass:** `ScreenBackdrop` takes no room, as `DockBackdrop` already did.
+  - **Owner's request:** each code also has its own copy button (it turns into a tick for a moment).
+  - **Window:** 36 DIPs wider, so the longest codes fit.
+  - **Names:** greys are named only with grey names (#191919 had been "midnightblue").
 
 ## App icon (8 Nov 2026)
 

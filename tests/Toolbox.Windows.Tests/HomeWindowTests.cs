@@ -801,6 +801,16 @@ public class HomeWindowTests
         };
         var window = new ColourWindow(() => settings, edit => edit(settings), () => { });
         window.Select(new Rgb(0x25, 0x63, 0xEB));
+
+        // The glass holds a picture of the screen bigger than the window (as at 125%). It must take
+        // no room: the window sizes to its content, and once grew as wide as the screen (0.5.5).
+        var big = BitmapSource.Create(2400, 1350, 96, 96, PixelFormats.Bgr32, null, new byte[2400 * 1350 * 4], 2400 * 4);
+        window.Backdrop.SetPicture(big);
+        var sized = (FrameworkElement)window.Content;
+        sized.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+        Assert.InRange(sized.DesiredSize.Width, 340, 420);
+        Assert.InRange(sized.DesiredSize.Height, 600, 1000);
+
         var content = (FrameworkElement)window.Content;
         window.Content = null;
         var frame = new Border
@@ -812,9 +822,9 @@ public class HomeWindowTests
             HorizontalAlignment = HorizontalAlignment.Left,
             VerticalAlignment = VerticalAlignment.Top,
         };
-        Layout(frame, 400, 900);
+        Layout(frame, 440, 900);
         Assert.True(content.ActualHeight > 600, "the colour window should lay out its codes, contrast and colours");
-        Save(snapshots, frame, 400, Math.Ceiling(content.ActualHeight), $"colour-{theme}-{lang}");
+        Save(snapshots, frame, 440, Math.Ceiling(content.ActualHeight), $"colour-{theme}-{lang}");
         window.Close();
 
         // The magnifier: an 11-pixel square, a white pixel in a blue field, the middle one red.
@@ -824,9 +834,13 @@ public class HomeWindowTests
         void Set(int x, int y, byte r, byte g, byte b) { int i = (y * n + x) * 4; px[i] = b; px[i + 1] = g; px[i + 2] = r; }
         for (int x = 0; x < n; x++) Set(x, 3, 255, 255, 255);
         Set(n / 2, n / 2, 0xE1, 0x1D, 0x48);
-        var picker = new ColourPicker(pro: false);
-        picker.ShowPixels(new Toolbox.Processing.Capture.Frame(n, n, px));
+        // The photo of the "screen" is that square, placed at (100, 200) on the virtual screen.
+        var picker = new ColourPicker(pro: false, (new Toolbox.Processing.Capture.Frame(n, n, px), new PixelRect(100, 200, n, n)));
+        picker.ShowAt(new PixelPoint(100 + n / 2, 200 + n / 2));
         Assert.Equal(new Rgb(0xE1, 0x1D, 0x48), picker.Current);
+        picker.ShowAt(new PixelPoint(100, 203)); // on the white row
+        Assert.Equal(new Rgb(255, 255, 255), picker.Current);
+        picker.ShowAt(new PixelPoint(100 + n / 2, 200 + n / 2));
         var loupe = picker.Loupe;
         ((Canvas)loupe.Parent).Children.Remove(loupe);
         var stage = new Border { Child = loupe, Padding = new Thickness(24), Background = frame.Background, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top };

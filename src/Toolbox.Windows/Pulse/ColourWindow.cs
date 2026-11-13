@@ -28,7 +28,7 @@ internal sealed class ColourWindow : Window
 {
     private const double Shadow = 14;
     private const double Radius = 22;
-    private const double Inner = 300;
+    private const double Inner = 336;
     private const double Swatch = 26;
 
     private readonly Func<PulseSettings> _settings;
@@ -91,6 +91,9 @@ internal sealed class ColourWindow : Window
 
     /// <summary>The colour shown.</summary>
     public Rgb Colour => _colour;
+
+    /// <summary>For tests: the frosted glass (to give it a large picture and check the window keeps its size).</summary>
+    internal ScreenBackdrop Backdrop => _backdrop;
 
     /// <summary>For tests: keeps the window off the screen (and does not read the screen behind it).</summary>
     internal static bool KeepOffScreen { get; set; }
@@ -309,8 +312,9 @@ internal sealed class ColourWindow : Window
         {
             bool isDefault = format == DefaultFormat;
             var row = new Grid { Height = 30 };
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(74) });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(66) });
             row.ColumnDefinitions.Add(new ColumnDefinition());
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(30) });
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(30) });
             var label = new TextBlock { Text = Colours.Label(format), FontSize = 11.5, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(10, 0, 0, 0), FlowDirection = FlowDirection.LeftToRight, HorizontalAlignment = HorizontalAlignment.Left };
             label.SetResourceReference(TextBlock.ForegroundProperty, "Brush.Text3");
@@ -333,16 +337,38 @@ internal sealed class ColourWindow : Window
                 _hero.ToolTip = Lang.T($"Click to copy {Colours.Label(format)}", $"انقر لنسخ {Colours.Label(format)}");
                 e.Handled = true;
             };
-            Grid.SetColumn(star, 2);
+            Grid.SetColumn(star, 3);
+            // Quick copy: the icon turns into a tick for a moment.
+            var copy = new Button
+            {
+                Style = SettingsPage.Res("Lap.Caption"),
+                Width = 28,
+                Height = 26,
+                ToolTip = Lang.T($"Copy {Colours.Label(format)}", $"نسخ {Colours.Label(format)}"),
+                Content = SettingsPage.Glyph("lap-copy", 14, "Brush.Text2", stroke: 1.8),
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            System.Windows.Automation.AutomationProperties.SetName(copy, Lang.T($"Copy {Colours.Label(format)}", $"نسخ {Colours.Label(format)}"));
+            copy.Click += (_, e) =>
+            {
+                Copy(format);
+                copy.Content = SettingsPage.Glyph("lap-check", 14, "Brush.Success", stroke: 2.2);
+                var back = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(1200) };
+                back.Tick += (_, _) => { back.Stop(); copy.Content = SettingsPage.Glyph("lap-copy", 14, "Brush.Text2", stroke: 1.8); };
+                back.Start();
+                e.Handled = true;
+            };
+            Grid.SetColumn(copy, 2);
             row.Children.Add(label);
             row.Children.Add(value);
+            row.Children.Add(copy);
             row.Children.Add(star);
             var box = new Border { Child = row, CornerRadius = new CornerRadius(9), Background = Brushes.Transparent, Cursor = Cursors.Hand, ToolTip = Lang.T($"Click to copy ({n})", $"انقر للنسخ ({n})") };
             box.MouseEnter += (_, _) => box.SetResourceReference(Border.BackgroundProperty, "Brush.NavHover");
             box.MouseLeave += (_, _) => box.Background = Brushes.Transparent;
             box.MouseLeftButtonUp += (_, e) =>
             {
-                if (e.OriginalSource is DependencyObject d && IsInside(d, star)) return;
+                if (e.OriginalSource is DependencyObject d && (IsInside(d, star) || IsInside(d, copy))) return;
                 Copy(format);
                 Pulse(box);
             };

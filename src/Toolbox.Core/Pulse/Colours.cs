@@ -223,10 +223,16 @@ public static class Colours
         return steps;
     }
 
-    /// <summary>The nearest CSS colour name (by distance in OKLab), and whether it is an exact match.</summary>
+    /// <summary>
+    /// The nearest CSS colour name (by distance in OKLab), and whether it is an exact match. A grey
+    /// is only matched to grey names: the CSS list has few dark greys, so plain distance called
+    /// #191919 "midnightblue".
+    /// </summary>
     public static (string Name, bool Exact) NearestName(Rgb c)
     {
+        const double greyChroma = 0.02;
         var (l, a, b) = ToOklab(c);
+        bool grey = Math.Sqrt(a * a + b * b) < greyChroma;
         string best = "black";
         double bestD = double.MaxValue;
         foreach (var (name, hex) in Names)
@@ -234,6 +240,7 @@ public static class Colours
             var n = new Rgb((byte)(hex >> 16), (byte)(hex >> 8), (byte)hex);
             if (n == c) return (name, true);
             var (nl, na, nb) = ToOklab(n);
+            if (grey && Math.Sqrt(na * na + nb * nb) >= greyChroma) continue;
             double d = (l - nl) * (l - nl) + (a - na) * (a - na) + (b - nb) * (b - nb);
             if (d < bestD) { bestD = d; best = name; }
         }

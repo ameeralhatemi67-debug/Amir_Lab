@@ -110,6 +110,10 @@ public sealed class ColourTests
         Assert.Equal(("royalblue", false), Colours.NearestName(new Rgb(0x42, 0x69, 0xE1)));
         Assert.Equal(("red", true), Colours.NearestName(Red));
         Assert.Equal("white", Colours.NearestName(new Rgb(0xFE, 0xFE, 0xFE)).Name);
+        // Greys get grey names (the owner's #191919 was called midnightblue).
+        Assert.Equal("black", Colours.NearestName(new Rgb(0x19, 0x19, 0x19)).Name);
+        Assert.Equal("gray", Colours.NearestName(new Rgb(0x7A, 0x7A, 0x7A)).Name);
+        Assert.Equal("gainsboro", Colours.NearestName(new Rgb(0xDB, 0xDB, 0xDB)).Name);
     }
 
     [Fact]

@@ -984,6 +984,10 @@ internal sealed class CapturePanel : Window
 /// The window is left out of screen captures, so reading the screen shows what is under it.
 /// In memory only.
 /// </summary>
+/// <remarks>
+/// It takes no room of its own (see <see cref="MeasureOverride"/>): docs/LESSONS.md, "Glass that
+/// grows the window".
+/// </remarks>
 internal sealed class ScreenBackdrop : Border
 {
     private readonly Image _image = new()
@@ -999,6 +1003,27 @@ internal sealed class ScreenBackdrop : Border
         IsHitTestVisible = false;
         Child = _image;
     }
+
+    /// <summary>
+    /// Takes no room of its own: the picture only fills whatever the window already is. The picture
+    /// is the window's size in physical pixels (1.25× its size in DIPs at 125%); when it counted, a
+    /// window that sizes to its content grew on every refresh, until it was as wide as the screen
+    /// (Pulse's dock in 0.5.0, the colour window in 0.5.5).
+    /// </summary>
+    protected override Size MeasureOverride(Size constraint)
+    {
+        _image.Measure(new Size(0, 0));
+        return new Size(0, 0);
+    }
+
+    protected override Size ArrangeOverride(Size arrangeSize)
+    {
+        _image.Arrange(new Rect(arrangeSize));
+        return arrangeSize;
+    }
+
+    /// <summary>For tests: a picture as if read from the screen.</summary>
+    internal void SetPicture(BitmapSource picture) => _image.Source = picture;
 
     public void Refresh(IntPtr hwnd, double inset, double radius)
     {
