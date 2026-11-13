@@ -18,6 +18,7 @@ namespace Toolbox.Windows.Tests;
 /// off-screen (nothing is shown, no tool is started, no input is sent), in light and dark, English
 /// and Arabic. Set AMIRLAP_SNAPSHOT_DIR to also save each one as a PNG for visual review.
 /// </summary>
+[Collection(AppLanguageCollection.Name)]
 public class HomeWindowTests
 {
     [Fact]
@@ -89,7 +90,7 @@ public class HomeWindowTests
                 Assert.Equal(lang == "ar" ? FlowDirection.RightToLeft : FlowDirection.LeftToRight, content.FlowDirection);
                 window.Close();
 
-                if (lang == "en") RenderLongshotWindows(snapshots, theme);
+                RenderLongshotWindows(snapshots, theme, lang);
                 if (lang == "en") RenderWheel(snapshots, theme);
                 RenderPulse(snapshots, theme, lang, host);
             }
@@ -98,6 +99,7 @@ public class HomeWindowTests
             CheckRealFrame(host, registry);
             CheckRealDock();
             CheckLongshotFlow(host, longshot);
+            CheckLongshotTargets(host, longshot);
             app.Shutdown();
         }
         finally
@@ -338,6 +340,116 @@ public class HomeWindowTests
         }
     }
 
+    /// <summary>
+    /// Targets through the real controller, panel and frame, on a simulated window whose page stays
+    /// put and whose chat box scrolls (only when the wheel turns over it): the capture starts on the
+    /// window and glides onto the scroll area "found" under the pointer; Auto runs to the end and
+    /// Done becomes the highlighted next step; the Window button goes back to the whole window, where
+    /// the first step finds the part that scrolls by itself and narrows to it; the scroll marker can
+    /// be moved; pressing the shortcut again saves.
+    /// </summary>
+    private static void CheckLongshotTargets(ToolboxHost host, LongshotTool longshot)
+    {
+        const int ww = 520, wh = 380;                       // the window
+        var origin = new PixelPoint(-30000, -30000);
+        var box = new PixelRect(origin.X + 200, origin.Y + 70, 260, 240); // the chat box in it
+        int contentHeight = 1300, offset = 0;
+        var content = new byte[box.Width * contentHeight * 4];
+        Array.Fill(content, (byte)255);
+        var rnd = new Random(8);
+        for (int y = 8; y < contentHeight - 20; y += 18)
+            for (int x = rnd.Next(4, 20); x < box.Width - 30;)
+            {
+                int word = rnd.Next(10, 46);
+                byte shade = (byte)rnd.Next(0, 120);
+                for (int yy = y; yy < y + 9; yy++)
+                    for (int xx = x; xx < Math.Min(x + word, box.Width - 4); xx++) { int i = (yy * box.Width + xx) * 4; content[i] = shade; content[i + 1] = (byte)(shade / 2); content[i + 2] = (byte)(255 - shade); }
+                x += word + rnd.Next(5, 12);
+            }
+        var still = new byte[ww * wh * 4];
+        for (int i = 0; i < still.Length; i += 4) { still[i] = still[i + 1] = still[i + 2] = 236; still[i + 3] = 255; }
+        for (int y = 12; y < wh - 10; y += 14)                // the page around: text that never moves
+            for (int x = 10; x < ww - 20; x += 46)
+                for (int yy = y; yy < y + 6; yy++)
+                    for (int xx = x; xx < x + 30; xx++) { int i = (yy * ww + xx) * 4; still[i] = 90; still[i + 1] = 90; still[i + 2] = 100; }
+        int bx = box.X - origin.X, by = box.Y - origin.Y;
+        for (int x = bx - 1; x <= bx + box.Width; x++) foreach (int y in new[] { by - 1, by + box.Height }) { int i = (y * ww + x) * 4; still[i] = still[i + 1] = still[i + 2] = 150; }
+        for (int y = by - 1; y <= by + box.Height; y++) foreach (int x in new[] { bx - 1, bx + box.Width }) { int i = (y * ww + x) * 4; still[i] = still[i + 1] = still[i + 2] = 150; }
+        Processing.Capture.Frame Grab(PixelRect area)
+        {
+            var screen = (byte[])still.Clone();
+            for (int y = 0; y < box.Height; y++) Buffer.BlockCopy(content, (offset + y) * box.Width * 4, screen, ((by + y) * ww + bx) * 4, box.Width * 4);
+            var px = new byte[area.Width * area.Height * 4];
+            for (int y = 0; y < area.Height; y++) Buffer.BlockCopy(screen, ((area.Y - origin.Y + y) * ww + area.X - origin.X) * 4, px, y * area.Width * 4, area.Width * 4);
+            return new Processing.Capture.Frame(area.Width, area.Height, px);
+        }
+        var window = new PixelRect(origin.X, origin.Y, ww, wh);
+        var pointer = new PixelPoint(box.CenterX, box.CenterY);
+        LongshotCapture.StartOverride = (window, pointer);
+        LongshotCapture.ScrollAreaOverride = p => box.Contains(p) ? box : null;
+        LongshotCapture.ScreenOverride = area => new PageScreen(() => Grab(area));
+        LongshotCapture.ScrollerOverride = _ => new BoxScroller((at, by) => { if (box.Contains(at)) offset = Math.Clamp(offset + by, 0, contentHeight - box.Height); });
+        LongshotCapture.TimingOverride = new SessionTiming(TimeSpan.FromMilliseconds(1), TimeSpan.FromMilliseconds(1), TimeSpan.FromMilliseconds(60), TimeSpan.FromMilliseconds(3));
+        CapturePanel.KeepOffScreen = true;
+        try
+        {
+            LongshotCapture.Start(host, longshot);
+            var capture = LongshotCapture.Current!;
+            var panel = capture.Panel!;
+            // It starts on the window, then glides onto the chat under the pointer.
+            Pump(() => capture.Target.Kind == TargetKind.ScrollArea && panel.Extend.IsEnabled && panel.InfoText.Contains("1 part"), "the scroll area under the pointer");
+            Assert.Equal(box, capture.Target.Area);
+            Assert.Equal(TargetKind.ScrollArea, panel.ShownTarget);
+            Pump(() => capture.Frame!.Area == box, "the frame gliding onto it");
+
+            Click(panel.Auto);
+            Pump(() => panel.FinishReady && Label(panel.Auto) == "Auto", "Auto to the end of the chat, Done highlighted");
+            Assert.Contains($"{box.Width:N0} × {contentHeight:N0} px", panel.InfoText);
+
+            // Back to the whole window (the chat scrolled back to its top first): the first step
+            // finds that only the chat scrolls.
+            offset = 0;
+            panel.TargetButton(TargetKind.Window).RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+            Pump(() => capture.Target.Kind == TargetKind.Window && panel.Extend.IsEnabled, "the whole window again");
+            Assert.Equal(window, capture.Target.Area);
+            Assert.False(panel.FinishReady);
+            Click(panel.Extend);
+            Pump(() => panel.InfoText.Contains("2 parts"), "a second part, from the chat alone");
+            Assert.Equal(TargetKind.ScrollArea, capture.Target.Kind);
+            Assert.Equal(box, capture.Target.Area);
+            Assert.Equal(TargetKind.ScrollArea, panel.ShownTarget);
+            Assert.StartsWith("Only this part scrolls", panel.StatusText);
+
+            // The marker moves where the wheel turns.
+            var spot = new PixelPoint(box.X + 30, box.Y + 40);
+            capture.MoveAnchor(spot);
+            Assert.Equal(spot, capture.Target.Anchor);
+            Assert.Equal(spot, capture.Frame.Anchor);
+
+            // The shortcut again saves: it starts finishing at once (cancelled straight after, so
+            // nothing is written to the real Pictures folder).
+            LongshotCapture.Start(host, longshot);
+            Assert.StartsWith("Saving", panel.StatusText);
+            Assert.False(panel.Done.IsEnabled);
+        }
+        finally
+        {
+            LongshotCapture.CancelActive();
+            Pump(() => LongshotCapture.Current is null, "the capture to end", 10);
+            LongshotCapture.StartOverride = null;
+            LongshotCapture.ScrollAreaOverride = null;
+            LongshotCapture.ScreenOverride = null;
+            LongshotCapture.ScrollerOverride = null;
+            LongshotCapture.TimingOverride = null;
+            CapturePanel.KeepOffScreen = false;
+        }
+    }
+
+    private sealed class BoxScroller(Action<PixelPoint, int> by) : IScroller
+    {
+        public void Scroll(PixelPoint at, int notches, bool down, int unit) => by(at, (down ? 1 : -1) * notches * 80 * unit / 120);
+    }
+
     private sealed class PageScreen(Func<Processing.Capture.Frame> grab) : IScreenSource
     {
         public Processing.Capture.Frame Grab() => grab();
@@ -346,7 +458,7 @@ public class HomeWindowTests
 
     private sealed class PageScroller(Action<int> by) : IScroller
     {
-        public void Scroll(int notches, bool down, int unit) => by((down ? 1 : -1) * notches * 90 * unit / 120);
+        public void Scroll(PixelPoint at, int notches, bool down, int unit) => by((down ? 1 : -1) * notches * 90 * unit / 120);
     }
 
     private static void Click(Button button) => button.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent, button));
@@ -453,8 +565,13 @@ public class HomeWindowTests
         }
     }
 
-    /// <summary>The Longshot panel (with a fake preview), result window and area chooser, built off-screen.</summary>
-    private static void RenderLongshotWindows(string? snapshots, string theme)
+    /// <summary>
+    /// The Longshot panel (with a fake preview: working, then at the end with Done highlighted), the
+    /// frame on a scroll area with its scroll marker and the rows just added, the pick highlight,
+    /// a whole scene as the user sees it (an app, the dim with its hole, the frame, the panel), and
+    /// the result window, built off-screen.
+    /// </summary>
+    private static void RenderLongshotWindows(string? snapshots, string theme, string lang)
     {
         // A fake "page": rows of text-like blocks.
         int w = 900, h = 1600;
@@ -466,28 +583,55 @@ public class HomeWindowTests
                     for (int xx = x; xx < x + 50; xx++) { int i = (yy * w + xx) * 4; px[i] = 60; px[i + 1] = 60; px[i + 2] = 70; }
         // What the session sends: the whole image so far, at the preview width.
         var preview = CaptureSession.Downscale(px, w, h, 300);
+        Brush Desktop() => theme == "dark"
+            ? new LinearGradientBrush(Color.FromRgb(0x10, 0x16, 0x2C), Color.FromRgb(0x24, 0x10, 0x22), 30)
+            : new LinearGradientBrush(Color.FromRgb(0xD6, 0xE0, 0xF6), Color.FromRgb(0xF4, 0xE4, 0xEC), 30);
 
-        var panel = new CapturePanel();
+        var panel = new CapturePanel("Alt+Shift+S");
+        panel.SetTarget(TargetKind.ScrollArea);
         var panelContent = (FrameworkElement)panel.Content;
         panel.Content = null;
-        var panelFrame = new Border { Child = panelContent, Background = theme == "dark"
-            ? new LinearGradientBrush(Color.FromRgb(0x10, 0x16, 0x2C), Color.FromRgb(0x24, 0x10, 0x22), 30)
-            : new LinearGradientBrush(Color.FromRgb(0xD6, 0xE0, 0xF6), Color.FromRgb(0xF4, 0xE4, 0xEC), 30) };
-        Layout(panelFrame, 328, 620);
-        panel.ShowUpdate(preview, w, h, 4, "Added 466 px.", addedRows: 466);
-        panel.SetLive("Auto");
-        Layout(panelFrame, 328, 620);
-        Assert.True(panelContent.ActualHeight > 500, "the panel should lay out its preview and buttons");
-        Save(snapshots, panelFrame, 328, 620, $"longshot-panel-{theme}");
+        var panelFrame = new Border { Child = panelContent, Background = Desktop() };
+        Layout(panelFrame, 344, 660);
+        panel.ShowUpdate(preview, w, h, 4, lang == "ar" ? "أُضيف 466 بكسل." : "Added 466 px.", addedRows: 466);
+        panel.SetLive(lang == "ar" ? "تلقائي" : "Auto");
+        CapturePanel.SetButton(panel.Auto, "lap-stop", lang == "ar" ? "إيقاف" : "Stop");
+        Layout(panelFrame, 344, 660);
+        Assert.True(panelContent.ActualHeight > 540, "the panel should lay out its preview and buttons");
+        Assert.Equal(TargetKind.ScrollArea, panel.ShownTarget);
+        Save(snapshots, panelFrame, 344, 660, $"longshot-panel-{theme}-{lang}");
+
+        panel.SetLive(null);
+        CapturePanel.SetButton(panel.Auto, "lap-play", lang == "ar" ? "تلقائي" : "Auto");
+        panel.SetFinishReady(true);
+        panel.ShowUpdate(preview, w, h, 9, lang == "ar" ? "وصلنا إلى النهاية. اضغط «تم» للحفظ." : "Reached the end. Press Done to save.");
+        Layout(panelFrame, 344, 660);
+        Assert.True(panel.FinishReady);
+        Save(snapshots, panelFrame, 344, 660, $"longshot-panel-done-{theme}-{lang}");
         panel.Close();
 
-        var frame = new CaptureFrame(new PixelRect(0, 0, 600, 400));
+        if (lang != "en") return;
+
+        var frame = new CaptureFrame(new PixelRect(0, 0, 600, 400), new PixelPoint(330, 230), TargetKind.ScrollArea);
         var frameContent = (FrameworkElement)frame.Content;
         frame.Content = null;
         var frameStage = new Border { Child = frameContent, Background = new SolidColorBrush(Color.FromRgb(0xF0, 0xF0, 0xF0)) };
-        Layout(frameStage, 636, 436);
-        Save(snapshots, frameStage, 636, 436, $"longshot-frame-{theme}");
+        Layout(frameStage, 644, 444);
+        frame.FlashAdded(120);
+        Layout(frameStage, 644, 444);
+        Save(snapshots, frameStage, 644, 444, $"longshot-frame-{theme}");
         frame.Close();
+
+        var highlight = new PickHighlight();
+        highlight.SetLabel(new PixelRect(0, 0, 547, 848), TargetKind.ScrollArea);
+        var highlightContent = (FrameworkElement)highlight.Content;
+        highlight.Content = null;
+        var highlightStage = new Border { Child = highlightContent, Background = new SolidColorBrush(Color.FromRgb(0x70, 0x74, 0x7C)) };
+        Layout(highlightStage, 420, 260);
+        Save(snapshots, highlightStage, 420, 260, $"longshot-pick-{theme}");
+        highlight.Close();
+
+        RenderLongshotScene(snapshots, theme, preview, w, h);
 
         var image = LongshotOutput.ToBitmap(w, h, px);
         var result = new LongshotResultWindow(image, CaptureSession.Downscale(px, w, h, 600),
@@ -499,7 +643,69 @@ public class HomeWindowTests
         Layout(resultFrame, 760, 700);
         Save(snapshots, resultFrame, 760, 700, $"longshot-result-{theme}");
         result.Close();
+    }
 
+    /// <summary>
+    /// What the user sees with a chat app in front: the app (a sidebar, a top bar, a conversation),
+    /// the dim layer with its hole, the frame on the conversation (marker, label) and the panel.
+    /// </summary>
+    private static void RenderLongshotScene(string? snapshots, string theme, BitmapSource preview, int w, int h)
+    {
+        const double W = 1360, H = 820;
+        var scene = new Canvas { Width = W, Height = H, Background = new SolidColorBrush(Color.FromRgb(0x3A, 0x55, 0x8C)) };
+        void Box(double x, double y, double bw, double bh, Color c, double r = 0) =>
+            scene.Children.Add(new Border { Width = bw, Height = bh, Background = new SolidColorBrush(c), CornerRadius = new CornerRadius(r) }.With(b => { Canvas.SetLeft(b, x); Canvas.SetTop(b, y); }));
+        bool dark = theme == "dark";
+        Color bg = dark ? Color.FromRgb(0x1E, 0x1F, 0x22) : Colors.White, side = dark ? Color.FromRgb(0x2B, 0x2D, 0x31) : Color.FromRgb(0xF2, 0xF3, 0xF5), ink = dark ? Color.FromRgb(0xC8, 0xCA, 0xD0) : Color.FromRgb(0x4A, 0x4E, 0x58);
+        Box(30, 24, 960, 772, bg, 8);                    // the app window
+        Box(30, 24, 960, 40, side, 8);                   // its title bar
+        Box(30, 64, 230, 732, side);                     // sidebar
+        for (int i = 0; i < 16; i++) Box(54, 92 + i * 40, 120 + i * 7 % 60, 12, ink, 6);
+        Box(260, 64, 730, 56, side);                     // conversation header
+        Box(284, 84, 220, 14, ink, 7);
+        var rnd = new Random(2);
+        for (double y = 140; y < 700; y += 48)          // messages
+        {
+            bool mine = rnd.NextDouble() < 0.35;
+            double mw = rnd.Next(180, 520);
+            Box(mine ? 960 - mw : 290, y, mw, 34, mine ? Color.FromRgb(0x25, 0x63, 0xEB) : (dark ? Color.FromRgb(0x2F, 0x31, 0x36) : Color.FromRgb(0xEE, 0xF0, 0xF3)), 14);
+        }
+        Box(290, 724, 670, 50, side, 12);                // the message box (stays put)
+
+        // The dim layer: everything but the conversation.
+        var area = new Rect(260, 120, 730, 590);
+        var dim = new System.Windows.Shapes.Path
+        {
+            Fill = new SolidColorBrush(Color.FromArgb(88, 0x0C, 0x0F, 0x14)),
+            Data = new CombinedGeometry(GeometryCombineMode.Exclude, new RectangleGeometry(new Rect(0, 0, W, H)), new RectangleGeometry(area, 6, 6)),
+        };
+        scene.Children.Add(dim);
+
+        var frame = new CaptureFrame(new PixelRect(0, 0, (int)area.Width, (int)area.Height), new PixelPoint(420, 300), TargetKind.ScrollArea);
+        var frameContent = (FrameworkElement)frame.Content;
+        frame.Content = null;
+        frameContent.Width = area.Width + 44;
+        frameContent.Height = area.Height + 44;
+        Canvas.SetLeft(frameContent, area.X - 22);
+        Canvas.SetTop(frameContent, area.Y - 22);
+        scene.Children.Add(frameContent);
+
+        var panel = new CapturePanel("Alt+Shift+S");
+        panel.SetTarget(TargetKind.ScrollArea);
+        var panelContent = (FrameworkElement)panel.Content;
+        panel.Content = null;
+        panelContent.Width = 344;
+        panelContent.Height = 660;
+        Canvas.SetLeft(panelContent, 1004);
+        Canvas.SetTop(panelContent, 40);
+        scene.Children.Add(panelContent);
+        Layout(scene, W, H);
+        panel.ShowUpdate(preview, w, h, 3, "Only this part scrolls, so Longshot captures just this part. Added 412 px.", addedRows: 412);
+        frame.FlashAdded(412);
+        Layout(scene, W, H);
+        Save(snapshots, scene, W, H, $"longshot-scene-{theme}");
+        frame.Close();
+        panel.Close();
     }
 
     /// <summary>

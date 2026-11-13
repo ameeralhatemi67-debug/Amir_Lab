@@ -105,6 +105,15 @@ public sealed class LongshotSettings
     /// <summary>How far each Extend scrolls: "small", "auto" or "large".</summary>
     public string ScrollStep { get; set; } = "auto";
 
+    /// <summary>
+    /// What the capture starts on: "pointer" (the scroll area under the pointer, such as a chat, a list
+    /// or a panel, or else the window in front) or "window" (always the whole window in front).
+    /// </summary>
+    public string StartOn { get; set; } = "pointer";
+
+    /// <summary>Dim the rest of the screen while capturing, so it is plain what will be in the shot.</summary>
+    public bool DimOutside { get; set; } = true;
+
     public bool CopyToClipboard { get; set; } = true;
 
     /// <summary>Show the result window after Done.</summary>

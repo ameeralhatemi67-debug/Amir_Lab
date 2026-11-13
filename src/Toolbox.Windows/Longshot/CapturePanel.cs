@@ -7,6 +7,7 @@ using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Media.Effects;
 using System.Windows.Media.Imaging;
+using System.Windows.Shapes;
 using System.Windows.Threading;
 using Toolbox.Windows.Home;
 using Toolbox.Windows.Interop;
@@ -19,43 +20,62 @@ internal enum FrameMode { Idle, Auto, Follow }
 /// <summary>
 /// The glowing frame around the capture area. Hover an edge and a handle appears under the pointer
 /// (wiggle and it grows, to make it easy to grab); drag it, or a corner knob, to resize; drag the
-/// Move grip (inside the top edge) to move. Everywhere else clicks and the wheel go straight through
-/// to the app below. It never takes focus and is left out of screenshots, so it never ends up in
-/// the capture. Resizing stays inside the screen's work area, so the taskbar is never taken in.
+/// Move grip (inside the top edge) to move. The round scroll marker shows where the wheel turns,
+/// and can be dragged onto whatever should scroll. A label says what is being captured (window,
+/// scroll area or region) and how big it is; rows that were just added glow for a moment.
+/// Everywhere else clicks and the wheel go straight through to the app below. It never takes focus
+/// and is left out of screenshots, so it never ends up in the capture. Resizing stays inside the
+/// screen's work area, so the taskbar is never taken in.
 /// </summary>
 internal sealed class CaptureFrame : Window
 {
     [Flags]
-    private enum Edge { None = 0, Left = 1, Top = 2, Right = 4, Bottom = 8, Move = 16 }
+    private enum Edge { None = 0, Left = 1, Top = 2, Right = 4, Bottom = 8, Move = 16, Marker = 32 }
 
     private const double Reach = 22;     // room around the area (DIPs) for the handles
     private const double Line = 3;
     private const double Band = 24;       // how far from the line an edge can be grabbed (both sides together)
     private const int MinSize = 120;      // smallest area, in physical pixels
+    private const double MarkerSize = 34; // the scroll marker's ring (its middle is see-through, so the wheel reaches the app)
 
     private readonly Border _line = new() { BorderThickness = new Thickness(Line), CornerRadius = new CornerRadius(6), IsHitTestVisible = false };
     private readonly DropShadowEffect _glow = new() { BlurRadius = 16, ShadowDepth = 0, Opacity = 0.85 };
     private readonly Grid _handles = new();
     private readonly Canvas _overlay = new() { IsHitTestVisible = false };
+    private readonly Canvas _markerLayer = new();
     private readonly Border _grab = new() { CornerRadius = new CornerRadius(5), Background = Brushes.White, BorderThickness = new Thickness(2.5), Opacity = 0, RenderTransformOrigin = new Point(0.5, 0.5) };
     private readonly ScaleTransform _grabScale = new(1, 1);
-    private readonly TextBlock _sizeText = new() { FontSize = 11.5, FontWeight = FontWeights.SemiBold, Foreground = Brushes.White };
-    private readonly Border _sizePill = new() { Height = 24, CornerRadius = new CornerRadius(12), Padding = new Thickness(10, 0, 10, 0), VerticalAlignment = VerticalAlignment.Bottom, HorizontalAlignment = HorizontalAlignment.Center, IsHitTestVisible = false };
+    private readonly TextBlock _kindText = new() { FontSize = 11.5, FontWeight = FontWeights.SemiBold, Foreground = Brushes.White, VerticalAlignment = VerticalAlignment.Center };
+    private readonly TextBlock _sizeText = new() { FontSize = 11.5, Foreground = new SolidColorBrush(Color.FromArgb(0xC8, 0xFF, 0xFF, 0xFF)), Margin = new Thickness(7, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
+    private readonly ContentControl _kindIcon = new() { Margin = new Thickness(0, 0, 6, 0), VerticalAlignment = VerticalAlignment.Center, IsHitTestVisible = false };
+    private readonly Border _sizePill = new() { Height = 26, CornerRadius = new CornerRadius(13), Padding = new Thickness(10, 0, 11, 0), VerticalAlignment = VerticalAlignment.Bottom, HorizontalAlignment = HorizontalAlignment.Center, IsHitTestVisible = false };
+    private readonly Border _added = new() { VerticalAlignment = VerticalAlignment.Bottom, Opacity = 0, IsHitTestVisible = false, CornerRadius = new CornerRadius(0, 0, 4, 4), BorderThickness = new Thickness(0, 2, 0, 0) };
+    private readonly Grid _marker = new() { Width = MarkerSize, Height = MarkerSize, Cursor = Cursors.SizeAll, RenderTransformOrigin = new Point(0.5, 0.5) };
+    private readonly ScaleTransform _markerScale = new(1, 1);
+    private readonly Ellipse _markerPulse = new() { Width = MarkerSize, Height = MarkerSize, StrokeThickness = 2, Opacity = 0, IsHitTestVisible = false, RenderTransformOrigin = new Point(0.5, 0.5) };
     private readonly DispatcherTimer _calm = new() { Interval = TimeSpan.FromMilliseconds(60) };
+    private readonly DispatcherTimer _tween = new() { Interval = TimeSpan.FromMilliseconds(15) };
     private PixelRect _area;
+    private PixelPoint _anchor;
     private IntPtr _hwnd;
     private double _scale = 1;
     private Edge _drag;
     private Edge _hover;
     private PixelRect _dragFrom;
+    private PixelPoint _anchorFrom;
     private Native.POINT _cursorFrom;
     private Point? _lastPointer;
     private double _wiggle; // how much the pointer moved near an edge lately (makes the handle grow)
     private Rect _limits;    // the work area (physical pixels) a resize stays inside
+    private PixelRect _tweenFrom, _tweenTo;
+    private DateTime _tweenStart;
+    private bool _hidden;
+    private FrameMode _mode;
 
-    public CaptureFrame(PixelRect area)
+    public CaptureFrame(PixelRect area, PixelPoint? anchor = null, TargetKind kind = TargetKind.Window)
     {
         _area = area;
+        _anchor = area.Clamp(anchor ?? area.Center, 18);
         Title = "Longshot frame";
         WindowStyle = WindowStyle.None;
         AllowsTransparency = true;
@@ -71,30 +91,51 @@ internal sealed class CaptureFrame : Window
 
         _line.Margin = new Thickness(Reach - Line);
         _line.Effect = _glow;
-        _sizePill.Child = _sizeText;
+        var pillRow = new StackPanel { Orientation = Orientation.Horizontal, FlowDirection = Lang.Flow };
+        pillRow.Children.Add(_kindIcon);
+        pillRow.Children.Add(_kindText);
+        pillRow.Children.Add(SettingsPage.Ltr(_sizeText));
+        _sizePill.Child = pillRow;
         _sizePill.Background = new SolidColorBrush(Color.FromArgb(0xD9, 0x10, 0x12, 0x18));
         _grab.RenderTransform = _grabScale;
         _grab.Effect = new DropShadowEffect { BlurRadius = 10, ShadowDepth = 1, Opacity = 0.4 };
         _grab.SetResourceReference(Border.BorderBrushProperty, "Brush.Accent");
         _overlay.Children.Add(_grab);
+        _added.Margin = new Thickness(Reach, 0, Reach, Reach);
+        BuildMarker();
         var root = new Grid();
+        root.Children.Add(_added);
         root.Children.Add(_line);
         BuildHandles();
         root.Children.Add(_handles);
+        root.Children.Add(_markerLayer);
         root.Children.Add(_overlay);
         Content = root;
+        SetKind(kind);
         SetMode(FrameMode.Idle);
         UpdateSizeText();
         _calm.Tick += (_, _) => Calm();
+        _tween.Tick += (_, _) => TweenStep();
+        SizeChanged += (_, _) => PlaceMarker();
+        PlaceMarker();
     }
 
-    /// <summary>Raised when a move or resize ends, with the new area (physical pixels).</summary>
+    /// <summary>Raised when a move or resize by hand ends, with the new area (physical pixels).</summary>
     public event Action<PixelRect>? AreaChanged;
+
+    /// <summary>Raised whenever the area on screen changes (dragging, or gliding to a new area): the dim layer follows it.</summary>
+    public event Action<PixelRect>? Moving;
+
+    /// <summary>Raised when the scroll marker is dropped somewhere new (physical pixels).</summary>
+    public event Action<PixelPoint>? AnchorChanged;
 
     public PixelRect Area => _area;
 
+    public PixelPoint Anchor => _anchor;
+
     public void SetMode(FrameMode mode)
     {
+        _mode = mode;
         var color = mode switch
         {
             FrameMode.Auto => Color.FromRgb(0xFF, 0xB2, 0x24),
@@ -103,10 +144,153 @@ internal sealed class CaptureFrame : Window
         };
         _line.BorderBrush = new SolidColorBrush(color);
         _glow.Color = color;
-        // While Longshot scrolls or follows, the area stays put.
+        _added.BorderBrush = new SolidColorBrush(color);
+        _added.Background = new LinearGradientBrush(Color.FromArgb(0x10, color.R, color.G, color.B), Color.FromArgb(0x48, color.R, color.G, color.B), 90);
+        _markerPulse.Stroke = new SolidColorBrush(color);
+        // While Longshot scrolls or follows, the area stays put; in Follow you scroll, so no marker.
         bool idle = mode == FrameMode.Idle;
         _handles.Visibility = idle ? Visibility.Visible : Visibility.Collapsed;
+        _marker.IsHitTestVisible = idle;
+        _marker.Opacity = mode == FrameMode.Follow ? 0 : 1;
         if (!idle) HideGrab();
+        // Auto: the glow breathes while it works.
+        if (mode == FrameMode.Auto && !Motion.IsReduced)
+            _glow.BeginAnimation(DropShadowEffect.BlurRadiusProperty, new DoubleAnimation(12, 26, TimeSpan.FromMilliseconds(700)) { AutoReverse = true, RepeatBehavior = RepeatBehavior.Forever, EasingFunction = Motion.InOut });
+        else _glow.BeginAnimation(DropShadowEffect.BlurRadiusProperty, null);
+    }
+
+    /// <summary>Window, scroll area or region: shown in the label at the bottom.</summary>
+    public void SetKind(TargetKind kind)
+    {
+        _kindText.Text = PickHighlight.KindText(kind);
+        _kindIcon.Content = SettingsPage.Glyph(PickHighlight.KindIcon(kind), 13, brush: Brushes.White, stroke: 2);
+    }
+
+    /// <summary>Hides the frame while another area is being picked (and shows it again).</summary>
+    public void SetHidden(bool hidden)
+    {
+        _hidden = hidden;
+        Place();
+    }
+
+    /// <summary>Where the wheel turns now (it moved, or it was found by trying other spots).</summary>
+    public void SetAnchor(PixelPoint at)
+    {
+        _anchor = _area.Clamp(at, 18);
+        PlaceMarker();
+        Pop(_marker, 1.25);
+        After(220, () => Pop(_marker, 1));
+    }
+
+    /// <summary>The wheel is turning at the marker: a ring spreads from it.</summary>
+    public void PulseAnchor()
+    {
+        if (Motion.IsReduced || _mode == FrameMode.Follow) return;
+        var grow = new DoubleAnimation(0.6, 2.1, TimeSpan.FromMilliseconds(520)) { EasingFunction = Motion.Out };
+        _markerPulse.RenderTransform = new ScaleTransform(1, 1);
+        ((ScaleTransform)_markerPulse.RenderTransform).BeginAnimation(ScaleTransform.ScaleXProperty, grow);
+        ((ScaleTransform)_markerPulse.RenderTransform).BeginAnimation(ScaleTransform.ScaleYProperty, grow);
+        _markerPulse.BeginAnimation(OpacityProperty, new DoubleAnimation(0.9, 0, TimeSpan.FromMilliseconds(520)));
+    }
+
+    /// <summary>The bottom <paramref name="rows"/> pixel rows are new: they glow, then fade.</summary>
+    public void FlashAdded(int rows)
+    {
+        if (rows <= 0) return;
+        double inner = Math.Max(6, _line.ActualHeight - 2 * Line); // the area's height on screen
+        _added.Height = Math.Clamp(rows / _scale, 6, inner);
+        _added.Opacity = Motion.IsReduced ? 0 : 1;
+        _added.BeginAnimation(OpacityProperty, Motion.IsReduced ? null : new DoubleAnimation(1, 0, TimeSpan.FromMilliseconds(1100)) { EasingFunction = Motion.InOut });
+    }
+
+    /// <summary>Glides to a new area (the part that scrolls was found, or another one was picked).</summary>
+    public void AnimateTo(PixelRect area, PixelPoint? anchor = null)
+    {
+        if (anchor is { } a) _anchor = area.Clamp(a, 18);
+        else if (!area.Contains(_anchor)) _anchor = area.Center;
+        if (_hwnd == IntPtr.Zero || Motion.IsReduced || area == _area)
+        {
+            _tween.Stop();
+            _area = area;
+            Place();
+            UpdateSizeText();
+            return;
+        }
+        _tweenFrom = _area;
+        _tweenTo = area;
+        _tweenStart = DateTime.UtcNow;
+        _tween.Start();
+    }
+
+    private void TweenStep()
+    {
+        double t = Math.Clamp((DateTime.UtcNow - _tweenStart).TotalMilliseconds / 300, 0, 1);
+        double e = Motion.Out.Ease(t);
+        int L(int from, int to) => (int)Math.Round(from + (to - from) * e);
+        int l = L(_tweenFrom.X, _tweenTo.X), tp = L(_tweenFrom.Y, _tweenTo.Y), r = L(_tweenFrom.Right, _tweenTo.Right), b = L(_tweenFrom.Bottom, _tweenTo.Bottom);
+        _area = t >= 1 ? _tweenTo : new PixelRect(l, tp, r - l, b - tp);
+        Place();
+        UpdateSizeText();
+        if (t >= 1) _tween.Stop();
+    }
+
+    private void BuildMarker()
+    {
+        // A ring: white core with an accent edge, see-through in the middle (the wheel goes through there).
+        var outer = new Ellipse { Width = MarkerSize - 4, Height = MarkerSize - 4, StrokeThickness = 3.2, Stroke = Brushes.White, Fill = new SolidColorBrush(Color.FromArgb(0x01, 0xFF, 0xFF, 0xFF)) };
+        var edge = new Ellipse { Width = MarkerSize - 1, Height = MarkerSize - 1, StrokeThickness = 1.6, Effect = new DropShadowEffect { BlurRadius = 8, ShadowDepth = 1, Opacity = 0.45 } };
+        edge.SetResourceReference(Shape.StrokeProperty, "Brush.Accent");
+        var inner = new Ellipse { Width = 13, Height = 13, StrokeThickness = 1.6 };
+        inner.SetResourceReference(Shape.StrokeProperty, "Brush.Accent");
+        // Clear the middle completely: per-pixel see-through windows let input through where nothing is drawn.
+        var ring = new Grid { Width = MarkerSize, Height = MarkerSize };
+        ring.Children.Add(edge);
+        ring.Children.Add(outer);
+        ring.Children.Add(inner);
+        ring.Clip = Geometry.Combine(new EllipseGeometry(new Point(MarkerSize / 2, MarkerSize / 2), MarkerSize / 2, MarkerSize / 2),
+            new EllipseGeometry(new Point(MarkerSize / 2, MarkerSize / 2), 5, 5), GeometryCombineMode.Exclude, null);
+        _marker.Children.Add(ring);
+        _marker.RenderTransform = _markerScale;
+        _marker.ToolTip = Lang.T("Longshot scrolls here. Drag it onto the part that should scroll.", "هنا يمرّر Longshot. اسحبها فوق الجزء الذي يجب أن يتمرّر.");
+        _marker.MouseEnter += (_, _) => Pop(_marker, 1.15);
+        _marker.MouseLeave += (_, _) => { if (_drag == Edge.None) Pop(_marker, 1); };
+        _marker.MouseLeftButtonDown += (_, e) =>
+        {
+            _drag = Edge.Marker;
+            _anchorFrom = _anchor;
+            _cursorFrom = ScreenGeometry.CursorPosition();
+            _marker.CaptureMouse();
+            e.Handled = true;
+        };
+        _marker.MouseMove += (_, _) =>
+        {
+            if (_drag != Edge.Marker) return;
+            var now = ScreenGeometry.CursorPosition();
+            _anchor = _area.Clamp(new PixelPoint(_anchorFrom.X + now.X - _cursorFrom.X, _anchorFrom.Y + now.Y - _cursorFrom.Y), 18);
+            PlaceMarker();
+        };
+        void Drop()
+        {
+            if (_drag != Edge.Marker) return;
+            _drag = Edge.None;
+            if (_marker.IsMouseCaptured) _marker.ReleaseMouseCapture();
+            Pop(_marker, 1);
+            if (_anchor != _anchorFrom) AnchorChanged?.Invoke(_anchor);
+        }
+        _marker.MouseLeftButtonUp += (_, _) => Drop();
+        _marker.LostMouseCapture += (_, _) => Drop();
+        _markerLayer.Children.Add(_markerPulse);
+        _markerLayer.Children.Add(_marker);
+    }
+
+    private void PlaceMarker()
+    {
+        double x = Reach + (_anchor.X - _area.X) / _scale - MarkerSize / 2;
+        double y = Reach + (_anchor.Y - _area.Y) / _scale - MarkerSize / 2;
+        Canvas.SetLeft(_marker, x);
+        Canvas.SetTop(_marker, y);
+        Canvas.SetLeft(_markerPulse, x);
+        Canvas.SetTop(_markerPulse, y);
     }
 
     private void BuildHandles()
@@ -197,6 +381,13 @@ internal sealed class CaptureFrame : Window
         Motion.To(s, ScaleTransform.ScaleYProperty, to, 320, Motion.Spring);
     }
 
+    private void After(int ms, Action action)
+    {
+        var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(ms) };
+        timer.Tick += (_, _) => { timer.Stop(); action(); };
+        timer.Start();
+    }
+
     /// <summary>The pointer is near an edge: a handle sits under it, following along the edge and growing as the pointer wiggles.</summary>
     private void Hover(Edge what, Point at)
     {
@@ -263,8 +454,10 @@ internal sealed class CaptureFrame : Window
 
     private void Begin(UIElement handle, Edge what, MouseButtonEventArgs e)
     {
+        _tween.Stop();
         _drag = what;
         _dragFrom = _area;
+        _anchorFrom = _anchor;
         _cursorFrom = ScreenGeometry.CursorPosition();
         var work = ScreenGeometry.MonitorAt(new Native.POINT { X = _area.CenterX, Y = _area.CenterY }).WorkArea;
         _limits = new Rect(work.Left, work.Top, work.Width, work.Height);
@@ -274,7 +467,7 @@ internal sealed class CaptureFrame : Window
 
     private void Drag()
     {
-        if (_drag == Edge.None) return;
+        if (_drag is Edge.None or Edge.Marker) return;
         var now = ScreenGeometry.CursorPosition();
         int dx = now.X - _cursorFrom.X, dy = now.Y - _cursorFrom.Y;
         int l = _dragFrom.X, t = _dragFrom.Y, r = _dragFrom.Right, b = _dragFrom.Bottom;
@@ -286,6 +479,7 @@ internal sealed class CaptureFrame : Window
             t = Math.Clamp(t + dy, top, Math.Max(top, bottom - h));
             r = l + w;
             b = t + h;
+            _anchor = new PixelPoint(_anchorFrom.X + l - _dragFrom.X, _anchorFrom.Y + t - _dragFrom.Y); // the marker moves with the area
         }
         else
         {
@@ -295,13 +489,14 @@ internal sealed class CaptureFrame : Window
             if (_drag.HasFlag(Edge.Bottom)) b = Math.Clamp(b + dy, t + MinSize, bottom);
         }
         _area = new PixelRect(l, t, r - l, b - t);
+        _anchor = _area.Clamp(_anchor, 18);
         Place();
         UpdateSizeText();
     }
 
     private void End(UIElement handle)
     {
-        if (_drag == Edge.None) return;
+        if (_drag is Edge.None or Edge.Marker) return;
         _drag = Edge.None;
         if (handle.IsMouseCaptured) handle.ReleaseMouseCapture();
         if (!handle.IsMouseOver)
@@ -317,7 +512,15 @@ internal sealed class CaptureFrame : Window
     private void Place()
     {
         if (_hwnd == IntPtr.Zero) return;
+        if (_hidden)
+        {
+            Native.SetWindowPos(_hwnd, Native.HWND_TOPMOST, -32000, -32000, 0, 0, Native.SWP_NOSIZE | Native.SWP_NOACTIVATE);
+            return;
+        }
+        _scale = ScreenGeometry.MonitorAt(new Native.POINT { X = _area.CenterX, Y = _area.CenterY }).Scale;
         CaptureWindows.Place(_hwnd, _area.Inflate((int)Math.Ceiling(Reach * _scale)));
+        PlaceMarker();
+        Moving?.Invoke(_area);
     }
 
     protected override void OnSourceInitialized(EventArgs e)
@@ -332,12 +535,13 @@ internal sealed class CaptureFrame : Window
 }
 
 /// <summary>
-/// The Longshot panel, in Amir Lap's glass: the blurred screen behind it under a frosted tint,
-/// a live preview of the whole long image that grows (and scrolls to each new part) as the capture
-/// goes on, and Extend / Auto / Follow / Undo / Done. It stays on top of everything until it is
-/// closed, never takes focus from the app being captured (so keyboard scrolling in Follow still
-/// goes there), can be moved by its title and resized from its corner, and never appears in
-/// screenshots.
+/// The Longshot panel, in Amir Lap's glass: the blurred screen behind it under a frosted tint, what
+/// to capture (window, scroll area, region), a live preview of the whole long image that grows (and
+/// scrolls to each new part) as the capture goes on, and Auto / Extend / Follow / Undo / Done. The
+/// next sensible step is always the highlighted button: Auto to begin, Done once the end is
+/// reached. It stays on top of everything until it is closed, never takes focus from the app being
+/// captured (so keyboard scrolling in Follow still goes there), can be moved by its title and
+/// resized from its corner, and never appears in screenshots.
 /// </summary>
 internal sealed class CapturePanel : Window
 {
@@ -352,16 +556,20 @@ internal sealed class CapturePanel : Window
     private readonly Border _seam = new() { VerticalAlignment = VerticalAlignment.Top, Opacity = 0, IsHitTestVisible = false, BorderThickness = new Thickness(0, 2, 0, 0) };
     private readonly Grid _stage = new();
     private readonly Border _live = new() { Visibility = Visibility.Collapsed, IsHitTestVisible = false };
-    private readonly System.Windows.Shapes.Ellipse _liveDot = new() { Width = 7, Height = 7, Fill = Brushes.White, Margin = new Thickness(0, 0, 6, 0) };
+    private readonly Ellipse _liveDot = new() { Width = 7, Height = 7, Fill = Brushes.White, Margin = new Thickness(0, 0, 6, 0) };
     private readonly TextBlock _liveText = new() { Foreground = Brushes.White, FontSize = 11, FontWeight = FontWeights.SemiBold };
     private readonly TextBlock _info = new() { FontSize = 13, FontWeight = FontWeights.SemiBold, Margin = new Thickness(2, 12, 0, 0) };
     private readonly TextBlock _status = new() { MinHeight = 34, Margin = new Thickness(2, 2, 0, 0) };
+    private readonly TextBlock _keysHint = new();
     private readonly DispatcherTimer _keepUp = new() { Interval = TimeSpan.FromMilliseconds(700) };
+    private readonly Dictionary<TargetKind, RadioButton> _targets = [];
+    private readonly Style _plain, _accent;
     private PixelRect? _beside;
     private IntPtr _hwnd;
     private DateTime _lastBackdrop;
+    private bool _finishReady;
 
-    public CapturePanel()
+    public CapturePanel(string? shortcut = null)
     {
         Title = "Longshot";
         WindowStyle = WindowStyle.None;
@@ -371,10 +579,10 @@ internal sealed class CapturePanel : Window
         ShowInTaskbar = false;
         ShowActivated = false;
         Topmost = true;
-        Width = 300 + 2 * Shadow;
-        Height = 620;
-        MinWidth = 264 + 2 * Shadow;
-        MinHeight = 500;
+        Width = 316 + 2 * Shadow;
+        Height = 660;
+        MinWidth = 292 + 2 * Shadow;
+        MinHeight = 540;
         MaxWidth = 560;
         Left = -32000;
         Top = -32000;
@@ -382,16 +590,20 @@ internal sealed class CapturePanel : Window
         TextOptions.SetTextFormattingMode(this, TextFormattingMode.Ideal);
         if (Application.Current?.Resources["Font.UI"] is FontFamily font) FontFamily = font;
         SetResourceReference(ForegroundProperty, "Brush.Text");
+        _plain = SettingsPage.Res("Lap.Button");
+        _accent = SettingsPage.Res("Lap.Button.Accent");
 
-        Extend = Make("lap-down", Lang.T("Extend", "مدّ"), Lang.T("Scroll down once and add the new part", "مرّر مرة واحدة وأضف الجزء الجديد"), "Lap.Button.Accent");
-        Auto = Make("lap-play", Lang.T("Auto", "تلقائي"), Lang.T("Keep extending until the bottom (Esc stops)", "استمر حتى النهاية (Esc للإيقاف)"));
+        Auto = Make("lap-play", Lang.T("Auto", "تلقائي"), Lang.T("Scroll to the end by itself (Esc stops)", "التمرير حتى النهاية تلقائيًا (Esc للإيقاف)"), accent: true);
+        Extend = Make("lap-down", Lang.T("Extend", "مدّ"), Lang.T("Scroll down once and add the new part", "مرّر مرة واحدة وأضف الجزء الجديد"));
         Follow = Make("lap-follow", Lang.T("Follow", "تتبّع"), Lang.T("You scroll; Longshot adds as you go", "أنت تمرّر واللقطة تُضاف"));
         Undo = Make("lap-undo", Lang.T("Undo", "تراجع"), Lang.T("Remove the last part that was added", "إزالة آخر جزء أُضيف"));
         Done = Make("lap-check", Lang.T("Done", "تم"), Lang.T("Save, copy to the clipboard and show the result", "حفظ ونسخ إلى الحافظة وإظهار النتيجة"));
         CloseButton = new Button { Style = SettingsPage.Res("Lap.Caption.Close"), Width = 34, Height = 30, Content = SettingsPage.Glyph("close", 12, stroke: 2.2), ToolTip = Lang.T("Cancel without saving", "إلغاء دون حفظ") };
-        RefreshButton = new Button { Style = SettingsPage.Res("Lap.Caption"), Width = 34, Height = 30, Content = SettingsPage.Glyph("lap-refresh", 15, stroke: 2), ToolTip = Lang.T("Start again: take the first part afresh", "البدء من جديد: التقاط الجزء الأول مرة أخرى"), Margin = new Thickness(0, 0, 2, 0) };
+        RefreshButton = new Button { Style = SettingsPage.Res("Lap.Caption"), Width = 34, Height = 30, Content = SettingsPage.Glyph("lap-refresh", 15, stroke: 2), ToolTip = Lang.T("Start again: back to the top, take the first part afresh", "البدء من جديد: العودة إلى الأعلى والتقاط الجزء الأول مرة أخرى"), Margin = new Thickness(0, 0, 2, 0) };
         System.Windows.Automation.AutomationProperties.SetName(RefreshButton, Lang.T("Start again", "البدء من جديد"));
         System.Windows.Automation.AutomationProperties.SetName(CloseButton, Lang.T("Cancel", "إلغاء"));
+        _keysHint.Text = Lang.T("Esc stops Auto and Follow", "Esc يوقف التلقائي والتتبّع")
+            + (shortcut is { Length: > 0 } ? Lang.T($". {shortcut} again saves.", $". ⁦{shortcut}⁩ مرة أخرى للحفظ.") : ".");
         Content = Build();
 
         _keepUp.Tick += (_, _) => KeepUp();
@@ -412,12 +624,16 @@ internal sealed class CapturePanel : Window
     public Button CloseButton { get; }
     public Button RefreshButton { get; }
 
-    private static Button Make(string icon, string text, string tip, string style = "Lap.Button")
+    /// <summary>The user chose what to capture (it may be the one already chosen: pick again).</summary>
+    public event Action<TargetKind>? TargetChosen;
+
+    private Button Make(string icon, string text, string tip, bool accent = false)
     {
         var content = new StackPanel { Orientation = Orientation.Horizontal };
-        content.Children.Add(SettingsPage.Glyph(icon, 15, stroke: 2).With(g => g.Margin = new Thickness(0, 0, 8, 0)));
+        // Icons keep their shape in Arabic, except Undo's arrow, which points the reading way.
+        content.Children.Add(SettingsPage.Glyph(icon, 15, stroke: 2).With(g => { g.Margin = new Thickness(0, 0, 8, 0); if (icon != "lap-undo") g.FlowDirection = FlowDirection.LeftToRight; }));
         content.Children.Add(new TextBlock { Text = text, VerticalAlignment = VerticalAlignment.Center });
-        var b = new Button { Style = SettingsPage.Res(style), Content = content, ToolTip = tip, HorizontalAlignment = HorizontalAlignment.Stretch, Padding = new Thickness(10, 0, 10, 0) };
+        var b = new Button { Style = accent ? _accent : _plain, Content = content, ToolTip = tip, HorizontalAlignment = HorizontalAlignment.Stretch, Padding = new Thickness(8, 0, 8, 0) };
         System.Windows.Automation.AutomationProperties.SetName(b, text);
         return b;
     }
@@ -426,7 +642,7 @@ internal sealed class CapturePanel : Window
     public static void SetButton(Button button, string icon, string text)
     {
         if (button.Content is not StackPanel { Children.Count: 2 } content) return;
-        if (content.Children[0] is Viewbox { Child: Canvas { Children.Count: > 0 } canvas } && canvas.Children[0] is System.Windows.Shapes.Path path)
+        if (content.Children[0] is Viewbox { Child: Canvas { Children.Count: > 0 } canvas } && canvas.Children[0] is Path path)
             path.Data = Icons.Get(icon);
         if (content.Children[1] is TextBlock label) label.Text = text;
         System.Windows.Automation.AutomationProperties.SetName(button, text);
@@ -438,6 +654,15 @@ internal sealed class CapturePanel : Window
     /// <summary>For tests: the status line ("Added 466 px.").</summary>
     internal string StatusText => _status.Text;
 
+    /// <summary>For tests: which target is shown as chosen.</summary>
+    internal TargetKind? ShownTarget => _targets.FirstOrDefault(t => t.Value.IsChecked == true) is { Value: not null } t ? t.Key : null;
+
+    /// <summary>For tests: the target buttons.</summary>
+    internal RadioButton TargetButton(TargetKind kind) => _targets[kind];
+
+    /// <summary>For tests: whether Done is the highlighted next step.</summary>
+    internal bool FinishReady => _finishReady;
+
     /// <summary>For tests: keeps the panel off the screen (and does not read the screen behind it).</summary>
     internal static bool KeepOffScreen { get; set; }
 
@@ -448,6 +673,35 @@ internal sealed class CapturePanel : Window
         _info.Text = "";
         _seam.BeginAnimation(OpacityProperty, null);
         _seam.Opacity = 0;
+        SetFinishReady(false);
+    }
+
+    /// <summary>Shows which target is chosen, without raising <see cref="TargetChosen"/>.</summary>
+    public void SetTarget(TargetKind kind)
+    {
+        foreach (var (k, b) in _targets) b.IsChecked = k == kind;
+    }
+
+    /// <summary>The end was reached: Done becomes the highlighted button (and Auto plain), or back.</summary>
+    public void SetFinishReady(bool ready)
+    {
+        bool was = _finishReady;
+        _finishReady = ready;
+        Done.Style = ready ? _accent : _plain;
+        Auto.Style = ready ? _plain : _accent;
+        if (ready && !was && !Motion.IsReduced && Done.RenderTransform is ScaleTransform s)
+        {
+            var bump = new DoubleAnimation(1, 1.04, TimeSpan.FromMilliseconds(180)) { AutoReverse = true, EasingFunction = Motion.Out };
+            s.BeginAnimation(ScaleTransform.ScaleXProperty, bump);
+            s.BeginAnimation(ScaleTransform.ScaleYProperty, bump);
+        }
+    }
+
+    /// <summary>While another area is being picked, the capture buttons wait.</summary>
+    public void SetPicking(bool picking, string? status = null)
+    {
+        foreach (var b in new[] { Auto, Extend, Follow, Undo, Done }) b.IsEnabled = !picking && b.IsEnabled;
+        if (status is not null) _status.Text = status;
     }
 
     private UIElement Build()
@@ -492,30 +746,56 @@ internal sealed class CapturePanel : Window
         DockPanel.SetDock(head, Dock.Top);
         dock.Children.Add(head);
 
+        // What to capture.
+        var bar = new Border { Style = SettingsPage.Res("Lap.SegmentBar"), HorizontalAlignment = HorizontalAlignment.Stretch, Margin = new Thickness(0, 0, 0, 12) };
+        var segments = new UniformGrid { Rows = 1 };
+        string group = "longshot-target-" + Guid.NewGuid().ToString("N");
+        foreach (var (kind, tip) in new[]
+        {
+            (TargetKind.Window, Lang.T("The whole window in front", "النافذة الأمامية كاملة")),
+            (TargetKind.ScrollArea, Lang.T("Point at a part that scrolls (a chat, a list, a panel) and click it", "أشر إلى جزء يتمرّر (محادثة أو قائمة أو لوحة) وانقره")),
+            (TargetKind.Region, Lang.T("Drag to draw any area", "اسحب لرسم أي منطقة")),
+        })
+        {
+            var content = new StackPanel { Orientation = Orientation.Horizontal };
+            content.Children.Add(SettingsPage.Glyph(PickHighlight.KindIcon(kind), 13, stroke: 1.9).With(g => { g.Margin = new Thickness(0, 0, 4, 0); g.FlowDirection = FlowDirection.LeftToRight; }));
+            content.Children.Add(new TextBlock { Text = PickHighlight.KindText(kind), VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis });
+            var rb = new RadioButton { Style = SettingsPage.Res("Lap.Segment"), GroupName = group, Content = content, ToolTip = tip, Padding = new Thickness(3, 0, 3, 0), Margin = new Thickness(0), HorizontalContentAlignment = HorizontalAlignment.Center };
+            System.Windows.Automation.AutomationProperties.SetName(rb, PickHighlight.KindText(kind));
+            rb.Click += (_, _) => TargetChosen?.Invoke(kind);
+            _targets[kind] = rb;
+            segments.Children.Add(rb);
+        }
+        bar.Child = segments;
+        DockPanel.SetDock(bar, Dock.Top);
+        dock.Children.Add(bar);
+
         // Footer hint, buttons, then the size and status line above them.
-        var hint = new TextBlock { Text = Lang.T("Esc stops Auto and Follow. Drag the frame's corners to resize the area, or its Move grip to move it.", "Esc يوقف التلقائي والتتبّع. اسحب زوايا الإطار لتغيير حجم المنطقة، أو مقبض التحريك لنقلها."), Style = SettingsPage.Res("Lap.Help"), Margin = new Thickness(2, 12, 18, 0) };
-        DockPanel.SetDock(hint, Dock.Bottom);
-        dock.Children.Add(hint);
+        _keysHint.Style = SettingsPage.Res("Lap.Help");
+        _keysHint.Margin = new Thickness(2, 12, 18, 0);
+        DockPanel.SetDock(_keysHint, Dock.Bottom);
+        dock.Children.Add(_keysHint);
 
         var buttons = new Grid();
-        buttons.ColumnDefinitions.Add(new ColumnDefinition());
-        buttons.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(8) });
-        buttons.ColumnDefinitions.Add(new ColumnDefinition());
+        for (int i = 0; i < 5; i++) buttons.ColumnDefinitions.Add(new ColumnDefinition { Width = i % 2 == 1 ? new GridLength(8) : new GridLength(1, GridUnitType.Star) });
         for (int i = 0; i < 3; i++) buttons.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         void Put(Button b, int row, int col, int span = 1)
         {
             b.Margin = new Thickness(0, row == 0 ? 0 : 8, 0, 0);
+            b.RenderTransformOrigin = new Point(0.5, 0.5);
+            b.RenderTransform = new ScaleTransform(1, 1);
             Grid.SetRow(b, row);
             Grid.SetColumn(b, col);
             Grid.SetColumnSpan(b, span);
             buttons.Children.Add(b);
         }
-        Extend.Height = 40;
-        Put(Extend, 0, 0, 3);
-        Put(Auto, 1, 0);
+        Auto.Height = 42;
+        Put(Auto, 0, 0, 5);
+        Put(Extend, 1, 0);
         Put(Follow, 1, 2);
-        Put(Undo, 2, 0);
-        Put(Done, 2, 2);
+        Put(Undo, 1, 4);
+        Done.Height = 40;
+        Put(Done, 2, 0, 5);
         DockPanel.SetDock(buttons, Dock.Bottom);
         dock.Children.Add(buttons);
 
@@ -573,12 +853,12 @@ internal sealed class CapturePanel : Window
 
     private static ControlTemplate GripTemplate()
     {
-        var dots = new FrameworkElementFactory(typeof(System.Windows.Shapes.Path));
-        dots.SetValue(System.Windows.Shapes.Path.DataProperty, Geometry.Parse("M14,4 L4,14 M14,9 L9,14"));
-        dots.SetValue(System.Windows.Shapes.Shape.StrokeThicknessProperty, 1.6);
-        dots.SetValue(System.Windows.Shapes.Shape.StrokeStartLineCapProperty, PenLineCap.Round);
-        dots.SetValue(System.Windows.Shapes.Shape.StrokeEndLineCapProperty, PenLineCap.Round);
-        dots.SetResourceReference(System.Windows.Shapes.Shape.StrokeProperty, "Brush.Text3");
+        var dots = new FrameworkElementFactory(typeof(Path));
+        dots.SetValue(Path.DataProperty, Geometry.Parse("M14,4 L4,14 M14,9 L9,14"));
+        dots.SetValue(Shape.StrokeThicknessProperty, 1.6);
+        dots.SetValue(Shape.StrokeStartLineCapProperty, PenLineCap.Round);
+        dots.SetValue(Shape.StrokeEndLineCapProperty, PenLineCap.Round);
+        dots.SetResourceReference(Shape.StrokeProperty, "Brush.Text3");
         dots.SetValue(FrameworkElement.MarginProperty, new Thickness(2));
         var host = new FrameworkElementFactory(typeof(Border));
         host.SetValue(Border.BackgroundProperty, Brushes.Transparent);

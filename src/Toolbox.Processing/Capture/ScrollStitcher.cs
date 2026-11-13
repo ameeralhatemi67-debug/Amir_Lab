@@ -75,6 +75,13 @@ public sealed record ShiftMatch
     /// <summary>Height of the part that scrolls.</summary>
     public int Region { get; init; }
 
+    /// <summary>
+    /// Set when only part of the frame scrolls (<see cref="ShiftFinder.FindPart"/>): where that part
+    /// is in the frame. <see cref="Distance"/>, <see cref="Top"/>, <see cref="Bottom"/> and
+    /// <see cref="Region"/> are then measured inside it.
+    /// </summary>
+    public PartRect? Part { get; init; }
+
     public string Reason { get; init; } = "";
 }
 
@@ -85,7 +92,7 @@ public sealed record ShiftMatch
 /// upper part. Ported from the Python prototype in tools/LongshotPrototype, including its fixes for
 /// soft-edged sticky bars and look-alike rows (both found on real web pages).
 /// </summary>
-public static class ShiftFinder
+public static partial class ShiftFinder
 {
     public const float StaticTolerance = 1.5f;     // mean |diff| (0-255) under which a row is unchanged
     public const double MatchTolerance = 6.0;      // refuse when the best overlap is worse than this
@@ -437,7 +444,7 @@ public sealed class ScrollStitcher
         _maxUndo = maxUndo;
     }
 
-    public LongImage Image { get; }
+    public LongImage Image { get; private set; }
     public Frame Last { get; private set; }
     public GrayFrame LastGray { get; private set; }
     public int Steps { get; private set; }
@@ -469,6 +476,44 @@ public sealed class ScrollStitcher
         var (match, gray) = Match(frame, expected);
         if (match.Moved && match.Ok) Apply(frame, gray, match, info);
         return match;
+    }
+
+    /// <summary>
+    /// Like <see cref="Add"/>, but when the whole frame doesn't line up and this is still the first
+    /// part, it also looks for a part of the frame that scrolls (<see cref="ShiftFinder.FindPart"/>):
+    /// if one does, the capture is narrowed to it (<see cref="Narrow"/>) before the new rows go in.
+    /// </summary>
+    public ShiftMatch AddOrNarrow(Frame frame, double? expected = null, StepInfo info = default, bool keepRows = false)
+    {
+        var (match, gray) = Match(frame, expected);
+        if (match.Moved && match.Ok && (match.Worst <= ShiftFinder.WorstTolerance || Steps > 0))
+        {
+            Apply(frame, gray, match, info);
+            return match;
+        }
+        if (Steps == 0 && ShiftFinder.FindPart(LastGray, gray, expected, keepRows) is { Part: { } part } found)
+        {
+            Narrow(part);
+            Apply(frame.Crop(part), gray.Crop(part), found, info);
+            return found;
+        }
+        if (match.Moved && match.Ok) Apply(frame, gray, match, info);
+        return match;
+    }
+
+    /// <summary>
+    /// Only part of the frame scrolls: from now on only that part is captured. What was captured so
+    /// far (the first part) and the last frame are cut down to it; the frames that follow must be
+    /// cut the same way (or read from that part of the screen alone). Only before the second part.
+    /// </summary>
+    public void Narrow(PartRect part)
+    {
+        if (Steps != 0 || _history.Count != 0) throw new InvalidOperationException("Only the first part can be narrowed.");
+        if (part.IsWhole(Last.Width, Last.Height)) return;
+        var first = Last.Crop(part);
+        Image = new LongImage(first);
+        LastGray = LastGray.Crop(part);
+        Last = first;
     }
 
     /// <summary>

@@ -34,12 +34,18 @@ internal sealed class LongshotTool : ToolModule
 
     public override string Id => ToolId;
     public override string Name => Lang.T("Longshot", "اللقطة الطويلة");
-    public override string Summary => Lang.T("Scrolling screenshots. Press the shortcut, then extend the window in front downward to capture a whole page.", "لقطات شاشة طويلة. اضغط الاختصار ثم مدّ النافذة الأمامية إلى الأسفل لالتقاط الصفحة كاملة.");
+    public override string Summary => Lang.T("Scrolling screenshots of a whole page, a part that scrolls (a chat, a list, a panel) or any area. Press the shortcut, then Auto.", "لقطات شاشة طويلة لصفحة كاملة، أو لجزء يتمرّر (محادثة أو قائمة أو لوحة)، أو لأي منطقة. اضغط الاختصار ثم «تلقائي».");
     public override string Icon => "lap-longshot";
     public override IReadOnlyList<ToolCommand> Commands { get; }
 
     /// <summary>The last area captured (for "Capture the same area again").</summary>
     public PixelRect? LastArea { get; set; }
+
+    /// <summary>Where the wheel turned in the last capture (kept with <see cref="LastArea"/>).</summary>
+    public PixelPoint? LastAnchor { get; set; }
+
+    /// <summary>What kind of area the last capture covered.</summary>
+    public TargetKind LastKind { get; set; } = TargetKind.Region;
 
     protected override void OnStart() { } // nothing to load: a capture starts from scratch each time
 
@@ -50,7 +56,7 @@ internal sealed class LongshotTool : ToolModule
 
     private void CaptureSameArea()
     {
-        if (LastArea is { } area) LongshotCapture.Start(_host, this, area);
+        if (LastArea is { } area) LongshotCapture.Start(_host, this, new CaptureTarget(LastKind, area, LastAnchor is { } a && area.Contains(a) ? a : area.Center));
         else Capture();
     }
 
@@ -88,10 +94,16 @@ internal sealed class LongshotTool : ToolModule
 
         page.Section(Lang.T("Capturing", "الالتقاط"));
         page.Card();
+        page.Row(Lang.T("Start on", "البدء على"), SettingsPage.Choice(["pointer", "window"], s.StartOn, v => Edit(x => x.StartOn = v),
+                v => v == "pointer" ? Lang.T("What's under the pointer", "ما تحت المؤشر") : Lang.T("The window in front", "النافذة الأمامية")),
+            Lang.T("What's under the pointer: the part that scrolls where your pointer is (a chat, a list, a side panel), or the window if the whole page scrolls. The panel's Window, Scroll area and Region buttons switch at any time.",
+                   "ما تحت المؤشر: الجزء الذي يتمرّر حيث المؤشر (محادثة أو قائمة أو لوحة جانبية)، أو النافذة إن كانت الصفحة كلها تتمرّر. تبدّل أزرار «نافذة» و«منطقة تمرير» و«منطقة محددة» في اللوحة ذلك في أي وقت."));
         page.Row(Lang.T("When Longshot starts", "عند بدء اللقطة الطويلة"), SettingsPage.Choice(["wait", "auto", "follow"], s.AfterSelect, v => Edit(x => x.AfterSelect = v),
                 v => v switch { "wait" => Lang.T("Wait for me", "انتظرني"), "auto" => Lang.T("Auto", "تلقائي"), _ => Lang.T("Follow", "تتبّع") }),
-            Lang.T("It starts on the window in front. Wait for me: adjust the frame if needed, then press Extend. Auto: scrolls to the bottom by itself. Follow: you scroll, Longshot adds.",
-                   "تبدأ بالنافذة الأمامية. انتظرني: اضبط الإطار إن لزم ثم اضغط «مدّ». تلقائي: يمرّر حتى النهاية وحده. تتبّع: أنت تمرّر واللقطة تُضاف."));
+            Lang.T("Wait for me: adjust the frame if needed, then press Auto or Extend. Auto: scrolls to the end by itself. Follow: you scroll, Longshot adds.",
+                   "انتظرني: اضبط الإطار إن لزم ثم اضغط «تلقائي» أو «مدّ». تلقائي: يمرّر حتى النهاية وحده. تتبّع: أنت تمرّر واللقطة تُضاف."));
+        page.Toggle(Lang.T("Dim the rest of the screen", "تعتيم بقية الشاشة"), s.DimOutside, on => Edit(x => x.DimOutside = on),
+            Lang.T("Makes it plain what will be in the shot. Clicks and scrolling still go through.", "يوضح ما سيظهر في اللقطة. النقر والتمرير يعملان كالمعتاد."));
         page.Row(Lang.T("Scroll step", "خطوة التمرير"), SettingsPage.Choice(["small", "auto", "large"], s.ScrollStep, v => Edit(x => x.ScrollStep = v),
                 v => v switch { "small" => Lang.T("Small", "صغيرة"), "auto" => Lang.T("Automatic", "تلقائية"), _ => Lang.T("Large", "كبيرة") }),
             Lang.T("Smaller steps line up more reliably on busy pages; larger ones are faster.", "الخطوات الأصغر أدق في الصفحات المزدحمة، والأكبر أسرع."));
@@ -133,8 +145,10 @@ internal sealed class LongshotTool : ToolModule
         page.Card();
         page.Note(Lang.T("Sticky headers and footers (menus, cookie bars) are found automatically and kept once, at the top and bottom.",
             "تُكتشف الرؤوس والتذييلات الثابتة (القوائم وأشرطة ملفات تعريف الارتباط) تلقائيًا وتظهر مرة واحدة في الأعلى والأسفل."));
-        page.Note(Lang.T("Drag the frame's corners or edges to fit it to what you want, and its Move grip to move it. Leave the scrollbar out: its moving thumb would show up in every strip.",
-            "اسحب زوايا الإطار أو حوافه ليناسب ما تريد، ومقبض التحريك لنقله. اترك شريط التمرير خارجه، وإلا ظهر مقبضه المتحرك في كل شريحة."));
+        page.Note(Lang.T("When only part of the window scrolls (a chat beside a sidebar, a list in a page that stays put), Longshot finds that part and captures just it. The round marker in the frame shows where it scrolls: drag it onto another part to capture that instead.",
+            "عندما يتمرّر جزء من النافذة فقط (محادثة بجانب شريط جانبي، أو قائمة داخل صفحة ثابتة)، تجد اللقطة الطويلة ذلك الجزء وتلتقطه وحده. تُظهر العلامة الدائرية في الإطار مكان التمرير: اسحبها فوق جزء آخر لالتقاطه بدلًا منه."));
+        page.Note(Lang.T("Drag the frame's corners or edges to fit it to what you want, and its Move grip to move it. A moving scrollbar thumb at the edge is left out by itself.",
+            "اسحب زوايا الإطار أو حوافه ليناسب ما تريد، ومقبض التحريك لنقله. يُستبعد مقبض شريط التمرير المتحرك على الحافة تلقائيًا."));
         page.Note(Lang.T("Videos, animations and carousels inside the frame can stop it. Resize the frame to leave them out.",
             "قد توقف مقاطع الفيديو والرسوم المتحركة والعروض الدوّارة داخل الإطار عملية الالتقاط. غيّر حجم الإطار لتتجنّبها."));
         page.Note(Lang.T("Longshot's panel and frame never appear in your screenshots, and nothing leaves this computer.",

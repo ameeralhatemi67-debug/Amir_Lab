@@ -210,6 +210,44 @@ Product direction lives in [`sead_idea.md`](../sead_idea.md) (the seed). This fi
     - **Extend lines up more often:** how far one wheel notch moves the page is now kept when the step is halved (it used to be forgotten, so the smaller step was checked with no expected distance and failed on small changes such as hover effects) and carried over after Refresh or a new area. A brand-new capture starts with half a notch when the frame is shorter than 900 px, and tries a whole notch before saying "Nothing moved" (some apps only scroll by whole notches).
   - **Live preview of the whole capture:** the session keeps a shrunken copy of the whole long image, updated only for new rows (`LongImage.Overview`), so the preview shows everything captured so far, scrolls smoothly to each new part and makes it glow for a moment. An "Auto" or "Following" badge shows while Longshot is scrolling.
 
+## Longshot: parts that scroll, targets and the picker (13 Nov 2026)
+
+- **Owner's report:** Longshot often did nothing, most of all on "a section that can be scrolled while the page itself can't". The owner asked for it to be fully improved: page captures (the default), a specific area, a scrollable section, smoother controls, a clearer view of what is being captured and a better flow.
+- **Why it failed (from the owner's own log that day, every try of 13 Nov):**
+  - The wheel always turned in the middle of the frame. When the part that scrolls wasn't there, nothing moved ("Nothing moved").
+  - Matching assumed the whole width of the frame moves. A fixed sidebar, the page around a scroll box, or the box's own scrollbar thumb stays put while the content moves, so every step was refused ("Part of it doesn't line up", worst stripe 8 to 35).
+  - Follow used the same matching, so it failed the same way ("Lost track").
+- **Finding the part that scrolls** (`ShiftFinder.FindPart`, `Toolbox.Processing/Capture/ScrollPart.cs`), tried only when the whole frame doesn't line up and only on the first step:
+  1. A coarse map of what changed; the busiest run of columns is the core (a caret or a small spinner elsewhere is too quiet to count).
+  2. The core's shift, then the rows where the core really lines up at that shift. A popup, a toast or a title bar repainting can change rows that have nothing to do with scrolling (Edge's translate offer did, in the live test).
+  3. The columns that move by exactly that shift. The core's edges that don't (a scrollbar thumb) are trimmed. A band inside that moves on its own (a video) refuses the part rather than cutting it in two. The columns beside it that fit (blank margins) are taken in, up to a border: a flat line of another colour than the part's background (the median of its pixels).
+  4. The rows the same way, outwards from the rows that line up. For a picked scroll area or a drawn region, the still rows right above and below are kept as its sticky header and footer. When only a thin strip was cut off the side (a page's own scrollbar), it is still the whole page and keeps its header and footer, as before.
+  5. The part is accepted only if the ordinary matching then lines it up.
+- **Narrowing:** when a part is found, the capture (one part so far) is cut down to it, the screen is read from the part alone from then on, and the frame glides onto it, so it's plain what is captured. Narrowing happens only before the second part goes in.
+- **The scroll point:** the wheel turns at a point in the frame: where the pointer was when Longshot started, if it was inside. The frame shows it as a round marker, which can be dragged onto another part. Its middle is see-through, so the wheel still reaches the app. If one of Amir Lap's own windows is at that point (the panel inside a full-screen frame, say), a spot just beside it is used, since the wheel would otherwise go to that window.
+  - If nothing moves at the scroll point on the very first step, four other spots are tried (the middle, left, right and lower middle of the frame); if none moves, the marker goes back and the panel says so.
+- **Targets:** Window, Scroll area and Region at the top of the panel.
+  - **Start:** with "Start on: What's under the pointer" (the default), the frame appears on the window at once, then glides onto the scroll area under the pointer if UI Automation names one that isn't the whole window. The lookup gives up after 0.9 s and asks a browser twice, because browsers build their accessibility tree when first asked.
+  - **UI Automation:** the raw view is walked, because browsers expose a scrolling `<div>` as a plain container that the control view leaves out (Edge, measured).
+  - **Scroll area (picking):** the screen dims and whatever scrolls under the pointer lights up (or the window, if nothing there scrolls); a click takes it, and dragging draws a region instead. Region draws only. Esc or a right-click goes back. Clicks are kept from the app underneath by low-level mouse and keyboard hooks that exist only while picking. Clicks on the Longshot panel still go through.
+  - **Window** goes back to the window that was in front when the capture started.
+- **Seeing what's captured:**
+  - The rest of the screen dims, with a rounded hole on the capture. It is a plain Win32 window (a region and one alpha value), so moving the hole costs nothing on large or multiple monitors. It is click-through and left out of captures. It can be switched off ("Dim the rest of the screen").
+  - The frame's label says what it is ("Scroll area · 547 × 848").
+  - The glow breathes while Auto runs, a ring spreads from the marker each time the wheel turns, and the rows just added glow at the bottom of the frame.
+- **Controls:**
+  - Auto is the main button until the end is reached; then Done is.
+  - Extend, Follow and Undo sit in one row under Auto.
+  - Pressing the capture shortcut again saves (or leaves picking).
+  - The session's messages are in English and Arabic like the rest of the panel. Icons keep their shape in Arabic, except Undo's arrow.
+  - Cancel drops a finish already on its way, so a cancelled capture is never saved.
+- **Live check (13 Nov, Edge at 125% scaling, the real wheel and screen):** each page row carries a barcode of its number, read back from the result.
+  - A chat in a page that can't scroll, with the wheel over the chat: narrowed to the chat, all 120 rows, once each, in order.
+  - A documentation page beside a fixed sidebar and top bar: narrowed to the content, 120/120.
+  - A plain long page: 120/120 (its moving scrollbar strip trimmed).
+  - Not verified live: the run where the wheel starts over the sidebar, and capturing the scroll area UI Automation found, because the test's Edge window didn't come to the front. Both are covered on simulated screens.
+  - The test now refuses to run unless Edge is the window under every point it scrolls.
+
 ## App icon (8 Nov 2026)
 
 - **"Tool tiles", chosen by the owner** from three options (tool tiles, an AL monogram, a lab flask). It shows four tiles on an accent square:

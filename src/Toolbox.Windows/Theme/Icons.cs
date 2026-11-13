@@ -57,6 +57,10 @@ internal static class Icons
         ["lap-play"] = "M7.5,5 L18.5,12 L7.5,19 Z",
         ["lap-stop"] = RoundRect(6.5, 6.5, 11, 11, 2.5),
         ["lap-follow"] = Circle(12, 12, 8.5) + Circle(12, 12, 3),
+        // Longshot's targets: a window, a scroll area inside it (with its scrollbar), a region drawn by hand.
+        ["lap-window"] = RoundRect(3.5, 4.5, 17, 15, 2.5) + " M3.5,8.5 H20.5 M6.5,6.5 V6.6 M9,6.5 V6.6",
+        ["lap-scrollarea"] = RoundRect(3.5, 3.5, 17, 17, 2.5) + " M16.5,7 V17 M14.8,8.7 L16.5,7 L18.2,8.7 M14.8,15.3 L16.5,17 L18.2,15.3 M7,8 H12 M7,12 H12 M7,16 H11",
+        ["lap-region"] = "M4,8 V5.5 A1.5,1.5 0 0 1 5.5,4 H8 M16,4 H18.5 A1.5,1.5 0 0 1 20,5.5 V8 M20,16 V18.5 A1.5,1.5 0 0 1 18.5,20 H16 M8,20 H5.5 A1.5,1.5 0 0 1 4,18.5 V16 M11,4 H13 M11,20 H13 M4,11 V13 M20,11 V13",
         ["lap-undo"] = "M9,14 L4,9 L9,4 M4,9 H14 A6,6 0 0 1 14,21 H11",
         ["lap-share"] = Circle(17.5, 5.5, 2.6) + Circle(6.5, 12, 2.6) + Circle(17.5, 18.5, 2.6) + " M8.8,10.7 L15.2,6.8 M8.8,13.3 L15.2,17.2",
         // Pulse and its tiles (generic marks, not the services' logos).

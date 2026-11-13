@@ -13,9 +13,37 @@ internal readonly record struct PixelRect(int X, int Y, int Width, int Height)
 
     public bool Overlaps(PixelRect o) => X < o.Right && o.X < Right && Y < o.Bottom && o.Y < Bottom;
 
+    public bool Contains(PixelPoint p) => p.X >= X && p.X < Right && p.Y >= Y && p.Y < Bottom;
+
+    public PixelPoint Center => new(CenterX, CenterY);
+
     public PixelRect Inflate(int by) => new(X - by, Y - by, Width + 2 * by, Height + 2 * by);
 
+    /// <summary>The part of this rectangle inside <paramref name="o"/> (empty when they don't meet).</summary>
+    public PixelRect Intersect(PixelRect o)
+    {
+        int l = Math.Max(X, o.X), t = Math.Max(Y, o.Y), r = Math.Min(Right, o.Right), b = Math.Min(Bottom, o.Bottom);
+        return r > l && b > t ? new PixelRect(l, t, r - l, b - t) : default;
+    }
+
+    /// <summary>The point moved inside this rectangle, at least <paramref name="margin"/> px from its edges where it fits.</summary>
+    public PixelPoint Clamp(PixelPoint p, int margin = 0)
+    {
+        int mx = Math.Min(margin, Width / 2), my = Math.Min(margin, Height / 2);
+        return new(Math.Clamp(p.X, X + mx, Math.Max(X + mx, Right - 1 - mx)), Math.Clamp(p.Y, Y + my, Math.Max(Y + my, Bottom - 1 - my)));
+    }
+
+    public bool IsEmpty => Width <= 0 || Height <= 0;
+
     public static PixelRect From(Interop.Native.RECT r) => new(r.Left, r.Top, r.Width, r.Height);
+}
+
+/// <summary>A point on the screen in physical pixels.</summary>
+internal readonly record struct PixelPoint(int X, int Y)
+{
+    public static PixelPoint From(Interop.Native.POINT p) => new(p.X, p.Y);
+
+    public Interop.Native.POINT ToPoint() => new() { X = X, Y = Y };
 }
 
 /// <summary>Where frames come from (the real screen, or a simulated page in tests).</summary>
@@ -24,11 +52,12 @@ internal interface IScreenSource : IDisposable
     Frame Grab();
 }
 
-/// <summary>What scrolls the content under the box (the mouse wheel, or a simulation in tests).</summary>
+/// <summary>What scrolls the content (the mouse wheel, or a simulation in tests).</summary>
 internal interface IScroller
 {
+    /// <param name="at">Where on the screen to turn the wheel: what is under it scrolls.</param>
     /// <param name="unit">Wheel delta per notch: 120 is one notch of a normal mouse wheel.</param>
-    void Scroll(int notches, bool down, int unit);
+    void Scroll(PixelPoint at, int notches, bool down, int unit);
 }
 
 /// <summary>
@@ -115,10 +144,12 @@ internal sealed partial class GdiScreenSource : IScreenSource
 }
 
 /// <summary>
-/// Scrolls the window under the box with real mouse-wheel input: the pointer is moved to the middle
-/// of the box, the wheel turned, and the pointer put back (so hover effects aren't captured).
+/// Scrolls with real mouse-wheel input: the pointer is moved to the scroll point, the wheel turned,
+/// and the pointer put back (so hover effects aren't captured). If one of Amir Lap's own windows is
+/// at that point (the panel, a grip on the frame), the wheel would go to it, so a spot just beside
+/// it is used instead.
 /// </summary>
-internal sealed partial class WheelScroller(PixelRect rect) : IScroller
+internal sealed partial class WheelScroller : IScroller
 {
     private const uint MOUSEEVENTF_WHEEL = 0x0800;
 
@@ -126,10 +157,39 @@ internal sealed partial class WheelScroller(PixelRect rect) : IScroller
     [return: MarshalAs(UnmanagedType.Bool)]
     private static partial bool SetCursorPos(int x, int y);
 
-    public void Scroll(int notches, bool down, int unit)
+    [LibraryImport("user32.dll")]
+    private static partial IntPtr WindowFromPoint(Interop.Native.POINT point);
+
+    [LibraryImport("user32.dll")]
+    private static partial uint GetWindowThreadProcessId(IntPtr hwnd, out uint processId);
+
+    /// <summary>True when the window at the point belongs to Amir Lap (fully see-through parts don't count).</summary>
+    internal static bool IsOurs(PixelPoint p)
+    {
+        var hwnd = WindowFromPoint(p.ToPoint());
+        if (hwnd == IntPtr.Zero) return false;
+        GetWindowThreadProcessId(hwnd, out uint pid);
+        return pid == (uint)Environment.ProcessId;
+    }
+
+    /// <summary>The point, or the nearest spot around it that isn't covered by one of our windows.</summary>
+    internal static PixelPoint Clear(PixelPoint at)
+    {
+        if (!IsOurs(at)) return at;
+        foreach (int r in new[] { 28, 56, 90 })
+            foreach (var (dx, dy) in new[] { (0, r), (0, -r), (r, 0), (-r, 0) })
+            {
+                var p = new PixelPoint(at.X + dx, at.Y + dy);
+                if (!IsOurs(p)) return p;
+            }
+        return at;
+    }
+
+    public void Scroll(PixelPoint at, int notches, bool down, int unit)
     {
         Interop.Native.GetCursorPos(out var old);
-        SetCursorPos(rect.CenterX, rect.CenterY);
+        at = Clear(at);
+        SetCursorPos(at.X, at.Y);
         Thread.Sleep(30);
         var input = new Interop.Native.INPUT[1];
         input[0].type = Interop.Native.INPUT_MOUSE;
@@ -179,51 +239,4 @@ internal static partial class CaptureWindows
         Interop.Native.SetWindowPos(hwnd, Interop.Native.HWND_TOPMOST, r.X, r.Y, r.Width, r.Height, Interop.Native.SWP_NOACTIVATE | Interop.Native.SWP_SHOWWINDOW);
 
     public static bool EscapePressed() => (Interop.Native.GetAsyncKeyState(Interop.Native.VK_ESCAPE) & 0x8000) != 0;
-}
-
-/// <summary>
-/// Where a capture starts: the window in front (its visible frame, kept inside its screen's work
-/// area), or that screen's work area when the desktop, the taskbar or Amir Lap itself is in front.
-/// </summary>
-internal static partial class StartArea
-{
-    private const int DWMWA_EXTENDED_FRAME_BOUNDS = 9;
-
-    [LibraryImport("user32.dll")]
-    private static partial IntPtr GetForegroundWindow();
-
-    [LibraryImport("user32.dll")]
-    private static partial uint GetWindowThreadProcessId(IntPtr hwnd, out uint processId);
-
-    [LibraryImport("user32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static partial bool IsIconic(IntPtr hwnd);
-
-    [LibraryImport("user32.dll", EntryPoint = "GetClassNameW", StringMarshalling = StringMarshalling.Utf16)]
-    private static partial int GetClassName(IntPtr hwnd, [Out] char[] name, int max);
-
-    [LibraryImport("dwmapi.dll")]
-    private static partial int DwmGetWindowAttribute(IntPtr hwnd, int attribute, out Interop.Native.RECT value, int size);
-
-    private static readonly HashSet<string> ShellClasses = new(StringComparer.Ordinal) { "Progman", "WorkerW", "Shell_TrayWnd", "Shell_SecondaryTrayWnd" };
-
-    public static PixelRect Find()
-    {
-        var cursor = Interop.ScreenGeometry.CursorPosition();
-        var fallback = PixelRect.From(Interop.ScreenGeometry.MonitorAt(cursor).WorkArea);
-        var hwnd = GetForegroundWindow();
-        if (hwnd == IntPtr.Zero || IsIconic(hwnd)) return fallback;
-        GetWindowThreadProcessId(hwnd, out uint pid);
-        if (pid == (uint)Environment.ProcessId) return fallback;
-        var name = new char[64];
-        int length = GetClassName(hwnd, name, name.Length);
-        if (length > 0 && ShellClasses.Contains(new string(name, 0, length))) return fallback;
-        if (DwmGetWindowAttribute(hwnd, DWMWA_EXTENDED_FRAME_BOUNDS, out var bounds, Marshal.SizeOf<Interop.Native.RECT>()) != 0) return fallback;
-
-        var window = PixelRect.From(bounds);
-        var work = PixelRect.From(Interop.ScreenGeometry.MonitorAt(new Interop.Native.POINT { X = window.CenterX, Y = window.CenterY }).WorkArea);
-        int l = Math.Max(window.X, work.X), t = Math.Max(window.Y, work.Y);
-        int r = Math.Min(window.Right, work.Right), b = Math.Min(window.Bottom, work.Bottom);
-        return r - l >= 160 && b - t >= 120 ? new PixelRect(l, t, r - l, b - t) : fallback;
-    }
 }
