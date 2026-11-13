@@ -70,6 +70,18 @@ _Last updated: 8 Nov 2026 — Amir Lap phases 1 and 2 complete: the multi-tool s
 | Recording the real screen (pointer, click rings, speed at 30/60 fps), Region picking, the dimming, playback in the result window | **Partial** | Built. They need the real screen, mouse and media player: a live try by the owner. |
 | Sound | **Not started** | Deferred; the panel says no sound is recorded. |
 
+## Video blur (13 Nov 2026)
+
+| Capability | State | Evidence / notes |
+|---|---|---|
+| Boxes as keys (straight between keys, held outside them), thinning followed keys, hiding a box in a frame (Blur, Pixelate, Solid; no letter shapes left) | **Working** | `VideoBlurTests` (Processing). |
+| Following a box: scrolling text, a dragged window, sliding off the edge, sliding under a fixed header, changed content (box stays), plain boxes | **Working** | `VideoBlurTests` on made-up frames; `VideoBlurPipelineTests` follows text through the decoded frames of a real MP4 (compression noise included). |
+| Frame reader: exact frames, upright, decoder padding cropped, frame rate, length, seeking | **Working** | `VideoBlurPipelineTests` on MP4s made by the recorder. |
+| Saving the blurred copy (only while a box is on; the rest unchanged; cancelling leaves nothing) | **Working** | `VideoBlurPipelineTests` reads the copy back frame by frame. |
+| The editor: draw, follow, move (keys), find personal info over the whole video (forward and back), undo, save; light/dark | **Working** | `HomeWindowTests.CheckVideoBlur` shows the real window off-screen on a real recording, with stand-in text recognition; snapshots reviewed. |
+| Real OCR on video frames, real mouse use, long or 4K videos, videos with sound | **Partial** | Built. They need the owner's live try (recognition accuracy and speed vary). |
+| Sound in the blurred copy | **Not started** | The editor says when the copy will have no sound. |
+
 ## Pulse (tool #3)
 
 | Capability | State | Evidence / notes |

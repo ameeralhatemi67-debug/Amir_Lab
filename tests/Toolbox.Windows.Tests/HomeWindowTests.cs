@@ -107,6 +107,7 @@ public partial class HomeWindowTests
             CheckLongshotFlow(host, longshot);
             CheckLongshotTargets(host, longshot);
             CheckVideoFlow(host, longshot);
+            CheckVideoBlur(snapshots, app);
             app.Shutdown();
         }
         finally

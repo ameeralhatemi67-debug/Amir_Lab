@@ -73,14 +73,14 @@ public partial class HomeWindowTests
         result.Content = null;
         var resultFrame = new Border { Child = resultContent };
         resultFrame.SetResourceReference(Border.BackgroundProperty, "Brush.SurfaceSolid");
-        Layout(resultFrame, 820, 700);
+        Layout(resultFrame, 920, 700);
         Assert.True(result.Trim.ActualWidth > 600, "the trim bar runs the width of the window");
         // Dragging the start handle to the middle of the bar keeps the second half.
         result.Trim.DragHandle(start: true, result.Trim.ActualWidth / 2);
         Assert.InRange(result.Trim.Start.TotalSeconds, 5.5, 6.9);
         result.Trim.DragHandle(start: true, result.Trim.ActualWidth * 0.17);
-        Layout(resultFrame, 820, 700);
-        Save(snapshots, resultFrame, 820, 700, $"longshot-video-result-{theme}");
+        Layout(resultFrame, 920, 700);
+        Save(snapshots, resultFrame, 920, 700, $"longshot-video-result-{theme}");
         result.Close();
     }
 

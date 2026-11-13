@@ -363,7 +363,7 @@ This is idea 2 of the owner's list, for photos first; video follows. The image e
   - **One hit each:** a card number is never also a phone number.
   - **The list:** each finding is listed dotted out ("am•••@example.com"), checked by default, and drawn as an amber dashed box. "Hide these N" hides them in one undo step; unchecking leaves one visible.
   - **Honest note:** recognition can miss handwriting and small print, so the panel asks for a check by eye.
-- **Not in this round:** blur for video (the plan: keyframes as the data, an "anchor" that follows the content as the interface, tracking by Longshot's shift finder).
+- **Not in this round:** blur for video. It came next, as planned: keyframes as the data and an "anchor" that follows the content as the interface (see "Video blur").
 
 ## Longshot video (13 Nov 2026)
 
@@ -384,8 +384,40 @@ Idea 1 of the owner's list: Longshot also records video of an area, and only tha
 - **Saved to** Videos\Screen Recordings (where Windows' Snipping Tool keeps recordings) as "Longshot video 2026-11-13 214512.mp4", never overwriting. Settings has the folder and the four options.
 - **Not in this round:**
   - **Sound** (microphone and system sound): the panel says so.
-  - **Blur for video:** next, as planned (keyframes as the data, an anchor that follows as the interface).
+  - **Blur for video:** built straight after (see "Video blur").
   - **GDI speed** at 60 fps on a large area hasn't been measured on the owner's PC yet. The recorder drops frames rather than drift if it can't keep up, and logs how many.
+
+## Video blur (13 Nov 2026)
+
+The second half of idea 2: blur for videos. As agreed, **keys are the data and an anchor that follows is the interface.**
+
+- **Where it opens:** Longshot's video result window (**Blur…**, **Hide personal info**) and Preview's video toolbar (the same two). The editor works on any video Windows can read, not only Longshot's.
+- **The editor (`VideoBlurWindow`):**
+  - The picture is the frame exactly as it will be saved: the boxes are hidden in it with the same code the save uses (`FrameBlur`), not a preview effect.
+  - **Draw a box** on a paused frame: it is on from that moment to the end.
+  - **Follow it** keeps it on what is under it from that frame on, and the picture runs along while it follows.
+  - **Move or resize a box** at any moment: that sets a key there; between keys the box moves in a straight line.
+  - **Starts here / Ends here**, and dragging the ends of its lane in the timeline, set when it is on.
+  - Blur, Pixelate or Solid per box. Undo and redo, frame steps, Space, Delete, F, Ctrl+S.
+  - Closing with unsaved boxes asks once, in the status line.
+- **Keys are the data (`BlurTrack`):** a box is a list of (time, rectangle) keys plus when it is on. Following writes a key per frame, then thins them to where the movement changes (Ramer–Douglas–Peucker, 1 px). So a followed box and a hand-placed one are the same thing and can be fixed the same way.
+- **Following (`BoxFollower`):**
+  - Screen content mostly scrolls or slides as a whole, so this is Longshot's shift-finding idea in two directions for one box. The box's picture in the last frame is slid over the new frame, first on shrunk grey copies over a wide area, then pixel by pixel around the best six places.
+  - When look-alikes tie, it prefers the motion it saw just before.
+  - **Rules learnt on the way, each with a test:**
+    - A match on a blank sliver at the picture's edge counts for nothing.
+    - Any line of text half-matches any other line (their blank rows line up), so a sudden jump elsewhere must match twice as well as a step along the motion.
+    - Content sliding off the edge is followed until it is gone.
+    - Content sliding under a header that stays put is followed by the rows still showing. The rows that match must have *moved*, or the header itself would pass for the content. Once it's under, the box ends there.
+  - **When it loses the content** (typing, a new page), the box stays where it was: something private is never uncovered because the follower lost it.
+- **Find personal info (whole video):** the text is read about once a second, with Windows OCR and the photo tool's `SensitiveText`.
+  - **Each new find** gets a box, labelled with what it is, dotted out ("E-mail am•••@example.com").
+  - **Forward:** the box is followed until the find leaves. If it changes in place, the box is kept until the next reading, which finds it again if it's still there.
+  - **Backward:** it is also followed back through the frames since the last reading (kept as grey copies), so it is hidden from the first frame it shows, not from when it happened to be read.
+  - **Skips** finds already under a box.
+- **Frames:** `VideoFrameReader` uses Windows' Media Foundation source reader, through its COM function tables (no interop library). It reads exact frames with their times, crops the padding rows the decoder adds (a 270-px video decodes as 272), and seeks to the key frame before a time, then reads forward. The WinRT media classes can't hand out every frame quickly, and the following and saving need every one.
+- **Saving (`VideoBlurRenderer`):** every frame is read, its boxes hidden, and the frame encoded by the same H.264 path as the recorder. The result is "… blurred.mp4" beside the original, never overwriting. A cancelled or failed save leaves nothing.
+- **Not in this round:** sound is not carried into the blurred copy (the editor says so when the video has sound). There is no clicking on words, as the photo tool has. Following can't track content that turns or zooms (screen content rarely does).
 
 ## App icon (8 Nov 2026)
 

@@ -34,6 +34,7 @@ internal enum ViewerStart
 internal sealed partial class ViewerWindow : GlassWindow
 {
     private static readonly ViewerMemory Memory = new();
+    private static readonly HashSet<string> MovingPictureTypes = new(StringComparer.OrdinalIgnoreCase) { ".mp4", ".m4v", ".mov", ".wmv", ".avi", ".mkv", ".webm" };
     private static readonly HashSet<string> VideoTypes = new(StringComparer.OrdinalIgnoreCase) { ".mp4", ".m4v", ".mov", ".wmv", ".avi", ".mkv", ".webm", ".mp3", ".wav", ".m4a", ".wma", ".flac", ".aac", ".ogg" };
     private static readonly HashSet<string> TextTypes = new(StringComparer.OrdinalIgnoreCase) { ".txt", ".md", ".markdown", ".csv", ".tsv", ".json", ".xml", ".log", ".ini", ".cfg", ".yaml", ".yml", ".toml", ".cs", ".js", ".ts", ".tsx", ".jsx", ".py", ".java", ".c", ".cpp", ".h", ".css", ".scss", ".html", ".htm", ".sql", ".ps1", ".sh", ".bat", ".cmd", ".astro", ".vue", ".go", ".rs", ".kt", ".swift", ".srt", ".vtt" };
 
@@ -233,6 +234,7 @@ internal sealed partial class ViewerWindow : GlassWindow
                 _content.Content = _media;
                 _media.Load(path);
                 _subtitle.Text = $"{_kindLabel} · {size}";
+                if (MovingPictureTypes.Contains(ext)) _toolbar.Content = VideoToolbar();
                 SetEdit(null, false);
             }
             else if (probed.Kind == FileKind.Text || TextTypes.Contains(ext))
@@ -336,6 +338,20 @@ internal sealed partial class ViewerWindow : GlassWindow
         bar.Children.Add(IconButton("scan", Lang.T("Find and hide personal info", "البحث عن المعلومات الشخصية وإخفاؤها"), () => { _dispatcher.Editors?.OpenBlur(Path, true, ScreenGeometry.CursorPosition()); Close(); }));
         ShowZoom();
         return bar;
+    }
+
+    /// <summary>Videos: blur parts of it, or find personal info in it (Longshot's video blur editor).</summary>
+    private UIElement VideoToolbar()
+    {
+        var bar = new WrapPanel();
+        bar.Children.Add(IconButton("eye-off", Lang.T("Blur or hide parts of it", "تمويه أجزاء منه أو إخفاؤها"), () => OpenVideoBlur(false)));
+        bar.Children.Add(IconButton("scan", Lang.T("Find and hide personal info", "البحث عن المعلومات الشخصية وإخفاؤها"), () => OpenVideoBlur(true)));
+        return bar;
+    }
+
+    private void OpenVideoBlur(bool findPersonalInfo)
+    {
+        if (Longshot.Video.VideoBlurWindow.Open(Path, findPersonalInfo) is not null) Close();
     }
 
     private UIElement TextToolbar()

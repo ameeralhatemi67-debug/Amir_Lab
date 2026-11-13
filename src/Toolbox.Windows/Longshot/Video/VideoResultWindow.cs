@@ -43,7 +43,7 @@ internal sealed class VideoResultWindow : GlassWindow
         _duration = result.Duration;
         Title = $"Longshot video · {result.Width} × {result.Height}";
         Resizable = true;
-        Width = 820;
+        Width = 920;
         MinWidth = 600;
         MinHeight = 460;
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
@@ -108,6 +108,12 @@ internal sealed class VideoResultWindow : GlassWindow
         _saveGif = SettingsPage.Button(Lang.T("Save as GIF", "حفظ بصيغة GIF"), () => _ = SaveGif());
         _saveGif.ToolTip = Lang.T("A looping GIF of the part kept, up to 800 px wide: for chats and READMEs", "صورة GIF متكررة للجزء المحتفَظ به بعرض حتى 800 بكسل: للمحادثات وملفات README");
         Add(_saveGif);
+        var blur = SettingsPage.Button(Lang.T("Blur…", "تمويه…"), () => OpenBlur(false));
+        blur.ToolTip = Lang.T("Hide parts of it: draw a box and it follows what's under it as it moves. Saves a new copy.", "إخفاء أجزاء منه: ارسم صندوقًا فيتبع ما تحته وهو يتحرك. يحفظ نسخة جديدة.");
+        Add(blur);
+        var personal = SettingsPage.Button(Lang.T("Hide personal info", "إخفاء المعلومات الشخصية"), () => OpenBlur(true));
+        personal.ToolTip = Lang.T("Reads the video's text and hides e-mails, phone and card numbers, IBANs, IP addresses and keys from where they appear.", "يقرأ نص الفيديو ويخفي البريد وأرقام الهواتف والبطاقات وIBAN وعناوين IP والمفاتيح من أول ظهورها.");
+        Add(personal);
         Add(SettingsPage.Button(Lang.T("Open", "فتح"), () => Process.Start(new ProcessStartInfo(_lastSaved) { UseShellExecute = true })));
         Add(SettingsPage.Button(Lang.T("Show in folder", "إظهار في المجلد"), () => Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{_lastSaved}\"") { UseShellExecute = true })));
         Grid.SetRow(bar, 4);
@@ -330,6 +336,14 @@ internal sealed class VideoResultWindow : GlassWindow
     }
 
     private void Say(string text) => _sub.Text = text;
+
+    /// <summary>Blur… and Hide personal info: the video blur editor on this recording (the trimmed copy, if one was just saved).</summary>
+    private void OpenBlur(bool findPersonalInfo)
+    {
+        var path = _lastSaved.EndsWith(".mp4", StringComparison.OrdinalIgnoreCase) ? _lastSaved : _result.Path;
+        Pause();
+        if (VideoBlurWindow.Open(path, findPersonalInfo) is not null) Close();
+    }
 }
 
 /// <summary>
