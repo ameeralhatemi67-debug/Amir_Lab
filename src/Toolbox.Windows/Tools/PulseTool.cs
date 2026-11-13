@@ -31,7 +31,7 @@ internal sealed partial class PulseTool : ToolModule
     private NoteWindow? _note;
     private readonly DispatcherTimer _clock = new() { Interval = TimeSpan.FromSeconds(1) };
     private DateTimeOffset? _timerEnds;
-    private string? _lastColour;
+    private ColourWindow? _colours;
     private string _pulseKey = "";
     private double _cpu;
 
@@ -103,6 +103,7 @@ internal sealed partial class PulseTool : ToolModule
         _dock?.Close();
         _dock = null;
         _note?.Close();
+        _colours?.Close();
     }
 
     /// <summary>The Dashboard's "Show dock": brings the dock back if it was hidden and slides it out.</summary>
@@ -137,6 +138,9 @@ internal sealed partial class PulseTool : ToolModule
             _dock?.Rebuild();
         }
         _monitor?.Refresh();
+        // The history size or saved colours may have changed on the settings page (later, so a
+        // click in the colour window that saved them has finished first).
+        if (_colours is { } w) w.Dispatcher.BeginInvoke(w.RenderLists);
     });
 
     // ---- what the tiles show ---------------------------------------------------------------------
@@ -305,15 +309,7 @@ internal sealed partial class PulseTool : ToolModule
                 Foreground.Activate(_note);
                 break;
             case PulseTiles.Colour:
-                var picker = new ColourPicker();
-                picker.Picked += hex =>
-                {
-                    _lastColour = hex;
-                    try { Clipboard.SetText(hex); } catch (System.Runtime.InteropServices.COMException) { }
-                    var c = (Color)ColorConverter.ConvertFromString(hex);
-                    PulseToast.Show(c, "lap-colour", Lang.T($"Copied {hex}", $"نُسخ {hex}"), Lang.T("Paste it anywhere with Ctrl+V.", "الصقه في أي مكان باستخدام Ctrl+V."));
-                };
-                picker.Show();
+                PickColour();
                 break;
             case PulseTiles.Folder:
                 PulseLaunch.Open(FolderPath);
@@ -329,6 +325,42 @@ internal sealed partial class PulseTool : ToolModule
                 App.ShowHome(ToolId);
                 break;
         }
+    }
+
+    /// <summary>
+    /// The Colour tile: pick from the screen. Basic copies the HEX code and says so; Pro (or a
+    /// Shift+click, or while the colour window is open) copies the chosen code and shows the colour
+    /// window beside the pick. Every pick goes into the history.
+    /// </summary>
+    private void PickColour()
+    {
+        bool pro = S.ColourMode == "pro";
+        bool windowOpen = _colours is { IsVisible: true };
+        _colours?.Hide(); // so the window is never in the way of what is picked
+        var picker = new ColourPicker(pro);
+        picker.Picked += (colour, shift) => OnColourPicked(colour, pro || shift || windowOpen, picker.PickedAt);
+        picker.Cancelled += () => { if (windowOpen) _colours?.Show(); };
+        picker.Show();
+    }
+
+    private void OnColourPicked(Rgb colour, bool pro, Longshot.PixelPoint at)
+    {
+        Save(p => p.ColourHistory = Colours.Remember(p.ColourHistory, colour, Colours.HistorySize(p.ColourHistorySize)));
+        if (!pro)
+        {
+            try { Clipboard.SetText(colour.Hex); } catch (System.Runtime.InteropServices.COMException) { }
+            PulseToast.Show(Color.FromRgb(colour.R, colour.G, colour.B), "lap-colour", Lang.T($"Copied {colour.Hex}", $"نُسخ {colour.Hex}"), Lang.T("Paste it anywhere with Ctrl+V.", "الصقه في أي مكان باستخدام Ctrl+V."));
+            return;
+        }
+        string? copied = Colours.Formats.Contains(S.ColourCopy) ? S.ColourCopy : Colours.Hex;
+        try { Clipboard.SetText(Colours.Format(colour, copied)); }
+        catch (System.Runtime.InteropServices.COMException) { copied = null; }
+        if (_colours is null)
+        {
+            _colours = new ColourWindow(() => _host.Settings.Current.Pulse, Save, PickColour);
+            _colours.Closed += (_, _) => _colours = null;
+        }
+        _colours.ShowPicked(colour, at, copied);
     }
 
     private string FolderPath => S.FolderPath is { Length: > 0 } f && Directory.Exists(f)
@@ -408,12 +440,21 @@ internal sealed partial class PulseTool : ToolModule
             }
             case PulseTiles.Colour:
             {
-                var parts = new List<UIElement> { PulseCards.Head("lap-colour", TileName(id)), PulseCards.Body(Lang.T("Click, then click anywhere on the screen to copy that colour's code. Esc cancels.", "انقر، ثم انقر في أي مكان على الشاشة لنسخ رمز ذلك اللون. Esc للإلغاء.")) };
-                if (_lastColour is { } hex)
+                bool pro = S.ColourMode == "pro";
+                var parts = new List<UIElement>
+                {
+                    PulseCards.Head("lap-colour", TileName(id)),
+                    PulseCards.Body(pro
+                        ? Lang.T("Click, then click anywhere on the screen: its code is copied and the colour window opens beside it. Esc cancels.", "انقر، ثم انقر في أي مكان على الشاشة: يُنسخ رمزه وتفتح نافذة اللون بجانبه. Esc للإلغاء.")
+                        : Lang.T("Click, then click anywhere on the screen to copy that colour's code (Shift+click for more). Esc cancels.", "انقر، ثم انقر في أي مكان على الشاشة لنسخ رمز ذلك اللون (Shift+نقر للمزيد). Esc للإلغاء.")),
+                };
+                var recent = S.ColourHistory.Select(h => Rgb.TryParse(h, out var c) ? c : (Rgb?)null).OfType<Rgb>().Take(8).ToList();
+                if (recent.Count > 0)
                 {
                     var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 10, 0, 0) };
-                    row.Children.Add(new Border { Width = 18, Height = 18, CornerRadius = new CornerRadius(5), Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString(hex)) });
-                    row.Children.Add(new TextBlock { Text = Lang.T("Last: ", "الأخير: ") + hex, Margin = new Thickness(8, 0, 0, 0), FontSize = 12, VerticalAlignment = VerticalAlignment.Center });
+                    foreach (var c in recent)
+                        row.Children.Add(new Border { Width = 18, Height = 18, CornerRadius = new CornerRadius(5), Margin = new Thickness(0, 0, 5, 0), Background = new SolidColorBrush(Color.FromRgb(c.R, c.G, c.B)), ToolTip = c.Hex });
+                    row.Children.Add(new TextBlock { Text = recent[0].Hex, Margin = new Thickness(3, 0, 0, 0), FontSize = 12, VerticalAlignment = VerticalAlignment.Center, FlowDirection = FlowDirection.LeftToRight });
                     parts.Add(row);
                 }
                 return PulseCards.Card([.. parts]);
@@ -512,7 +553,8 @@ internal sealed partial class PulseTool : ToolModule
             var id = set.Id;
             items.Add(new DockMenuItem(SetName(id), () => Save(p => p.CurrentSet = id), Checked: string.Equals(id, s.Active.Id, StringComparison.OrdinalIgnoreCase)));
         }
-        items.Add(new DockMenuItem(Lang.T("Slide away when not used", "الانزلاق جانبًا عند عدم الاستخدام"), () => Save(p => p.Show = p.Show == "slide" ? "always" : "slide"), Checked: s.Show == "slide", Separator: true));
+        // On means slide away (Tap counts as on); off means always shown.
+        items.Add(new DockMenuItem(Lang.T("Slide away when not used", "الانزلاق جانبًا عند عدم الاستخدام"), () => Save(p => p.Show = p.Show is "slide" or "tap" ? "always" : "slide"), Checked: s.Show is "slide" or "tap", Separator: true));
         items.Add(new DockMenuItem(Lang.T("Pulse settings…", "إعدادات نبض…"), () => App.ShowHome(ToolId)));
         items.Add(new DockMenuItem(Lang.T("Turn off Pulse", "إيقاف نبض"), () => App.SetToolEnabled(ToolId, false)));
         return items;

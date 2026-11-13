@@ -50,6 +50,8 @@ _Last updated: 8 Nov 2026 — Amir Lap phases 1 and 2 complete: the multi-tool s
 | Dock on all four edges with every tile and state, cards, preview, Pulse page and Dashboard card, light/dark, English/Arabic | **Working** | `HomeWindowTests` builds them off-screen; snapshots reviewed. |
 | The dock window keeps its size, lets clicks through its empty side, answers tile clicks, opens its menu above everything | **Working** | `HomeWindowTests` shows the real window far off-screen (0.5.0 grew without end; fixed in 0.5.1). |
 | Moving (dots) and resizing (inner edge), slide away, fade, full-screen hiding, frosted glass, file drops | **Partial** | Built. They act on the real screen, pointer and other apps, so they need a live try by the owner. |
+| Tap (slides away; only a click on the line brings it back; a file held over it opens it) | **Working** (hover and drag: **Partial**) | `HomeWindowTests` on the real dock window off-screen: it slides away, the line and the 12 px beside it take clicks (`WindowFromPoint`), a click brings it back. The peek on hover and opening while dragging a file need a live try. |
+| Colour picker: magnifier, Basic / Pro, colour window (codes, steps, contrast, saved, recent), placement beside the pick | **Working** (live picking: **Partial**) | `ColourTests` (maths, history, settings), `ColourPlacementTests` (edges and corners), `HomeWindowTests` (the window and the magnifier off-screen, light/dark, English/Arabic; snapshots reviewed). Picking on the real screen with the real mouse needs a live try. |
 
 ## Desktop interaction
 

@@ -22,14 +22,16 @@ namespace Toolbox.Windows.Pulse;
 /// side, with corner pieces that melt it into the edge. It stays above other windows, never takes
 /// focus, and keeps out of screenshots. Drag its dots to slide it along the edge or onto another
 /// edge; drag its inner edge to make it bigger or smaller (it snaps to Small, Medium or Large).
-/// Hovering a tile opens its card beside it. It can slide away to a thin line, fade, and hide while
-/// a full-screen app is in front.
+/// Hovering a tile opens its card beside it. It can slide away to a thin line (back on hover, or in
+/// Tap mode only on a click on the line), fade, and hide while a full-screen app is in front.
 /// </summary>
 internal sealed partial class DockWindow : Window
 {
     private const double Pad = 28;         // room along the edge for the corner pieces
     private const double CardRoom = 300;   // room beside the dock, inside the window, for the cards
     private const double Sliver = 6;       // what stays on screen when it slides away
+    private const double TapZone = 12;     // Tap mode: how far from the edge a click still finds the line
+    private const double PeekBy = 5;       // Tap mode: how far the dock peeks out while the pointer is on the line
     private const double Radius = 24;
     private const double Fillet = 22;
     private const string PlusTile = "+";
@@ -51,6 +53,10 @@ internal sealed partial class DockWindow : Window
     private readonly Border _sizer = new() { Background = Brushes.Transparent, Opacity = 0 };
     private readonly Border _sizerBar = new() { CornerRadius = new CornerRadius(2.5) };
     private readonly Border _sliver = new() { CornerRadius = new CornerRadius(1.5), Opacity = 0, IsHitTestVisible = false };
+    // Tap mode, while slid away: catches the pointer on the line (alpha 1, so the window takes the clicks there).
+    private readonly Border _tapZone = new() { Background = new SolidColorBrush(Color.FromArgb(1, 0, 0, 0)), Cursor = Cursors.Hand, Visibility = Visibility.Collapsed };
+    private readonly DispatcherTimer _springTimer = new() { Interval = TimeSpan.FromMilliseconds(400) };
+    private bool _peeking;
     private readonly Path[] _fillets = [new(), new()];
     private readonly TranslateTransform _slide = new();
     private readonly Dictionary<string, PulseTileView> _tiles = [];
@@ -103,6 +109,7 @@ internal sealed partial class DockWindow : Window
         BuildDock();
         _root.Children.Add(_layer);
         _root.Children.Add(_dock);
+        _root.Children.Add(_tapZone);
         _root.Children.Add(_menuLayer);
         _menuTimer.Tick += (_, _) =>
         {
@@ -112,7 +119,8 @@ internal sealed partial class DockWindow : Window
         Content = _root;
 
         _keepUp.Tick += (_, _) => KeepUp();
-        _hideTimer.Tick += (_, _) => { _hideTimer.Stop(); _hideTimer.Interval = TimeSpan.FromMilliseconds(900); if (_drag is null && _menu is null && SlideMode && !_dock.IsMouseOver) SlideAway(true); };
+        _hideTimer.Tick += (_, _) => { _hideTimer.Stop(); _hideTimer.Interval = TimeSpan.FromMilliseconds(900); if (_drag is null && _menu is null && AutoHide && !_dock.IsMouseOver) SlideAway(true); };
+        _springTimer.Tick += (_, _) => { _springTimer.Stop(); if (_hidden) OpenFromLine(); };
         _fadeTimer.Tick += (_, _) => { _fadeTimer.Stop(); if (FadeMode && !_dock.IsMouseOver && _drag is null) Motion.To(_dock, OpacityProperty, 0.4, 600); };
         _cardTimer.Tick += (_, _) => { _cardTimer.Stop(); if (_hovered is not null && _drag is null) ShowCard(_hovered); };
         ThemeResources.Changed += OnThemeChanged;
@@ -124,6 +132,7 @@ internal sealed partial class DockWindow : Window
             _hideTimer.Stop();
             _fadeTimer.Stop();
             _cardTimer.Stop();
+            _springTimer.Stop();
         };
         DpiChanged += (_, _) => Dispatcher.BeginInvoke(Layout, DispatcherPriority.Background);
     }
@@ -159,7 +168,7 @@ internal sealed partial class DockWindow : Window
     {
         if (_hidden) SlideAway(false);
         if (FadeMode) { Motion.To(_dock, OpacityProperty, 1, 200); _fadeTimer.Start(); }
-        if (SlideMode) { _hideTimer.Stop(); _hideTimer.Interval = TimeSpan.FromSeconds(3); _hideTimer.Start(); }
+        if (AutoHide) { _hideTimer.Stop(); _hideTimer.Interval = TimeSpan.FromSeconds(3); _hideTimer.Start(); }
     }
 
     /// <summary>Hidden from the tray or its shortcut until shown again.</summary>
@@ -173,8 +182,16 @@ internal sealed partial class DockWindow : Window
         else Layout();
     }
 
-    private bool SlideMode => _settings().Show == "slide";
     private bool FadeMode => _settings().Show == "fade";
+
+    /// <summary>Tap: slides away like "slide", but only a click on the line brings it back.</summary>
+    private bool TapMode => _settings().Show == "tap";
+
+    /// <summary>Slides away to a thin line when not used ("slide" or "tap").</summary>
+    private bool AutoHide => _settings().Show is "slide" or "tap";
+
+    /// <summary>For tests: what catches the pointer on the line in Tap mode.</summary>
+    internal FrameworkElement TapLine => _tapZone;
 
     // ---- building ------------------------------------------------------------------------------
 
@@ -199,7 +216,7 @@ internal sealed partial class DockWindow : Window
                 dots.Children.Add(dot);
             }
         _grip.Child = new Viewbox { Width = 18, Height = 7, Child = dots, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
-        _grip.ToolTip = Lang.T("Drag to move the dock, along the edge or to another edge", "Ø§Ø³Ø­Ø¨ Ù„ØªØ­Ø±ÙŠÙƒ Ø§Ù„Ø´Ø±ÙŠØ· Ø¹Ù„Ù‰ Ø·ÙˆÙ„ Ø§Ù„Ø­Ø§ÙØ© Ø£Ùˆ Ø¥Ù„Ù‰ Ø­Ø§ÙØ© Ø£Ø®Ø±Ù‰");
+        _grip.ToolTip = Lang.T("Drag to move the dock, along the edge or to another edge", "اسحب لتحريك الشريط على طول الحافة أو إلى حافة أخرى");
         _grip.MouseEnter += (_, _) => _grip.SetResourceReference(Border.BackgroundProperty, "Brush.Line");
         _grip.MouseLeave += (_, _) => { if (_drag is null) _grip.Background = Brushes.Transparent; };
         _grip.MouseLeftButtonDown += (_, e) => BeginDrag(_grip, move: true, e);
@@ -209,7 +226,7 @@ internal sealed partial class DockWindow : Window
 
         _sizerBar.SetResourceReference(Border.BackgroundProperty, "Brush.Text3");
         _sizer.Child = _sizerBar;
-        _sizer.ToolTip = Lang.T("Drag to make the dock bigger or smaller", "Ø§Ø³Ø­Ø¨ Ù„ØªÙƒØ¨ÙŠØ± Ø§Ù„Ø´Ø±ÙŠØ· Ø£Ùˆ ØªØµØºÙŠØ±Ù‡");
+        _sizer.ToolTip = Lang.T("Drag to make the dock bigger or smaller", "اسحب لتكبير الشريط أو تصغيره");
         _sizer.MouseEnter += (_, _) => GrowSizer(true);
         _sizer.MouseLeave += (_, _) => { if (_drag is null) GrowSizer(false); };
         _sizer.MouseLeftButtonDown += (_, e) => BeginDrag(_sizer, move: false, e);
@@ -226,6 +243,7 @@ internal sealed partial class DockWindow : Window
 
         _dock.MouseEnter += (_, _) =>
         {
+            if (_hidden && TapMode) return; // in Tap mode only a click on the line brings it back
             _hideTimer.Stop();
             _fadeTimer.Stop();
             if (_hidden) SlideAway(false);
@@ -236,7 +254,7 @@ internal sealed partial class DockWindow : Window
         {
             if (_drag is not null) return;
             Motion.To(_sizer, OpacityProperty, 0, 300);
-            if (SlideMode) _hideTimer.Start();
+            if (AutoHide) _hideTimer.Start();
             if (FadeMode) _fadeTimer.Start();
         };
         _dock.MouseRightButtonUp += (_, e) =>
@@ -244,8 +262,66 @@ internal sealed partial class DockWindow : Window
             ShowMenu(e.GetPosition(_root));
             e.Handled = true;
         };
-        _dock.DragEnter += (_, _) => { if (_hidden) SlideAway(false); };
+        _dock.DragEnter += (_, _) => { if (_hidden && !TapMode) SlideAway(false); };
+
+        // Tap mode: the line peeks out under the pointer, a click opens the dock, and a file held
+        // over it for a moment opens it too (a click isn't possible while dragging).
+        _tapZone.ToolTip = Lang.T("Click to open Pulse", "انقر لفتح نبض");
+        _tapZone.MouseEnter += (_, _) => Peek(true);
+        _tapZone.MouseLeave += (_, _) => Peek(false);
+        _tapZone.MouseLeftButtonDown += (_, e) => e.Handled = true;
+        _tapZone.MouseLeftButtonUp += (_, e) => { OpenFromLine(); e.Handled = true; };
+        _tapZone.MouseRightButtonUp += (_, e) => { ShowMenu(e.GetPosition(_root)); e.Handled = true; };
+        _tapZone.DragEnter += (_, e) => { Peek(true); _springTimer.Stop(); _springTimer.Start(); e.Handled = true; };
+        _tapZone.DragOver += (_, e) => { e.Effects = DragDropEffects.None; e.Handled = true; };
+        _tapZone.DragLeave += (_, e) => { _springTimer.Stop(); Peek(false); e.Handled = true; };
+        _tapZone.Drop += (_, e) => { _springTimer.Stop(); e.Effects = DragDropEffects.None; e.Handled = true; };
         ApplyLook();
+    }
+
+    /// <summary>Tap mode: brings the dock back after a click on the line (or a file held over it).</summary>
+    private void OpenFromLine()
+    {
+        _springTimer.Stop();
+        Peek(false);
+        SlideAway(false);
+        // It goes away again once the pointer has been off it for a moment.
+        _hideTimer.Stop();
+        _hideTimer.Interval = TimeSpan.FromMilliseconds(1500);
+        _hideTimer.Start();
+    }
+
+    /// <summary>Tap mode, while slid away: the dock peeks out a little and the line thickens under the pointer.</summary>
+    private void Peek(bool on)
+    {
+        if (on && (!_hidden || !TapMode)) return;
+        if (on == _peeking) return;
+        _peeking = on;
+        bool vertical = _edge is "left" or "right";
+        if (_hidden)
+        {
+            double thick = vertical ? _dock.ActualWidth : _dock.ActualHeight;
+            double off = Math.Max(0, thick - Sliver - (on ? PeekBy : 0));
+            double x = _edge == "right" ? off : _edge == "left" ? -off : 0;
+            double y = _edge == "bottom" ? off : _edge == "top" ? -off : 0;
+            Motion.To(_slide, TranslateTransform.XProperty, x, 220, Motion.Spring);
+            Motion.To(_slide, TranslateTransform.YProperty, y, 220, Motion.Spring);
+        }
+        var across = vertical ? WidthProperty : HeightProperty;
+        Motion.To(_sliver, across, on ? 5 : 3, 200, Motion.Spring);
+        if (on)
+        {
+            _sliver.BeginAnimation(OpacityProperty, null);
+            _sliver.Opacity = 1;
+        }
+        else if (_hidden) PulseSliver();
+    }
+
+    /// <summary>The line breathes softly while the dock is away.</summary>
+    private void PulseSliver()
+    {
+        if (Motion.IsReduced) { _sliver.BeginAnimation(OpacityProperty, null); _sliver.Opacity = 1; return; }
+        _sliver.BeginAnimation(OpacityProperty, new DoubleAnimation(1, 0.45, TimeSpan.FromSeconds(1.5)) { AutoReverse = true, RepeatBehavior = RepeatBehavior.Forever, BeginTime = TimeSpan.FromMilliseconds(300) });
     }
 
     /// <summary>Glass colours for the current theme (and solid when transparency is reduced).</summary>
@@ -300,10 +376,11 @@ internal sealed partial class DockWindow : Window
         _content.Children.Add(Separator());
         _content.Children.Add(MakeTile(PlusTile));
         Layout();
-        if (SlideMode && !_dock.IsMouseOver) _hideTimer.Start();
+        if (AutoHide && !_dock.IsMouseOver) _hideTimer.Start();
         else if (_hidden) SlideAway(false);
         if (!FadeMode) _dock.Opacity = 1;
         else _fadeTimer.Start();
+        _tapZone.Visibility = _hidden && TapMode ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private Border Separator()
@@ -457,6 +534,10 @@ internal sealed partial class DockWindow : Window
             "bottom" => new Thickness(0, 1.5, 0, 0),
             _ => new Thickness(0, 0, 0, 1.5),
         };
+
+        // Tap mode's catch area: along the dock, flush with the screen edge (sized in Layout).
+        _tapZone.HorizontalAlignment = _dock.HorizontalAlignment;
+        _tapZone.VerticalAlignment = _dock.VerticalAlignment;
     }
 
     private void GrowSizer(bool on)
@@ -492,6 +573,8 @@ internal sealed partial class DockWindow : Window
         double dockThick = Math.Min(vertical ? d.Width + m.Left + m.Right : d.Height + m.Top + m.Bottom, 100);
         _dock.Width = vertical ? dockThick : dockLen;
         _dock.Height = vertical ? dockLen : dockThick;
+        _tapZone.Width = vertical ? TapZone : dockLen;
+        _tapZone.Height = vertical ? dockLen : TapZone;
         double along = Math.Max(dockLen + 2 * Pad, 320), cross = dockThick + CardRoom;
         var work = PixelRect.From(monitor.WorkArea);
         double k = monitor.Scale;
@@ -622,7 +705,7 @@ internal sealed partial class DockWindow : Window
         if (!_dock.IsMouseOver)
         {
             Motion.To(_sizer, OpacityProperty, 0, 300);
-            if (SlideMode) _hideTimer.Start();
+            if (AutoHide) _hideTimer.Start();
         }
     }
 
@@ -641,8 +724,11 @@ internal sealed partial class DockWindow : Window
         Motion.To(_slide, TranslateTransform.YProperty, y, ms, hide ? Motion.InOut : Motion.Settle);
         Motion.To(_sliver, OpacityProperty, hide ? 1 : 0, 250);
         foreach (var f in _fillets) Motion.To(f, OpacityProperty, hide ? 0 : 1, 200);
-        if (hide && !Motion.IsReduced)
-            _sliver.BeginAnimation(OpacityProperty, new DoubleAnimation(1, 0.45, TimeSpan.FromSeconds(1.5)) { AutoReverse = true, RepeatBehavior = RepeatBehavior.Forever, BeginTime = TimeSpan.FromMilliseconds(300) });
+        if (hide && !Motion.IsReduced) PulseSliver();
+        _peeking = false;
+        _sliver.BeginAnimation(vertical ? WidthProperty : HeightProperty, null);
+        _sliver.SetValue(vertical ? WidthProperty : HeightProperty, 3.0);
+        _tapZone.Visibility = hide && TapMode ? Visibility.Visible : Visibility.Collapsed;
         if (!hide)
         {
             var refresh = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(ms + 40) };
@@ -805,7 +891,7 @@ internal sealed partial class DockWindow : Window
         if (_menu is null) return;
         _menuLayer.Children.Remove(_menu);
         _menu = null;
-        if (!_dock.IsMouseOver && SlideMode) _hideTimer.Start();
+        if (!_dock.IsMouseOver && AutoHide) _hideTimer.Start();
     }
 
     // ---- cards ---------------------------------------------------------------------------------

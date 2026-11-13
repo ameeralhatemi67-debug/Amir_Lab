@@ -12,7 +12,10 @@ public sealed class PulseSettings
     /// <summary>S, M or L.</summary>
     public string Size { get; set; } = "M";
 
-    /// <summary>always, slide (slides away, a thin line stays) or fade (fades when not used).</summary>
+    /// <summary>
+    /// always, slide (slides away, a thin line stays; hovering it brings the dock back), fade (fades
+    /// when not used) or tap (slides away like slide, but only a click on the line brings it back).
+    /// </summary>
     public string Show { get; set; } = "always";
 
     /// <summary>main (the main screen) or pointer (the screen the pointer was on when Pulse started).</summary>
@@ -49,6 +52,24 @@ public sealed class PulseSettings
     public string? LinkTarget { get; set; }
 
     public int TimerMinutes { get; set; } = 25;
+
+    /// <summary>
+    /// The Colour picker tile: basic (a click copies the HEX code, as before) or pro (a click copies
+    /// <see cref="ColourCopy"/> and opens the colour window: codes, steps, contrast, history).
+    /// </summary>
+    public string ColourMode { get; set; } = "basic";
+
+    /// <summary>The code a pick copies in Pro mode (one of <see cref="Colours.Formats"/>).</summary>
+    public string ColourCopy { get; set; } = Colours.Hex;
+
+    /// <summary>How many recent picks the colour window keeps (10–30).</summary>
+    public int ColourHistorySize { get; set; } = Colours.HistoryMin;
+
+    /// <summary>Recent picks as "#RRGGBB", newest first (kept in both modes).</summary>
+    public List<string> ColourHistory { get; set; } = [];
+
+    /// <summary>Colours the user saved; they stay when the history moves on.</summary>
+    public List<string> ColourSaved { get; set; } = [];
 
     public static List<PulseTileSet> DefaultSets() =>
     [

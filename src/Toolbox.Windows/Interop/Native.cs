@@ -145,6 +145,10 @@ internal static partial class Native
     public static partial bool GetCursorPos(out POINT lpPoint);
 
     [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool SetCursorPos(int x, int y);
+
+    [LibraryImport("user32.dll")]
     public static partial IntPtr MonitorFromPoint(POINT pt, uint dwFlags);
 
     [LibraryImport("user32.dll", EntryPoint = "GetMonitorInfoW")]

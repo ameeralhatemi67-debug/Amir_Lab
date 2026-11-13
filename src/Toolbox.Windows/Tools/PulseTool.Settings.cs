@@ -118,9 +118,10 @@ internal sealed partial class PulseTool
         page.Row(Lang.T("Size", "الحجم"), SettingsPage.Choice(["S", "M", "L"], s0.Size, v => { Edit(p => p.Size = v); RenderTiles(); },
                 v => v switch { "S" => Lang.T("Small", "صغير"), "L" => Lang.T("Large", "كبير"), _ => Lang.T("Medium", "متوسط") }),
             Lang.T("Or drag the dock's inner edge. Small hides the labels.", "أو اسحب الحافة الداخلية للشريط. الصغير يخفي الأسماء."));
-        page.Row(Lang.T("Show", "الظهور"), SettingsPage.Choice(["always", "slide", "fade"], s0.Show, v => { Edit(p => p.Show = v); RenderTiles(); },
-                v => v switch { "slide" => Lang.T("Slide away", "ينزلق جانبًا"), "fade" => Lang.T("Fade", "يخفت"), _ => Lang.T("Always", "دائمًا") }),
-            Lang.T("Slide away leaves a thin line on the edge; touch it to bring the dock back.", "عند الانزلاق يبقى خط رفيع على الحافة؛ المسه ليعود الشريط."));
+        page.Row(Lang.T("Show", "الظهور"), SettingsPage.Choice(["always", "slide", "fade", "tap"], s0.Show, v => { Edit(p => p.Show = v); RenderTiles(); },
+                v => v switch { "slide" => Lang.T("Slide away", "ينزلق جانبًا"), "fade" => Lang.T("Fade", "يخفت"), "tap" => Lang.T("Tap", "نقر"), _ => Lang.T("Always", "دائمًا") }),
+            Lang.T("Slide away and Tap leave a thin line on the edge. Slide away comes back when the pointer touches the line; Tap only when you click it, so reaching for a scrollbar never opens it.",
+                   "ينزلق جانبًا ونقر يتركان خطًا رفيعًا على الحافة. ينزلق جانبًا يعود عندما يلمس المؤشر الخط، ونقر لا يعود إلا عند النقر عليه، فلا يفتح عند الوصول إلى شريط التمرير."));
         page.Toggle(Lang.T("Hide during full-screen apps", "الإخفاء أثناء ملء الشاشة"), s0.HideInFullScreen, on => Edit(p => p.HideInFullScreen = on),
             Lang.T("Games, videos and presentations.", "الألعاب والفيديو والعروض التقديمية."));
 
@@ -258,6 +259,17 @@ internal sealed partial class PulseTool
         page.Card();
         page.Row(TileName(PulseTiles.Timer), SettingsPage.Choice(["15", "25", "50"], s0.TimerMinutes.ToString(CultureInfo.InvariantCulture), v => Edit(p => p.TimerMinutes = int.Parse(v, CultureInfo.InvariantCulture)),
             v => Lang.T(v + " min", v + " د")), Lang.T("How long a focus round lasts.", "مدة جولة التركيز."));
+        page.Row(TileName(PulseTiles.Colour), SettingsPage.Choice(["basic", "pro"], s0.ColourMode == "pro" ? "pro" : "basic", v => Edit(p => p.ColourMode = v),
+                v => v == "pro" ? Lang.T("Pro", "احترافي") : Lang.T("Basic", "أساسي")),
+            Lang.T("Basic copies the HEX code. Pro copies the code you star and opens a window beside the pick with every code, lighter and darker steps, contrast, saved and recent colours. In Basic, Shift+click opens it once.",
+                   "الأساسي ينسخ رمز HEX. الاحترافي ينسخ الرمز الذي تميّزه بنجمة ويفتح نافذة بجانب الالتقاط فيها كل الرموز ودرجات أفتح وأغمق والتباين والألوان المحفوظة والأخيرة. في الأساسي، Shift+نقر يفتحها مرة واحدة."));
+        page.Row(Lang.T("Recent colours", "الألوان الأخيرة"), SettingsPage.Choice(["10", "20", "30"], Colours.HistorySize(s0.ColourHistorySize).ToString(CultureInfo.InvariantCulture),
+                v => Edit(p =>
+                {
+                    p.ColourHistorySize = int.Parse(v, CultureInfo.InvariantCulture);
+                    if (p.ColourHistory.Count > p.ColourHistorySize) p.ColourHistory = p.ColourHistory.Take(p.ColourHistorySize).ToList();
+                })),
+            Lang.T("How many recent picks the colour window keeps. Saved colours don't count.", "عدد الالتقاطات الأخيرة التي تحتفظ بها نافذة اللون. الألوان المحفوظة لا تُحتسب."));
         var folderText = SettingsPage.Ltr(new TextBlock { Text = FolderPath, Style = SettingsPage.Res("Lap.Help"), TextTrimming = TextTrimming.CharacterEllipsis });
         var folderButtons = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 8, 0, 0) };
         folderButtons.Children.Add(SettingsPage.Button(Lang.T("Choose folder…", "اختيار مجلد…"), () =>

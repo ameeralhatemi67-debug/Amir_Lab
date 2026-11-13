@@ -84,7 +84,7 @@ internal sealed class PulsePreview : Grid, IIdleMotion
         // Along the edge where the settings put it (the taskbar is not part of the edge).
         _stage.SizeChanged -= OnStageSize;
         _stage.SizeChanged += OnStageSize;
-        _stage.Tag = (dock, s.Position, edge, s.Show == "slide");
+        _stage.Tag = (dock, s.Position, edge, s.Show is "slide" or "tap");
         Place();
     }
 

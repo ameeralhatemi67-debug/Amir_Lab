@@ -248,6 +248,43 @@ Product direction lives in [`sead_idea.md`](../sead_idea.md) (the seed). This fi
   - Not verified live: the run where the wheel starts over the sidebar, and capturing the scroll area UI Automation found, because the test's Edge window didn't come to the front. Both are covered on simulated screens.
   - The test now refuses to run unless Edge is the window under every point it scrolls.
 
+## Polish round: wheel glow, Pulse Tap, Pro colour picker (13 Nov 2026)
+
+The owner proposed eight ideas. They were discussed and an order was agreed; this round is the first group.
+
+- **Wheel glow (owner: "not looking good"):**
+  - **Problems:** the lit tile was an opaque blue gradient (it stopped looking like glass). It sprang 6 px out past the rim, and its 22 px blur spilled onto the desktop.
+  - **Lit tile:** now tinted glass. The accent is stronger at the outer edge and more see-through towards the hub, and the frost still shows. A soft light glows just inside its edges, a bright rim runs along the outer edge, and it nudges out 3 px.
+  - **Glow:** clipped to the wheel (and the Share bubble), so nothing lights the desktop.
+  - **Share bubble:** lights the same way.
+- **Wheel body (owner: "the same transparent body as the Longshot window"):** the dark wheel uses the Longshot panel's glass (`Brush.Glass`). Its extra darkening over the blurred screen dropped from 35% to 10%, so the wallpaper's colour comes through. The light wheel was already at least as see-through and is unchanged.
+- **Pulse "Tap"** (a 4th way to show, beside Always, Slide away and Fade):
+  - It slides away like Slide away, but the pointer touching the line doesn't bring it back, so reaching for a scrollbar or a close button on that edge never opens it.
+  - On hover, the line thickens and the dock peeks out 5 px.
+  - A click on the line, or anywhere within 12 px of the edge along the dock, opens it.
+  - A file held over the line for 0.4 s opens it (a click isn't possible while dragging).
+  - It goes away again 1.5 s after the pointer leaves.
+  - The right-click menu's "Slide away" counts Tap as on.
+- **Colour picker, Basic and Pro** (a setting under Tile options; Basic stays the default, as before):
+  - **Both modes:**
+    - A magnifier beside the pointer: 11 × 11 pixels, the middle one framed, at 9, 12 or 15× (the wheel zooms).
+    - Arrow keys move the pointer by one pixel (ten with Shift), Enter picks.
+    - It keeps to whichever side of the pointer has room on that screen.
+    - Every pick goes into a history.
+  - **Basic:** a click copies the HEX code and a note says so, as before. Shift+click opens the Pro window once.
+  - **Pro:** a click copies the starred code (HEX at first) and opens the colour window beside the pick. It opens below-right when there is room, above when picked near the bottom, to the left near the right edge, and the same in the corners: the owner's rule. It never covers the picked pixel.
+  - **The colour window** is in the Longshot panel's glass, stays on top until closed, and is left out of screenshots. It shows:
+    - the colour large, with its nearest CSS name (by OKLab distance);
+    - nine lighter and darker steps in OKLCH (a click shows one);
+    - eight codes: HEX, RGB, HSL, HSV, OKLCH, CMYK, WPF/C# and Android. A click copies one, 1–8 copy by number, and Ctrl+C copies the starred one;
+    - WCAG contrast as text on white and on black;
+    - saved colours (they don't count against the history) and recent picks. There are 10 by default, and 20 or 30 can be chosen in settings;
+    - a switch for Pro mode.
+  - **Codes:** always written with invariant digits, so they paste the same on an Arabic system. CMYK is the plain formula; print shops use an ICC profile.
+  - **Picking again** from the window hides it first, so it is never in the way of what is picked.
+- **Not done in this round:** a nearest Tailwind class (it needs Tailwind's palette as data, to be checked against the source) and live checks of the dock, picker and window with the real mouse.
+- **Found on the way:** two of Pulse's Arabic tooltips (the dock's dots and its size handle) were stored as garbled text (UTF-8 read as Windows-1252). They are fixed.
+
 ## App icon (8 Nov 2026)
 
 - **"Tool tiles", chosen by the owner** from three options (tool tiles, an AL monogram, a lab flask). It shows four tiles on an accent square:

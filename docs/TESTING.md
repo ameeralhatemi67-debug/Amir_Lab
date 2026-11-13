@@ -22,6 +22,8 @@ Amir Lap's shell is covered by these tests:
 set AMIRLAP_LIVE_LONGSHOT=1 && dotnet test tests/Toolbox.Windows.Tests --filter LiveLongshotTests
 ```
 - `PulseTests` (Core): reading Codex's logs, Claude's status line and hooks, the most urgent session, the shared state file under concurrent writes, the bridge's output, alerts, connecting and removing Claude Code on temporary settings files, and Pulse's settings.
+- `ColourTests` (Core): the colour picker's codes (all eight, also on an Arabic system), reading HEX, WCAG contrast and grades, OKLCH both ways, the nine steps, the nearest CSS name, the history (newest first, each colour once, 10–30) and the settings it keeps.
+- `ColourPlacementTests` (Windows): where the Pro colour window and the magnifier go for picks in the middle, near each edge and in the corners (never covering the picked point).
 - `HomeWindowTests` builds every page of the Amir Lap window (Pulse's included, and its dock on all four edges with its cards; it also shows the real dock window far off-screen and checks that it keeps its size, lets clicks through its empty side, and answers clicks and its menu). It creates the app only for its styles (`AMIRLAP_STYLES_ONLY=1`), so start-up never runs in the test and never talks to an installed Amir Lap that is running; plus File Toolbox's wheel and Longshot's panel, frame and result window, off-screen in light and dark (and the window in Arabic), without showing anything or starting a tool. To look at them, set `AMIRLAP_SNAPSHOT_DIR` to a folder; each one is saved there as a PNG:
 
 ```bash

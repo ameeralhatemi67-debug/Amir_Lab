@@ -93,6 +93,7 @@ public class HomeWindowTests
                 RenderLongshotWindows(snapshots, theme, lang);
                 if (lang == "en") RenderWheel(snapshots, theme);
                 RenderPulse(snapshots, theme, lang, host);
+                RenderColour(snapshots, theme, lang);
             }
             Lang.Set("en");
             ThemeResources.Apply(app, "light");
@@ -186,6 +187,25 @@ public class HomeWindowTests
                 if (edge == "top") Assert.Equal(rect.Top, p.Y);
                 if (edge == "bottom") Assert.Equal(rect.Bottom, p.Y + p.Height);
             }
+
+            // Tap: it slides away to the line like "slide"; the line (and a little room beside it)
+            // takes clicks, and a click brings the dock back.
+            settings.Show = "tap";
+            dock.Rebuild();
+            Pump(() => dock.IsSlidAway, "the dock to slide away in Tap mode", seconds: 5);
+            Pump(() => dock.TapLine.IsVisible && dock.TapLine.ActualHeight > 0, "the Tap line to show", seconds: 5);
+            Assert.True(GetWindowRect(hwnd, out var rt));
+            var line = dock.TapLine;
+            var nearEdge = line.PointToScreen(new Point(line.ActualWidth - 2, line.ActualHeight / 2));
+            var innerSide = line.PointToScreen(new Point(2, line.ActualHeight / 2));
+            Assert.InRange(rt.Right - nearEdge.X, 0, 4 * k);
+            Assert.Equal(hwnd, WindowFromPoint(new POINT { X = (int)nearEdge.X, Y = (int)nearEdge.Y }));
+            Assert.Equal(hwnd, WindowFromPoint(new POINT { X = (int)innerSide.X, Y = (int)innerSide.Y }));
+            line.RaiseEvent(new System.Windows.Input.MouseButtonEventArgs(System.Windows.Input.Mouse.PrimaryDevice, 0, System.Windows.Input.MouseButton.Left) { RoutedEvent = UIElement.MouseLeftButtonUpEvent });
+            Assert.False(dock.IsSlidAway);
+            Assert.Equal(Visibility.Collapsed, line.Visibility);
+            settings.Show = "always";
+            dock.Rebuild();
         }
         finally
         {
@@ -764,6 +784,55 @@ public class HomeWindowTests
 
         Assert.Equal("Claude", PulseTool.ShortName(PulseTiles.Claude));
         Assert.NotNull(host);
+    }
+
+    /// <summary>
+    /// The colour picker's Pro window (a blue with saved and recent colours) on a desktop, and its
+    /// magnifier over a few made-up pixels, built off-screen.
+    /// </summary>
+    private static void RenderColour(string? snapshots, string theme, string lang)
+    {
+        var settings = new PulseSettings
+        {
+            ColourMode = "pro",
+            ColourCopy = Colours.RgbCode,
+            ColourHistory = ["#2563EB", "#F97316", "#10B981", "#E11D48", "#FACC15", "#0F172A", "#A855F7"],
+            ColourSaved = ["#4169E1", "#FF6347"],
+        };
+        var window = new ColourWindow(() => settings, edit => edit(settings), () => { });
+        window.Select(new Rgb(0x25, 0x63, 0xEB));
+        var content = (FrameworkElement)window.Content;
+        window.Content = null;
+        var frame = new Border
+        {
+            Child = content,
+            Background = theme == "dark"
+                ? new LinearGradientBrush(Color.FromRgb(0x2B, 0x10, 0x4A), Color.FromRgb(0x6A, 0x12, 0x3A), 35)
+                : new LinearGradientBrush(Color.FromRgb(0xD6, 0xE0, 0xF6), Color.FromRgb(0xF4, 0xE4, 0xEC), 35),
+            HorizontalAlignment = HorizontalAlignment.Left,
+            VerticalAlignment = VerticalAlignment.Top,
+        };
+        Layout(frame, 400, 900);
+        Assert.True(content.ActualHeight > 600, "the colour window should lay out its codes, contrast and colours");
+        Save(snapshots, frame, 400, Math.Ceiling(content.ActualHeight), $"colour-{theme}-{lang}");
+        window.Close();
+
+        // The magnifier: an 11-pixel square, a white pixel in a blue field, the middle one red.
+        int n = ColourPicker.PixelsAcross;
+        var px = new byte[n * n * 4];
+        for (int i = 0; i < n * n; i++) { px[i * 4] = 0xEB; px[i * 4 + 1] = 0x63; px[i * 4 + 2] = 0x25; px[i * 4 + 3] = 255; }
+        void Set(int x, int y, byte r, byte g, byte b) { int i = (y * n + x) * 4; px[i] = b; px[i + 1] = g; px[i + 2] = r; }
+        for (int x = 0; x < n; x++) Set(x, 3, 255, 255, 255);
+        Set(n / 2, n / 2, 0xE1, 0x1D, 0x48);
+        var picker = new ColourPicker(pro: false);
+        picker.ShowPixels(new Toolbox.Processing.Capture.Frame(n, n, px));
+        Assert.Equal(new Rgb(0xE1, 0x1D, 0x48), picker.Current);
+        var loupe = picker.Loupe;
+        ((Canvas)loupe.Parent).Children.Remove(loupe);
+        var stage = new Border { Child = loupe, Padding = new Thickness(24), Background = frame.Background, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top };
+        Layout(stage, 260, 260);
+        Save(snapshots, stage, 260, 260, $"colour-loupe-{theme}-{lang}");
+        picker.Close();
     }
 
     private static void Layout(FrameworkElement element, double width, double height)

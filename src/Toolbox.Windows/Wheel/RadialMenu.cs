@@ -23,8 +23,8 @@ internal sealed record WheelRingModel(ActionGroup Group, string Name, IReadOnlyL
 /// <summary>
 /// The contextual wheel, in Amir Lap's glass style: a see-through frosted disc with a fine ice
 /// texture, light caught at its edges, glass tiles around a lens-like hub, and a Share bubble just
-/// outside. The tile under the pointer is lit from behind with a splash of blue and pushes out;
-/// dropping makes a ripple. Angles are measured clockwise from 12 o'clock. Hit testing is by angle
+/// outside. The tile under the pointer turns into tinted, lit glass and nudges out a little (its
+/// light stays inside the wheel); dropping makes a ripple. Angles are measured clockwise from 12 o'clock. Hit testing is by angle
 /// and radius, so it is exact regardless of the visual rounding.
 /// </summary>
 internal sealed class RadialMenu : Canvas
@@ -78,10 +78,17 @@ internal sealed class RadialMenu : Canvas
         SnapsToDevicePixels = true;
         TextOptions.SetTextFormattingMode(this, TextFormattingMode.Display);
 
-        _glow.Effect = new BlurEffect { Radius = 22, RenderingBias = RenderingBias.Performance };
+        _glow.Effect = new BlurEffect { Radius = 18, RenderingBias = RenderingBias.Performance };
+        // The glow lights the glass around a lit tile, but never the desktop outside the wheel.
+        var glowLayer = new Canvas { IsHitTestVisible = false };
+        glowLayer.Children.Add(_glow);
+        glowLayer.Clip = Geometry.Combine(
+            new EllipseGeometry(new Point(Center, Center), OuterRadius - 0.5, OuterRadius - 0.5),
+            new EllipseGeometry(ShareCenter, BubbleRadius, BubbleRadius),
+            GeometryCombineMode.Union, null);
         Children.Add(_backdrop); // the blurred screen sits under the glass
         Children.Add(_base);
-        Children.Add(_glow);
+        Children.Add(glowLayer);
         Children.Add(_segmentLayer);
         Children.Add(_hub);
         Children.Add(_dots);
@@ -405,7 +412,9 @@ internal sealed class RadialMenu : Canvas
         _bubble.Children.Add(shadow);
         _bubble.Children.Add(new Ellipse { Fill = _glass.Hub });
         _bubble.Children.Add(new Ellipse { Fill = _glass.Texture, Opacity = _glass.TextureOpacity });
-        _bubbleLight.Fill = _glass.Backlight(new Point(BubbleRadius, BubbleRadius * 0.8), BubbleRadius * 1.1);
+        _bubbleLight.Fill = _glass.LitFill(new Point(BubbleRadius, 0), new Point(BubbleRadius, size));
+        _bubbleLight.Stroke = _glass.LitRim(new Point(BubbleRadius, 0), new Point(BubbleRadius, size));
+        _bubbleLight.StrokeThickness = 1.3;
         _bubble.Children.Add(_bubbleLight);
         _bubble.Children.Add(new Ellipse { Stroke = _glass.Rim, StrokeThickness = 1.2 });
 
@@ -544,16 +553,8 @@ internal sealed class RadialMenu : Canvas
             RenderTransform = offset,
         };
         double r = (OuterRadius + InnerRadius) / 2;
-        var light = new Path
-        {
-            Data = geometry,
-            Fill = _glass.Backlight(Polar(mid, r - 6), (OuterRadius - InnerRadius) * 0.85),
-            Stroke = new SolidColorBrush(Color.FromArgb(0x8C, 255, 255, 255)),
-            StrokeThickness = 1,
-            Opacity = 0,
-            IsHitTestVisible = false,
-            RenderTransform = offset,
-        };
+        var light = LitGlass(geometry, Polar(mid, OuterRadius), Polar(mid, InnerRadius));
+        light.RenderTransform = offset;
 
         var fg = new SolidColorBrush(model.Enabled ? _glass.Text : _glass.TextMuted);
         var stack = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center, IsHitTestVisible = false };
@@ -590,6 +591,31 @@ internal sealed class RadialMenu : Canvas
         stack.RenderTransform = offset;
 
         return new SegmentVisual(model, geometry, tile, light, stack, fg, offset, mid);
+    }
+
+    /// <summary>
+    /// A lit tile, kept as glass: the accent tints it (deeper at the outer edge, where the light
+    /// comes from), the frost still shows through, light glows just inside its edges, and a bright
+    /// rim runs along the outer edge. Nothing is drawn outside the tile's own shape.
+    /// </summary>
+    private Canvas LitGlass(Geometry shape, Point outer, Point inner)
+    {
+        var lit = new Canvas { Opacity = 0, IsHitTestVisible = false };
+        lit.Children.Add(new Path { Data = shape, Fill = _glass.LitFill(outer, inner) });
+        lit.Children.Add(new Path { Data = shape, Fill = _glass.Texture, Opacity = _glass.TextureOpacity * (_glass.Dark ? 0.7 : 0.4) });
+        // The inner glow: a soft bright stroke, cut to the tile so it never spills.
+        var glow = new Canvas { Clip = shape };
+        glow.Children.Add(new Path
+        {
+            Data = shape,
+            Stroke = new SolidColorBrush(_glass.LitEdge),
+            StrokeThickness = 9,
+            Opacity = 0.55,
+            Effect = new BlurEffect { Radius = 9, RenderingBias = RenderingBias.Performance },
+        });
+        lit.Children.Add(glow);
+        lit.Children.Add(new Path { Data = shape, Stroke = _glass.LitRim(outer, inner), StrokeThickness = 1.3 });
+        return lit;
     }
 
     /// <summary>
@@ -641,7 +667,7 @@ internal sealed class RadialMenu : Canvas
         var text = lit ? Colors.White : (seg.Model.Enabled ? _glass.Text : _glass.TextMuted);
         AnimateColor(seg.Foreground, text, 130);
 
-        double push = lit ? 6 : on ? 2 : 0;
+        double push = lit ? 3 : on ? 1.5 : 0;
         var target = Polar(seg.MidAngle, push) - new Vector(Center, Center);
         Animate(seg.Offset, TranslateTransform.XProperty, target.X, on ? 340 : 240, on ? Motion.Spring : Motion.Out);
         Animate(seg.Offset, TranslateTransform.YProperty, target.Y, on ? 340 : 240, on ? Motion.Spring : Motion.Out);
@@ -688,7 +714,7 @@ internal sealed class RadialMenu : Canvas
         WheelSegmentModel Model,
         Geometry Geometry,
         Path Tile,
-        Path Light,
+        UIElement Light,
         FrameworkElement Content,
         SolidColorBrush Foreground,
         TranslateTransform Offset,
@@ -696,6 +722,7 @@ internal sealed class RadialMenu : Canvas
 
     /// <summary>The wheel's glass, in light or dark, around the user's accent colour.</summary>
     private sealed record Glass(
+        bool Dark,
         Brush Disc,
         Brush Tile,
         Brush TileOff,
@@ -713,6 +740,7 @@ internal sealed class RadialMenu : Canvas
         Color TextMuted,
         Color HubRim,
         Color HubRimActive,
+        Color LitEdge,
         Color Ripple,
         byte HaloAlpha,
         byte SpecularAlpha,
@@ -725,8 +753,12 @@ internal sealed class RadialMenu : Canvas
             static Color W(byte a) => Color.FromArgb(a, 255, 255, 255);
             var a = p.Accent;
             return new Glass(
-                Disc: Diagonal(dark ? Color.FromArgb(0xA8, 0x1C, 0x1E, 0x26) : Color.FromArgb(0x7A, 0xF8, 0xFA, 0xFF),
-                               dark ? Color.FromArgb(0x8F, 0x0A, 0x0B, 0x0F) : Color.FromArgb(0x4D, 0xEE, 0xF1, 0xF8)),
+                Dark: dark,
+                // Dark: the same glass as the Longshot panel (Brush.Glass), so the desktop's colour
+                // comes through. Light was already at least as see-through as the panel.
+                Disc: dark
+                    ? Vertical(Color.FromArgb(0x94, 0x2C, 0x2D, 0x34), Color.FromArgb(0x61, 0x16, 0x17, 0x1C))
+                    : Diagonal(Color.FromArgb(0x7A, 0xF8, 0xFA, 0xFF), Color.FromArgb(0x4D, 0xEE, 0xF1, 0xF8)),
                 Tile: Vertical(dark ? W(0x1F) : W(0x8C), dark ? W(0x0A) : W(0x40)),
                 TileOff: Vertical(dark ? W(0x0D) : W(0x40), dark ? W(0x05) : W(0x1F)),
                 TileRim: Diagonal(dark ? W(0x33) : W(0xF0), dark ? W(0x0D) : W(0x66)),
@@ -734,31 +766,48 @@ internal sealed class RadialMenu : Canvas
                 Rim: Corners(dark ? W(0x5C) : W(0xFA), dark ? W(0x0A) : W(0x40)),
                 EdgeLight: Corners(dark ? W(0x40) : W(0xE6), Color.FromArgb(0, 255, 255, 255)),
                 Ice: IceStreaks(dark ? (byte)0x10 : (byte)0x26),
-                BackdropTint: Frozen(new SolidColorBrush(dark ? Color.FromArgb(0x59, 0x08, 0x09, 0x0C) : Color.FromArgb(0x1A, 0xFF, 0xFF, 0xFF))),
+                BackdropTint: Frozen(new SolidColorBrush(dark ? Color.FromArgb(0x1A, 0x00, 0x00, 0x00) : Color.FromArgb(0x1A, 0xFF, 0xFF, 0xFF))),
                 Texture: Grain(dark),
-                TextureOpacity: dark ? 0.5 : 0.7,
+                TextureOpacity: dark ? 0.45 : 0.7,
                 AccentFill: Frozen(new LinearGradientBrush(ThemeResources.Mix(a, Colors.White, 0.35), a, 0)),
                 Accent: a,
                 Text: dark ? Color.FromRgb(0xF2, 0xF3, 0xF6) : Color.FromRgb(0x15, 0x17, 0x1C),
                 TextMuted: dark ? Color.FromArgb(0x73, 0xF2, 0xF3, 0xF6) : Color.FromArgb(0x7A, 0x15, 0x17, 0x1C),
                 HubRim: dark ? W(0x29) : W(0xE6),
                 HubRimActive: Color.FromArgb(0xB3, a.R, a.G, a.B),
+                LitEdge: ThemeResources.Mix(a, Colors.White, 0.6),
                 Ripple: ThemeResources.Mix(a, Colors.White, 0.45),
                 HaloAlpha: dark ? (byte)0x8C : (byte)0x3D,
                 SpecularAlpha: dark ? (byte)0x8C : (byte)0xF2,
                 HubShineAlpha: dark ? (byte)0x1F : (byte)0x8C,
-                GlowOpacity: dark ? 0.75 : 0.9);
+                GlowOpacity: dark ? 0.5 : 0.55);
         }
 
-        /// <summary>The blue splash behind a lit tile: a bright core fading through the accent to deep indigo.</summary>
-        public Brush Backlight(Point center, double radius)
+        /// <summary>
+        /// The tint of a lit tile, from its outer edge (brighter, more of the accent) to the hub
+        /// (deeper, more see-through). Light glass needs more colour so white text still reads.
+        /// </summary>
+        public Brush LitFill(Point outer, Point inner)
         {
-            var b = new RadialGradientBrush { MappingMode = BrushMappingMode.Absolute, Center = center, GradientOrigin = center, RadiusX = radius, RadiusY = radius };
-            b.GradientStops.Add(new GradientStop(ThemeResources.Mix(Accent, Color.FromRgb(0xB8, 0xE6, 0xFF), 0.6), 0));
-            b.GradientStops.Add(new GradientStop(Accent, 0.5));
-            b.GradientStops.Add(new GradientStop(ThemeResources.Mix(Accent, Color.FromRgb(0x2A, 0x1A, 0x8A), 0.5), 1));
+            bool dark = Dark;
+            var b = new LinearGradientBrush { MappingMode = BrushMappingMode.Absolute, StartPoint = outer, EndPoint = inner };
+            b.GradientStops.Add(new GradientStop(WithAlpha(ThemeResources.Mix(Accent, Color.FromRgb(0xB8, 0xE6, 0xFF), 0.22), dark ? (byte)0xD9 : (byte)0xF0), 0));
+            b.GradientStops.Add(new GradientStop(WithAlpha(Accent, dark ? (byte)0xA6 : (byte)0xD6), 0.5));
+            b.GradientStops.Add(new GradientStop(WithAlpha(ThemeResources.Mix(Accent, Color.FromRgb(0x2A, 0x1A, 0x8A), 0.3), dark ? (byte)0x73 : (byte)0xB8), 1));
             return Frozen(b);
         }
+
+        /// <summary>The lit tile's rim: bright along the outer edge, fading towards the hub.</summary>
+        public Brush LitRim(Point outer, Point inner)
+        {
+            var b = new LinearGradientBrush { MappingMode = BrushMappingMode.Absolute, StartPoint = outer, EndPoint = inner };
+            b.GradientStops.Add(new GradientStop(Color.FromArgb(0xE6, 255, 255, 255), 0));
+            b.GradientStops.Add(new GradientStop(WithAlpha(LitEdge, 0x8C), 0.45));
+            b.GradientStops.Add(new GradientStop(WithAlpha(LitEdge, 0x33), 1));
+            return Frozen(b);
+        }
+
+        private static Color WithAlpha(Color c, byte alpha) => Color.FromArgb(alpha, c.R, c.G, c.B);
 
         private static Brush Vertical(Color top, Color bottom) => Frozen(new LinearGradientBrush(top, bottom, 90));
 
