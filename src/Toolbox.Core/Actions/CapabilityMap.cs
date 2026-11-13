@@ -42,6 +42,21 @@ public static class CapabilityMap
         public const string OcrImageText = "ocr.image-text";
         public const string OcrSearchablePdf = "ocr.searchable-pdf";
 
+        /// <summary>The PDF editor (opens the viewer in edit mode).</summary>
+        public const string PdfEdit = "pdf.edit";
+
+        /// <summary>The PDF editor, starting with the signature tool.</summary>
+        public const string PdfSign = "pdf.sign";
+
+        /// <summary>The PDF editor, starting with the pages (order, turn, remove, add from another PDF).</summary>
+        public const string PdfPages = "pdf.pages";
+
+        /// <summary>A dark copy for reading at night (vector and searchable; pictures kept by default).</summary>
+        public const string PdfDark = "pdf.dark";
+
+        /// <summary>Final save of a PDF editing session (option "plan" holds the edit plan JSON).</summary>
+        public const string PdfSaveEdits = "pdf.save-edits";
+
         /// <summary>Final render of a Studio editing session (crop/adjust/background/annotate/redact stack).</summary>
         public const string StudioExport = "studio.export";
 
@@ -318,6 +333,39 @@ public static class CapabilityMap
             ],
         });
 
+        // ---- PDF editing (the viewer's edit mode) and the dark copy ---------------------------------
+        const string pdfEditNote = "Saved as a new PDF beside the original, which is never changed. Pages keep their text, links and quality.";
+        list.Add(Tool(Ids.PdfEdit, "Edit PDF", "Edit PDF", "pen", " Edited",
+            "Add text, drawings, highlights, pictures, signatures and white cover; turn, reorder, remove pages or add pages from other PDFs. The result is a PDF.", lossy: false,
+            output: FileKind.Pdf, inputs: PdfInputs,
+            limitations: [pdfEditNote, "Existing text cannot be retyped in place: cover it with white and type over it.", "Password-protected PDFs are not supported yet."]));
+        list.Add(Tool(Ids.PdfSign, "Sign", "Sign PDF", "sign", " Signed",
+            "Place a drawn, typed or picture signature on any page. Signatures you make are kept for next time on this PC.", lossy: false,
+            output: FileKind.Pdf, inputs: PdfInputs,
+            limitations: [pdfEditNote, "A drawn signature is a picture of a signature, not a certificate-based digital signature."]));
+        list.Add(Tool(Ids.PdfPages, "Pages", "Organise pages", "pages", " Edited",
+            "Reorder, turn and remove pages, or add pages from other PDFs, then save the result as one PDF.", lossy: false,
+            output: FileKind.Pdf, inputs: PdfInputs, limitations: [pdfEditNote]));
+        list.Add(new ActionDefinition
+        {
+            Id = Ids.PdfDark,
+            Label = "Dark copy",
+            Title = "Dark copy",
+            Meaning = "A copy for reading in the dark: white pages become black and black text white. The pages stay vector and searchable; photos and figures keep their colours unless you choose otherwise.",
+            Group = ActionGroup.Tools,
+            Inputs = PdfInputs,
+            Output = FileKind.Pdf,
+            Icon = "moon",
+            OutputSuffix = " Dark",
+            Options = [new("pictures", "Photos and figures", OptionType.Choice, "keep", "keep: as they are. invert: like the rest of the page.", Choices: ["keep", "invert"])],
+            Limitations =
+            [
+                "For reading on a screen; printing it uses a lot of ink.",
+                "Comments and form fields drawn on top of the page keep their colours.",
+                "It relies on PDF transparency: very old viewers may show the page unchanged.",
+            ],
+        });
+
         foreach (var (id, arity) in new[] { (Ids.RunRecipe, InputArity.PerFile), (Ids.RunRecipeCombined, InputArity.Combined) })
         {
             list.Add(new ActionDefinition
@@ -343,6 +391,19 @@ public static class CapabilityMap
             Inputs = new HashSet<FileKind>(ImageInputs.Append(FileKind.Pdf)),
             Output = FileKind.Png,
             Icon = "export",
+        });
+
+        list.Add(new ActionDefinition
+        {
+            Id = Ids.PdfSaveEdits,
+            Label = "Save",
+            Title = "Save edited PDF",
+            Meaning = "Writes the PDF editor's result as a new PDF beside the original: the pages in their new order and turns, with what was added drawn on them. The original is not changed.",
+            Group = ActionGroup.Tools,
+            Inputs = PdfInputs,
+            Output = FileKind.Pdf,
+            Icon = "export",
+            OutputSuffix = " Edited",
         });
 
         return list;

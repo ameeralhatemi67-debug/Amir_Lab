@@ -291,6 +291,52 @@ The owner proposed eight ideas. They were discussed and an order was agreed; thi
   - **Window:** 36 DIPs wider, so the longest codes fit.
   - **Names:** greys are named only with grey names (#191919 had been "midnightblue").
 
+## Preview, per-type rings, the PDF viewer and editor (13 Nov 2026)
+
+These are ideas 6, 7 and 8 of the owner's list. The owner added a spec for the PDF viewer (controls, search, themes, remembering, peek, split, smooth scrolling).
+
+- **Preview on the wheel's centre:**
+  - The hub was a dead area (dropping there cancelled), and it feels like "just look", so dropping on it opens the Preview window. This works for any file, including kinds the wheel has no actions for (Word, video, text).
+  - **Guard:** the wheel opens with the pointer on the hub, so a quick accidental drop must do nothing. The hub takes drops only after the pointer has left it once, or after 0.65 s. While armed and hovered it lights like a tile and reads "Preview · Edit in one click".
+- **One window, look then edit** (owner: "editing should be a simple tap"):
+  - Preview is the same kind of window as the editors.
+  - **Edit:** for a PDF it turns the same window into the PDF editor. A picture opens in the image editor. A Word document opens in Word (owner's choice). Text opens in its editor.
+  - **Other files:** video and audio play. Anything else shows Windows' own large thumbnail with an Open button.
+- **Per-type Tools ring ("same seats, different guests"):**
+  - **PDF:** Edit PDF, Metadata, Sign, Dark copy, Add BG, Pages, Searchable, Text (OCR).
+  - **Images:** as before.
+  - **Shared seats:** Metadata, Add BG and Text (OCR) keep the same seat in both, for muscle memory.
+  - **No dead tiles:** the PDF ring no longer shows Compress and Redact greyed out (the owner's screenshot). This replaces the 8 Nov rule "the same seven tools for both".
+  - **Settings:** `ToolsRingPdf` customises the PDF ring; `ToolsRing` stays the images' ring.
+- **PDF viewer:**
+  - **Pages:** continuous pages, a quick low-resolution render as each page comes into view, then a sharp one once scrolling settles.
+  - **Overview (O):** all pages small in a grid for very fast scrolling; a click goes back to that page. This is the owner's "extremely zoomed out" idea, as a mode rather than an automatic switch while dragging the scrollbar, which would change the scroll range mid-drag.
+  - **Zoom:** Ctrl+wheel around the pointer, buttons, fit width, fit page, 100%.
+  - **Moving around:** first / previous / page box / next / last; the view turns either way.
+  - **History:** back / forward (Alt+arrows) through jumps (outline, links, search, page box).
+  - **Outline:** from the file's bookmarks.
+  - **Search:** highlights every hit, has a match-case toggle and next/previous (Enter, F3), across all open files in edit mode.
+  - **Page colours:** Light, Sepia, Grey, Dark (negative), Night, and "My shade" (a level slider). "Keep photos as they are" leaves raster pictures untouched; vector drawings can't be told apart from text and are coloured like the page.
+  - **Remembered per file** (path, size and last change): page, position, zoom and colours.
+  - **Peek:** a click on a link to another page shows that place in a card ("Go to page N" or close). Web links open in the browser (http, https and mailto only).
+  - **Split:** the same PDF twice side by side, each with its own zoom and place.
+  - **Present (F5)** and **Full screen (F11)**.
+- **PDF editor:**
+  - **Tools:** text (Arabic is right-to-left and shaped), pen, highlighter, white cover (to hide something and type over it), picture, and signature.
+  - **Signatures:** drawn, typed in a handwriting font, or a picture whose white background is made see-through. They are kept as PNGs in the data folder and offered next time.
+  - **Select** moves, resizes (corner) or deletes; a double-click edits text. Undo and redo cover everything.
+  - **Pages panel:** move, turn, remove, and add pages from other PDFs (merge).
+  - **Save** goes through the job pipeline (`pdf.save-edits`): a new PDF beside the original, never overwriting, with the usual toast and history.
+- **How the PDF is written (chosen after checking the libraries):**
+  - **The editor:** PDFium's own editing API copies pages exactly (text, links and fonts stay), reorders, turns and merges them. The additions are drawn with Skia into a PDF layer of their own (real text with embedded fonts, HarfBuzz for Arabic) and placed on each page as a form, through the page's exact display-to-user-space mapping. That is how marks land where they were drawn on rotated and cropped pages too.
+  - **Why not PDFsharp for text:** PDFsharp 6.2's core build needs a font resolver and does no Arabic shaping.
+  - **The dark copy:** PDFsharp's low-level API writes a white rectangle under each page and a white Difference-blend rectangle over it, which inverts every colour while the page stays vector and searchable. With "keep photos", the pictures' boxes (found with PDFium, including pictures inside form XObjects) are inverted back. It works in PDFium; other viewers still need checking.
+- **Honest limits:**
+  - Existing text can't be retyped in place (cover and type over it).
+  - Changing the fonts of existing text isn't offered (the owner's "maybe even changing the font"): PDF text is positioned glyphs with subset fonts, and changing it isn't reliable, least of all for Arabic.
+  - A drawn signature is a picture, not a certificate signature.
+  - Password-protected PDFs don't open.
+
 ## App icon (8 Nov 2026)
 
 - **"Tool tiles", chosen by the owner** from three options (tool tiles, an AL monogram, a lab flask). It shows four tiles on an accent square:

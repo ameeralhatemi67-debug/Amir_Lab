@@ -33,19 +33,21 @@ public static class WheelLayouts
         ]);
 
     /// <summary>
-    /// Tools ring: the same seven positions for images and PDFs so muscle memory carries over; the
-    /// eighth is text recognition (plain text from a picture, a searchable copy of a PDF).
+    /// Tools ring, per kind of file: "same seats, different guests". Tools both kinds have keep the
+    /// same seat (Metadata top-right, Add BG bottom, Text (OCR) top-left), so muscle memory carries
+    /// over; the other seats hold what fits that kind, so no tile is greyed out (owner, 13 Nov 2026:
+    /// the PDF ring used to show Compress and Redact disabled).
     /// </summary>
     public static RingLayout DefaultTools { get; } = new(
         ActionGroup.Tools,
-        [.. ToolOrder, CapabilityMap.Ids.OcrSearchablePdf],
-        [.. ToolOrder, CapabilityMap.Ids.OcrImageText]);
-
-    private static IReadOnlyList<string> ToolOrder =>
-    [
-        CapabilityMap.Ids.Compress, CapabilityMap.Ids.Metadata, CapabilityMap.Ids.Edit, CapabilityMap.Ids.Annotate,
-        CapabilityMap.Ids.Background, CapabilityMap.Ids.Crop, CapabilityMap.Ids.Redact,
-    ];
+        [
+            CapabilityMap.Ids.PdfEdit, CapabilityMap.Ids.Metadata, CapabilityMap.Ids.PdfSign, CapabilityMap.Ids.PdfDark,
+            CapabilityMap.Ids.Background, CapabilityMap.Ids.PdfPages, CapabilityMap.Ids.OcrSearchablePdf, CapabilityMap.Ids.OcrImageText,
+        ],
+        [
+            CapabilityMap.Ids.Compress, CapabilityMap.Ids.Metadata, CapabilityMap.Ids.Edit, CapabilityMap.Ids.Annotate,
+            CapabilityMap.Ids.Background, CapabilityMap.Ids.Crop, CapabilityMap.Ids.Redact, CapabilityMap.Ids.OcrImageText,
+        ]);
 
     public static InputClass Classify(IReadOnlyList<ProbedFile> files)
     {

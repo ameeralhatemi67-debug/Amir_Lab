@@ -48,6 +48,9 @@ internal sealed class RadialMenu : Canvas
     private readonly Canvas _fx = new() { IsHitTestVisible = false };
     private readonly Grid _hub = new() { IsHitTestVisible = false };
     private readonly Ellipse _hubRim = new() { StrokeThickness = 1.2 };
+    private readonly Ellipse _hubLight = new() { Opacity = 0, IsHitTestVisible = false };
+    private WheelSegmentModel? _hubModel;
+    private bool _hubArmed;
     private readonly TextBlock _pillPrimary = new();
     private readonly TextBlock _pillSecondary = new();
     private readonly StackPanel _dots = new() { Orientation = Orientation.Horizontal, IsHitTestVisible = false };
@@ -181,6 +184,33 @@ internal sealed class RadialMenu : Canvas
         if (_hover is OutsideHit or CenterHit) ShowPill(primary, secondary);
     }
 
+    /// <summary>What a drop on the hub does (Preview); null: the hub takes no drops.</summary>
+    public void SetHub(WheelSegmentModel? hub)
+    {
+        _hubModel = hub;
+        HubArmed = false;
+    }
+
+    /// <summary>
+    /// The hub takes drops only once armed: the wheel opens with the pointer on it, so a quick
+    /// accidental drop must not open anything. The drag service arms it when the pointer leaves the
+    /// hub, or after a moment.
+    /// </summary>
+    public bool HubArmed
+    {
+        get => _hubArmed;
+        set
+        {
+            if (_hubArmed == value) return;
+            _hubArmed = value;
+            if (_hover == CenterHit)
+            {
+                _hover = OutsideHit; // shown again with the new state
+                SetHover(CenterHit);
+            }
+        }
+    }
+
     /// <summary>The Share bubble's action (null hides it).</summary>
     public void SetShare(WheelSegmentModel? share)
     {
@@ -220,6 +250,7 @@ internal sealed class RadialMenu : Canvas
 
     public WheelSegmentModel? SegmentAt(int index) =>
         index == ShareHit ? _share
+        : index == CenterHit ? (_hubArmed ? _hubModel : null)
         : _ring is not null && index >= 0 && index < _ring.Segments.Count ? _ring.Segments[index] : null;
 
     /// <summary>Screen-independent centre point of a segment (in this control's coordinates).</summary>
@@ -235,6 +266,7 @@ internal sealed class RadialMenu : Canvas
         if (index == _hover) return;
         if (_hover >= 0 && _hover < _segments.Count) Highlight(_segments[_hover], false);
         if (_hover == ShareHit) LightBubble(false);
+        if (_hover == CenterHit) LightHub(false);
         _hover = index;
 
         WheelSegmentModel? model = null;
@@ -247,6 +279,12 @@ internal sealed class RadialMenu : Canvas
         {
             LightBubble(true);
             model = _share;
+        }
+        else if (index == CenterHit && _hubArmed && _hubModel is not null)
+        {
+            Animate(_glow, OpacityProperty, 0, 200);
+            LightHub(true);
+            model = _hubModel;
         }
         else
         {
@@ -380,6 +418,11 @@ internal sealed class RadialMenu : Canvas
         SetTop(_hub, Center - size / 2);
         _hub.Children.Add(new Ellipse { Fill = _glass.Hub });
         _hub.Children.Add(new Ellipse { Fill = _glass.Texture, Opacity = _glass.TextureOpacity * 0.6 });
+        // Lit when a drop here would open Preview: tinted glass like a lit tile.
+        _hubLight.Fill = _glass.LitFill(new Point(size / 2, 0), new Point(size / 2, size));
+        _hubLight.Stroke = _glass.LitRim(new Point(size / 2, 0), new Point(size / 2, size));
+        _hubLight.StrokeThickness = 1.3;
+        _hub.Children.Add(_hubLight);
         _hubRim.Stroke = new SolidColorBrush(_glass.HubRim);
         _hub.Children.Add(_hubRim);
         var shine = new Ellipse { Margin = new Thickness(size * 0.16, 3, size * 0.16, size * 0.55), Fill = new LinearGradientBrush(Color.FromArgb(_glass.HubShineAlpha, 255, 255, 255), Color.FromArgb(0, 255, 255, 255), 90) };
@@ -441,6 +484,13 @@ internal sealed class RadialMenu : Canvas
         stack.Children.Add(_bubbleLabel);
         _bubble.Children.Add(stack);
         _bubble.Visibility = _share is null ? Visibility.Collapsed : Visibility.Visible;
+    }
+
+    private void LightHub(bool on)
+    {
+        Animate(_hubLight, OpacityProperty, on ? 1 : 0, on ? 160 : 220);
+        if (_pillPrimary.Foreground is SolidColorBrush primary && !primary.IsFrozen) AnimateColor(primary, on ? Colors.White : _glass.Text, 140);
+        if (_pillSecondary.Foreground is SolidColorBrush secondary && !secondary.IsFrozen) AnimateColor(secondary, on ? Color.FromArgb(0xD9, 255, 255, 255) : _glass.TextMuted, 140);
     }
 
     private void LightBubble(bool on)

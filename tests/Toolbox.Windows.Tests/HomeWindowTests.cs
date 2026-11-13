@@ -38,6 +38,8 @@ public class HomeWindowTests
 
     private static void BuildAndRender()
     {
+        // As in the app: awaits in the UI resume on the UI thread.
+        SynchronizationContext.SetSynchronizationContext(new System.Windows.Threading.DispatcherSynchronizationContext(System.Windows.Threading.Dispatcher.CurrentDispatcher));
         var data = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"amirlap-home-{Guid.NewGuid():N}");
         var previous = Environment.GetEnvironmentVariable(Core.AppPaths.DataEnvironmentVariable);
         Environment.SetEnvironmentVariable(Core.AppPaths.DataEnvironmentVariable, data);
@@ -94,6 +96,7 @@ public class HomeWindowTests
                 if (lang == "en") RenderWheel(snapshots, theme);
                 RenderPulse(snapshots, theme, lang, host);
                 RenderColour(snapshots, theme, lang);
+                RenderViewer(snapshots, theme, lang, dispatcher);
             }
             Lang.Set("en");
             ThemeResources.Apply(app, "light");
@@ -583,6 +586,32 @@ public class HomeWindowTests
             Layout(stage, 420, 420);
             Save(snapshots, stage, 420, 420, $"wheel-{name}-{theme}");
         }
+
+        // The hub: Preview, but only once armed (the wheel opens with the pointer on it).
+        menu.SetRing(rings[0], 0, rings.Count, animate: false);
+        menu.SetHub(Wheel.WheelModels.Preview(1));
+        menu.SetHover(Wheel.RadialMenu.CenterHit);
+        Assert.Null(menu.SegmentAt(Wheel.RadialMenu.CenterHit));
+        menu.HubArmed = true;
+        Assert.Equal(Wheel.WheelModels.PreviewActionId, menu.SegmentAt(Wheel.RadialMenu.CenterHit)?.ActionId);
+        Layout(stage, 420, 420);
+        Save(snapshots, stage, 420, 420, $"wheel-hub-{theme}");
+
+        // Per kind of file: the PDF Tools ring has its own tools, none greyed out; shared tools keep their seat.
+        var pdfPayload = new[] { new Core.Inputs.ProbedFile(@"C:\Users\You\Documents\Report.pdf", Core.Inputs.FileKind.Pdf, 2_400_000, null) };
+        var pdfRings = Wheel.WheelModels.Build(pdfPayload, new Core.Settings.AppSettings());
+        var pdfTools = pdfRings[1];
+        var imageTools = rings[1];
+        Assert.Equal(8, pdfTools.Segments.Count);
+        Assert.All(pdfTools.Segments.Where(s => s.ActionId != Core.Actions.CapabilityMap.Ids.OcrSearchablePdf && s.ActionId != Core.Actions.CapabilityMap.Ids.OcrImageText), s => Assert.True(s.Enabled, s.ActionId));
+        foreach (var shared in new[] { Core.Actions.CapabilityMap.Ids.Metadata, Core.Actions.CapabilityMap.Ids.Background, Core.Actions.CapabilityMap.Ids.OcrImageText })
+            Assert.Equal(imageTools.Segments.ToList().FindIndex(s => s.ActionId == shared), pdfTools.Segments.ToList().FindIndex(s => s.ActionId == shared));
+        Assert.DoesNotContain(pdfTools.Segments, s => s.ActionId is Core.Actions.CapabilityMap.Ids.Compress or Core.Actions.CapabilityMap.Ids.Redact);
+        menu.HubArmed = false;
+        menu.SetRing(pdfTools, 1, pdfRings.Count, animate: false);
+        menu.SetHover(3);
+        Layout(stage, 420, 420);
+        Save(snapshots, stage, 420, 420, $"wheel-pdf-tools-{theme}");
     }
 
     /// <summary>
@@ -847,6 +876,117 @@ public class HomeWindowTests
         Layout(stage, 260, 260);
         Save(snapshots, stage, 260, 260, $"colour-loupe-{theme}-{lang}");
         picker.Close();
+    }
+
+    /// <summary>A three-page PDF with real text (Skia) and a picture, for the viewer.</summary>
+    private static string ViewerSample()
+    {
+        var dir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "amirlap-viewer-" + Guid.NewGuid().ToString("N"));
+        System.IO.Directory.CreateDirectory(dir);
+        var path = System.IO.Path.Combine(dir, "Field report.pdf");
+        using var stream = new SkiaSharp.SKFileWStream(path);
+        using var doc = SkiaSharp.SKDocument.CreatePdf(stream);
+        using var typeface = SkiaSharp.SKTypeface.FromFamilyName("Segoe UI") ?? SkiaSharp.SKTypeface.Default;
+        using var title = new SkiaSharp.SKFont(typeface, 26);
+        using var body = new SkiaSharp.SKFont(typeface, 13);
+        using var ink = new SkiaSharp.SKPaint { Color = SkiaSharp.SKColors.Black, IsAntialias = true };
+        using var photo = new SkiaSharp.SKPaint { Shader = SkiaSharp.SKShader.CreateLinearGradient(new SkiaSharp.SKPoint(0, 0), new SkiaSharp.SKPoint(240, 160), [SkiaSharp.SKColors.OrangeRed, SkiaSharp.SKColors.Gold], SkiaSharp.SKShaderTileMode.Clamp) };
+        for (int page = 1; page <= 3; page++)
+        {
+            var canvas = doc.BeginPage(595, 842);
+            canvas.DrawText($"{page}. Field report from Amir", 60, 90, SkiaSharp.SKTextAlign.Left, title, ink);
+            for (int line = 0; line < 24; line++)
+                canvas.DrawText($"Line {line + 1}: measurements, notes and a remark about the site visit on page {page}.", 60, 140 + line * 22, SkiaSharp.SKTextAlign.Left, body, ink);
+            if (page == 1)
+            {
+                using var surface = SkiaSharp.SKSurface.Create(new SkiaSharp.SKImageInfo(240, 160));
+                surface.Canvas.DrawRect(0, 0, 240, 160, photo);
+                using var image = surface.Snapshot();
+                canvas.DrawImage(image, new SkiaSharp.SKRect(300, 690, 540, 810));
+            }
+            doc.EndPage();
+        }
+        doc.Close();
+        return path;
+    }
+
+    /// <summary>
+    /// The Preview window on a real PDF, shown far off-screen: it opens, renders, searches, turns dark,
+    /// becomes the editor (additions drawn, pages panel), and saves through the job pipeline.
+    /// </summary>
+    private static void RenderViewer(string? snapshots, string theme, string lang, ActionDispatcher dispatcher)
+    {
+        var pdf = ViewerSample();
+        var window = new Viewer.ViewerWindow([pdf], 0, Viewer.ViewerStart.Preview, dispatcher, null)
+        {
+            WindowStartupLocation = WindowStartupLocation.Manual,
+            Left = -30000,
+            Top = -30000,
+            Width = 1180,
+            Height = 820,
+            ShowActivated = false,
+        };
+        window.Show();
+        try
+        {
+            Pump(() => window.IsReady, "the viewer to open the PDF", seconds: 20);
+            var view = window.ActiveView!;
+            Assert.Equal(3, view.Pages.Count);
+            Pump(() => view.Rendered.High > 0, "a sharp page", seconds: 20);
+            var content = (FrameworkElement)window.Content;
+            Save(snapshots, content, 1180, 820, $"viewer-{theme}-{lang}");
+
+            var search = window.SearchFor("amir");
+            Pump(() => search.IsCompleted, "the search", seconds: 20);
+            if (search.IsFaulted) System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(search.Exception!.InnerException!).Throw();
+            Assert.Equal("1 / 3", window.SearchStatus); // the title of each page
+            Assert.True(view.HighlightCount >= 1);
+
+            window.UseTheme("dark");
+            Pump(() => view.Rendered.High > 0, "dark pages", seconds: 20);
+            if (lang == "en") Save(snapshots, content, 1180, 820, $"viewer-dark-{theme}");
+
+            // The editor: additions drawn on the page, the pages panel, and Save through the job pipeline.
+            window.UseTheme("light");
+            window.StartEditing();
+            var session = window.Session!;
+            session.Do(pages =>
+            {
+                pages[0].Marks.Add(new Processing.Pdf.PdfRectMark(56, 128, 300, 24, 0xFFFFFFFF));
+                pages[0].Marks.Add(new Processing.Pdf.PdfTextMark(60, 130, 320, lang == "ar" ? "تمت المراجعة — أمير" : "Reviewed and approved — Amir", 15, 0xFF1D4ED8));
+                pages[0].Marks.Add(new Processing.Pdf.PdfInkMark([[new(60, 300), new(120, 290), new(200, 310), new(280, 295)]], 0x66FFD600, 12));
+            }, structural: false);
+            Assert.Equal(3, session.Pages[0].Marks.Count);
+            Assert.Equal(3, view.LayerOf(0)!.Children.Count);
+            session.Undo(); // the three were added in one step
+            Assert.Empty(view.LayerOf(0)!.Children);
+            session.Redo();
+            Assert.Equal(3, view.LayerOf(0)!.Children.Count);
+            window.ShowPagesPanel();
+            Pump(() => view.Rendered.High > 0, "pages in the editor", seconds: 20);
+            DoEvents();
+            Save(snapshots, content, 1180, 820, $"viewer-edit-{theme}-{lang}");
+
+            var plan = session.ToPlan();
+            Assert.Single(plan.Sources);
+            Assert.Equal(3, plan.Pages.Count);
+            var saved = System.IO.Path.Combine(System.IO.Path.GetDirectoryName(pdf)!, "saved.pdf");
+            Processing.Pdf.PdfEditor.Save(Processing.Pdf.PdfEditPlan.FromJson(plan.ToJson()), saved);
+            using var result = Processing.Pdf.PdfDocument.Open(saved);
+            Assert.Equal(3, result.PageCount);
+            Assert.Contains(lang == "ar" ? "أمير" : "Reviewed and approved", result.GetText(1));
+            window.Discard();
+        }
+        finally
+        {
+            window.Close();
+        }
+    }
+
+    private static void DoEvents()
+    {
+        var until = DateTime.UtcNow.AddMilliseconds(300);
+        Pump(() => DateTime.UtcNow > until, "a moment");
     }
 
     private static void Layout(FrameworkElement element, double width, double height)

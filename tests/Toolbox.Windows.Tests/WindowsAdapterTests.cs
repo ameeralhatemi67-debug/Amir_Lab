@@ -78,15 +78,24 @@ public class InstanceChannelTests
 public class WheelModelTests
 {
     [Fact]
-    public void Pdf_payload_gets_the_pdf_convert_ring_and_shared_tools_ring()
+    public void Pdf_payload_gets_the_pdf_convert_ring_and_its_own_tools_ring()
     {
         var files = new[] { new ProbedFile(@"C:\a.pdf", FileKind.Pdf, 2048, null) };
         var rings = WheelModels.Build(files, new AppSettings());
         Assert.Equal(["DOCX", "JPG", "PNG", "TXT"], rings[0].Segments.Select(s => s.Label));
-        Assert.Equal(8, rings[1].Segments.Count);
-        Assert.Equal(CapabilityMap.Ids.OcrSearchablePdf, rings[1].Segments[^1].ActionId); // the same seven tools, then OCR
-        Assert.False(rings[1].Segments.Single(s => s.ActionId == CapabilityMap.Ids.Compress).Enabled); // PDF compression not available
-        Assert.True(rings[1].Segments.Single(s => s.ActionId == CapabilityMap.Ids.Crop).Enabled);
+        // Owner, 13 Nov 2026: the Tools ring differs per kind of file and shows no dead tiles; shared tools keep their seat.
+        Assert.Equal(
+            [
+                CapabilityMap.Ids.PdfEdit, CapabilityMap.Ids.Metadata, CapabilityMap.Ids.PdfSign, CapabilityMap.Ids.PdfDark,
+                CapabilityMap.Ids.Background, CapabilityMap.Ids.PdfPages, CapabilityMap.Ids.OcrSearchablePdf, CapabilityMap.Ids.OcrImageText,
+            ],
+            rings[1].Segments.Select(s => s.ActionId));
+        Assert.DoesNotContain(rings[1].Segments, s => s.ActionId == CapabilityMap.Ids.Compress);
+        Assert.True(rings[1].Segments.Single(s => s.ActionId == CapabilityMap.Ids.PdfDark).Enabled);
+        var image = WheelModels.Build([new ProbedFile(@"C:\a.png", FileKind.Png, 2048, null)], new AppSettings())[1];
+        Assert.Equal(CapabilityMap.Ids.Metadata, image.Segments[1].ActionId);
+        Assert.Equal(CapabilityMap.Ids.Background, image.Segments[4].ActionId);
+        Assert.Equal(CapabilityMap.Ids.OcrImageText, image.Segments[7].ActionId);
     }
 
     [Fact]

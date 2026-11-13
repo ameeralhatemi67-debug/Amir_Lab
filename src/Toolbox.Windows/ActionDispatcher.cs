@@ -77,6 +77,11 @@ internal sealed class ActionDispatcher
                 else RunRecipe(recipe, paths, anchor);
                 return;
             }
+            if (actionId == Wheel.WheelModels.PreviewActionId)
+            {
+                Viewer.ViewerWindow.Open(paths, Viewer.ViewerStart.Preview, this, anchor);
+                return;
+            }
             if (actionId == ShareService.ActionId)
             {
                 ShareService.Share(paths, anchor, (title, message) => Notice(title, message, anchor, warning: true));

@@ -39,6 +39,16 @@ _Last updated: 8 Nov 2026 — Amir Lap phases 1 and 2 complete: the multi-tool s
 | Real wheel scrolling of other apps and live use end to end | **Partial** | Live in Edge through the capture session (`LiveLongshotTests`); the whole app (panel, picker, hooks) still needs a live try by the owner. |
 | Monitors with different scalings | **Partial** | One window spans the virtual screen; untested on mixed-DPI setups. 125% on one monitor checked live. |
 
+## Preview, PDF viewer and PDF editor (13 Nov 2026)
+
+| Capability | State | Evidence / notes |
+|---|---|---|
+| PDF engine: dark copy (photos kept or inverted, also in form XObjects, still searchable), editor Save (order, turns, merge, cover, ink, pictures, text incl. Arabic as text, rotated pages), picture boxes, page maps, search, outline, links | **Working** | `PdfEditTests` (Processing, 10): generated PDFs, results rendered with PDFium and checked pixel by pixel. |
+| Preview window: PDF viewer (render, search, dark theme), editor (additions, undo/redo, pages panel, plan saved), light/dark, English/Arabic | **Working** | `HomeWindowTests` opens the real window off-screen on a generated PDF; snapshots reviewed. |
+| Wheel centre = Preview (armed only after leaving the hub or 0.65 s); per-type Tools ring | **Working** (real drag: **Partial**) | `HomeWindowTests` (hub armed or not, PDF ring), `WindowsAdapterTests`. Dropping on the hub in a real Explorer drag needs a live try (the drag harness moves the real mouse). |
+| Pictures, text, video/audio and other files in Preview; Edit to the image editor, Word, the text editor | **Partial** | Built; needs a live try with real files (codecs and Office installs vary). |
+| Peek at links, split, overview, present, full screen, page colours with "keep photos", remembered place | **Partial** | Built; peek and present need a live try with real PDFs. |
+
 ## Pulse (tool #3)
 
 | Capability | State | Evidence / notes |

@@ -170,7 +170,7 @@ internal sealed class PaletteWindow : GlassWindow
 
         var query = _search.Text.Trim();
         var rows = new List<(ActionDefinition Action, Applicability Verdict)>();
-        foreach (var action in CapabilityMap.All.Where(a => a.Id != CapabilityMap.Ids.StudioExport && a.Group != ActionGroup.Recipes))
+        foreach (var action in CapabilityMap.All.Where(a => a.Id != CapabilityMap.Ids.StudioExport && a.Id != CapabilityMap.Ids.PdfSaveEdits && a.Group != ActionGroup.Recipes))
         {
             if (query.Length > 0 && !Matches(action, query)) continue;
             var verdict = _files.Count == 0 ? new Applicability(action, 0, 0, "Add files first") : CapabilityMap.Evaluate(action, probed);

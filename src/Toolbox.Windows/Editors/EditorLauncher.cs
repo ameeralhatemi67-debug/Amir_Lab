@@ -18,7 +18,16 @@ internal sealed class EditorLauncher : IEditorLauncher
         dispatcher.RecipeEditor = _studio.OpenRecipe;
     }
 
-    public bool CanOpen(ActionDefinition action) => action.Id == CapabilityMap.Ids.Metadata || _studio.CanOpen(action);
+    public bool CanOpen(ActionDefinition action) => action.Id == CapabilityMap.Ids.Metadata || PdfStart(action.Id) is not null || _studio.CanOpen(action);
+
+    /// <summary>The PDF editor's entries (they open the viewer in edit mode).</summary>
+    private static Viewer.ViewerStart? PdfStart(string id) => id switch
+    {
+        CapabilityMap.Ids.PdfEdit => Viewer.ViewerStart.Edit,
+        CapabilityMap.Ids.PdfSign => Viewer.ViewerStart.Sign,
+        CapabilityMap.Ids.PdfPages => Viewer.ViewerStart.Pages,
+        _ => null,
+    };
 
     public void Open(ActionDefinition action, IReadOnlyList<string> paths, Native.POINT? anchor)
     {
@@ -27,6 +36,11 @@ internal sealed class EditorLauncher : IEditorLauncher
             var window = new MetadataWindow(paths, _dispatcher, anchor);
             window.Show();
             Foreground.Activate(window);
+            return;
+        }
+        if (PdfStart(action.Id) is { } start)
+        {
+            Viewer.ViewerWindow.Open(paths, start, _dispatcher, anchor);
             return;
         }
         _studio.Open(action, paths, anchor);

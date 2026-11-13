@@ -37,6 +37,8 @@ public static class ProcessingEngine
         new Metadata.MetadataCleanHandler(),
         new Ocr.OcrTextHandler(),
         new Ocr.OcrSearchablePdfHandler(),
+        new Pdf.PdfDarkHandler(),
+        new Pdf.PdfEditSaveHandler(),
     ];
 
     public static IOutputVerifier CreateVerifier() => new OutputVerifier();

@@ -62,7 +62,11 @@ public sealed class AppSettings
     /// <summary>Optional custom ring orders (action ids); null uses the built-in layout.</summary>
     public List<string>? ConvertRingPdf { get; set; }
     public List<string>? ConvertRingImage { get; set; }
+
+    /// <summary>The Tools ring for images (the name is older than per-kind rings).</summary>
     public List<string>? ToolsRing { get; set; }
+
+    public List<string>? ToolsRingPdf { get; set; }
     public List<string>? RecipesRing { get; set; }
 
     // ---- Output -------------------------------------------------------------------------------

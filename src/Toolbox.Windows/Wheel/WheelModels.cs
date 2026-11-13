@@ -3,6 +3,7 @@ using Toolbox.Core.Actions;
 using Toolbox.Core.Inputs;
 using Toolbox.Core.Recipes;
 using Toolbox.Core.Settings;
+using Toolbox.Windows.Theme;
 
 namespace Toolbox.Windows.Wheel;
 
@@ -16,7 +17,7 @@ internal static class WheelModels
         var convertIds = inputClass == InputClass.Pdf
             ? settings.ConvertRingPdf ?? convert.PdfActions
             : settings.ConvertRingImage ?? convert.ImageActions;
-        var toolIds = settings.ToolsRing ?? WheelLayouts.DefaultTools.For(inputClass);
+        var toolIds = (inputClass == InputClass.Pdf ? settings.ToolsRingPdf : settings.ToolsRing) ?? WheelLayouts.DefaultTools.For(inputClass);
 
         var rings = new List<WheelRingModel>
         {
@@ -73,4 +74,18 @@ internal static class WheelModels
         }
         return list;
     }
+
+    /// <summary>
+    /// The wheel's centre: drop there to look at the file (the Preview window, where Edit is one click
+    /// away). It only takes drops once the pointer has left the hub or after a moment (see RadialMenu.HubArmed).
+    /// </summary>
+    public static WheelSegmentModel Preview(int fileCount) => new(
+        PreviewActionId,
+        Lang.T("Preview", "معاينة"),
+        Lang.T("Preview", "معاينة"),
+        "eye",
+        true,
+        fileCount == 1 ? Lang.T("Edit in one click", "التعديل بنقرة") : Lang.T($"{fileCount} files", $"{fileCount} ملفات"));
+
+    public const string PreviewActionId = "view.preview";
 }

@@ -39,6 +39,8 @@ internal sealed class DragActivationService : IDisposable
     private readonly DispatcherTimer _buttonPoll = new() { Interval = TimeSpan.FromMilliseconds(40) };
     // After the button goes up, OLE still has to deliver Drop/DragLeave; give it time before closing.
     private readonly DispatcherTimer _releaseGrace = new() { Interval = TimeSpan.FromMilliseconds(350) };
+    // The hub (Preview) takes drops after this, or once the pointer has left it.
+    private readonly DispatcherTimer _hubTimer = new() { Interval = TimeSpan.FromMilliseconds(650) };
 
     private State _state = State.Idle;
     private long _activationTimestamp;
@@ -60,6 +62,11 @@ internal sealed class DragActivationService : IDisposable
         _leaveTimer.Tick += (_, _) => Close("left-wheel");
         _releaseGrace.Tick += (_, _) => Close("button-released");
         _buttonPoll.Tick += (_, _) => OnButtonPoll();
+        _hubTimer.Tick += (_, _) =>
+        {
+            _hubTimer.Stop();
+            if (_state == State.Open) _overlay.Menu.HubArmed = true;
+        };
 
         _overlay.DragEnter += OnDragEnter;
         _overlay.DragOver += OnDragOver;
@@ -197,8 +204,11 @@ internal sealed class DragActivationService : IDisposable
         var (primary, secondary) = WheelModels.IdleText(_payload);
         menu.SetIdleText(primary, secondary);
         menu.SetShare(ShareService.WheelModel(paths.Length));
+        menu.SetHub(WheelModels.Preview(paths.Length));
         menu.SetRing(_rings[0], 0, _rings.Count, animate: false);
         CaptureBackdrop();
+        _hubTimer.Stop();
+        _hubTimer.Start();
 
         _state = State.Open;
         _overlay.AnimateIn(_reducedMotion);
@@ -258,6 +268,7 @@ internal sealed class DragActivationService : IDisposable
     {
         var menu = _overlay.Menu;
         int index = menu.HitTest(e.GetPosition(menu));
+        if (index != RadialMenu.CenterHit && _state == State.Open) menu.HubArmed = true; // it has left the hub
         menu.SetHover(index);
 
         // Outside the disc (but still inside the invisible catch area): if the pointer stays out,
@@ -339,6 +350,7 @@ internal sealed class DragActivationService : IDisposable
         _leaveTimer.Stop();
         _buttonPoll.Stop();
         _releaseGrace.Stop();
+        _hubTimer.Stop();
         _payload = [];
         _rings = [];
 
