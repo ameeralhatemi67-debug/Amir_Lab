@@ -110,6 +110,16 @@ internal static class Icons
         ["lap-chev-up"] = "M6,15 L12,9 L18,15",
         ["lap-chev-down"] = "M6,9 L12,15 L18,9",
         ["lap-x"] = "M7,7 L17,17 M17,7 L7,17",
+        ["lap-chats"] = "M4,5 H15 A2,2 0 0 1 17,7 V13 A2,2 0 0 1 15,15 H9 L5,18 V15 H4 A2,2 0 0 1 2,13 V7 A2,2 0 0 1 4,5 Z M19.5,9 H20 A2,2 0 0 1 22,11 V16 A2,2 0 0 1 20,18 H19 V21 L15.5,18",
+        ["lap-send"] = "M12,19 V5 M5.5,11.5 L12,5 L18.5,11.5",
+        ["lap-board"] = RoundRect(3, 4, 18, 16, 2.5) + " M9.5,4 V20 M15,4 V20",
+        ["lap-shield"] = "M12,3 L20,6 V12 C20,16.5 16.6,20.3 12,21 C7.4,20.3 4,16.5 4,12 V6 Z",
+        ["lap-loop"] = "M17,2 L21,6 L17,10 M3,11 V9 A3,3 0 0 1 6,6 H21 M7,22 L3,18 L7,14 M21,13 V15 A3,3 0 0 1 18,18 H3",
+        ["lap-history"] = "M3.5,12 A8.5,8.5 0 1 0 6,6 L3.5,8.5 M3.5,3.5 V8.5 H8.5 M12,7.5 V12 L15,14",
+        ["lap-steps"] = "M8,6 H20 M8,12 H20 M8,18 H20 M4,6 H4.01 M4,12 H4.01 M4,18 H4.01",
+        ["lap-bolt"] = "M13,3 L5,13 H11 L10,21 L18,11 H12 Z",
+        ["lap-trash"] = "M4,7 H20 M9,7 V4.5 H15 V7 M6.5,7 L7.5,20 H16.5 L17.5,7 M10,11 V16 M14,11 V16",
+        ["lap-terminal"] = RoundRect(3, 4.5, 18, 15, 2.5) + " M7,9.5 L10,12 L7,14.5 M12,15 H16",
     };
 
     private static string F(double v) => v.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture);

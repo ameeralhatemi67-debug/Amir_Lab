@@ -71,9 +71,36 @@ public sealed class PulseSettings
     /// <summary>Colours the user saved; they stay when the history moves on.</summary>
     public List<string> ColourSaved { get; set; } = [];
 
+    /// <summary>Claude Code's program, when the user chose one (otherwise Pulse finds it).</summary>
+    public string? ClaudeProgram { get; set; }
+
+    /// <summary>Codex's program, when the user chose one (otherwise Pulse finds it).</summary>
+    public string? CodexProgram { get; set; }
+
+    /// <summary>The Chats tile was added to the sets once (0.7.0); after that the user decides.</summary>
+    public bool ChatsTileAdded { get; set; }
+
+    /// <summary>
+    /// Adds the Chats tile, once, right after Codex (or Claude) in every set that has one of them.
+    /// True when anything changed.
+    /// </summary>
+    public bool AddChatsTileOnce()
+    {
+        if (ChatsTileAdded) return false;
+        ChatsTileAdded = true;
+        foreach (var set in Sets)
+        {
+            if (set.Tiles.Contains(PulseTiles.Chats)) continue;
+            int at = set.Tiles.IndexOf(PulseTiles.Codex);
+            if (at < 0) at = set.Tiles.IndexOf(PulseTiles.Claude);
+            if (at >= 0) set.Tiles.Insert(at + 1, PulseTiles.Chats);
+        }
+        return true;
+    }
+
     public static List<PulseTileSet> DefaultSets() =>
     [
-        new() { Id = "work", Tiles = [PulseTiles.Claude, PulseTiles.Codex, PulseTiles.ChatGpt, PulseTiles.Longshot, PulseTiles.Toolbox] },
+        new() { Id = "work", Tiles = [PulseTiles.Claude, PulseTiles.Codex, PulseTiles.Chats, PulseTiles.ChatGpt, PulseTiles.Longshot, PulseTiles.Toolbox] },
         new() { Id = "study", Tiles = [PulseTiles.Claude, PulseTiles.ChatGpt, PulseTiles.Timer, PulseTiles.Note, PulseTiles.Folder] },
     ];
 
@@ -111,6 +138,7 @@ public static class PulseTiles
 {
     public const string Claude = "claude";
     public const string Codex = "codex";
+    public const string Chats = "chats";
     public const string ChatGpt = "chatgpt";
     public const string Longshot = "longshot";
     public const string Toolbox = "toolbox";
@@ -122,7 +150,7 @@ public static class PulseTiles
     public const string System = "system";
 
     /// <summary>Every tile, in the order the gallery offers them.</summary>
-    public static readonly IReadOnlyList<string> All = [Claude, Codex, ChatGpt, Longshot, Toolbox, Timer, Note, Colour, Folder, Link, System];
+    public static readonly IReadOnlyList<string> All = [Claude, Codex, Chats, ChatGpt, Longshot, Toolbox, Timer, Note, Colour, Folder, Link, System];
 
     /// <summary>Tiles that show a usage ring.</summary>
     public static bool HasRing(string id) => id is Claude or Codex or System;

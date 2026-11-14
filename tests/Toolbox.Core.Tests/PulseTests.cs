@@ -296,11 +296,33 @@ public sealed class PulseTests : IDisposable
     // ---- settings ----------------------------------------------------------------------------------
 
     [Fact]
+    public void The_chats_tile_is_added_once_after_codex_or_claude()
+    {
+        var p = new PulseSettings
+        {
+            Sets =
+            [
+                new() { Id = "work", Tiles = ["claude", "codex", "longshot"] },
+                new() { Id = "study", Tiles = ["claude", "timer"] },
+                new() { Id = "set3", Tiles = ["note"] },
+            ],
+        };
+        Assert.True(p.AddChatsTileOnce());
+        Assert.Equal(["claude", "codex", "chats", "longshot"], p.Sets[0].Tiles);
+        Assert.Equal(["claude", "chats", "timer"], p.Sets[1].Tiles);
+        Assert.Equal(["note"], p.Sets[2].Tiles);
+        // Once only: a tile the user removes stays removed.
+        p.Sets[0].Tiles.Remove("chats");
+        Assert.False(p.AddChatsTileOnce());
+        Assert.DoesNotContain("chats", p.Sets[0].Tiles);
+    }
+
+    [Fact]
     public void Pulse_settings_have_sensible_defaults_and_survive_a_round_trip()
     {
         var s = new AppSettings();
         Assert.Equal("right", s.Pulse.Edge);
-        Assert.Equal(["claude", "codex", "chatgpt", "longshot", "toolbox"], s.Pulse.ActiveTiles);
+        Assert.Equal(["claude", "codex", "chats", "chatgpt", "longshot", "toolbox"], s.Pulse.ActiveTiles);
         s.Pulse.CurrentSet = "study";
         s.Pulse.Active.Tiles = ["note", "nonsense", "note", "claude"];
         Assert.Equal(["note", "claude"], s.Pulse.ActiveTiles);

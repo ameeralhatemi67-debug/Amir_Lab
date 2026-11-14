@@ -23,7 +23,24 @@ Amir Lap's shell is covered by these tests:
 ```bash
 set AMIRLAP_LIVE_LONGSHOT=1 && dotnet test tests/Toolbox.Windows.Tests --filter LiveLongshotTests
 ```
-- `PulseTests` (Core): reading Codex's logs, Claude's status line and hooks, the most urgent session, the shared state file under concurrent writes, the bridge's output, alerts, connecting and removing Claude Code on temporary settings files, and Pulse's settings.
+- `PulseTests` (Core): reading Codex's logs, Claude's status line and hooks, the most urgent session, the shared state file under concurrent writes, the bridge's output, alerts, connecting and removing Claude Code on temporary settings files, and Pulse's settings (also the Chats tile added once).
+- `PulseChatTests` (Core): Pulse chat's room with stand-in agents. It covers:
+  - who answers (@ names, the To switch, the lead) and hand-offs (the other agent named with @, not inside code);
+  - what each agent is told: its rules and only what is new;
+  - the command lines for Claude Code and Codex (resume, continue as a copy, sandbox, allowed and refused rules);
+  - both agents' output, read from real lines;
+  - earlier sessions found by folder;
+  - the hand-off limit and Keep going;
+  - Allow once and Always;
+  - Stop;
+  - pictures made in a turn and their approvals;
+  - a missing program.
+- `LiveChatTests` (Core, **off unless `AMIRLAP_LIVE_CHAT=1`**) runs a real group chat with the Claude Code and Codex on this PC: Claude answers and hands over with @codex, and Codex replies "pong". It uses a little of the user's own limits:
+
+```bash
+set AMIRLAP_LIVE_CHAT=1 && dotnet test tests/Toolbox.Core.Tests --filter LiveChatTests
+```
+- `HomeWindowTests` also draws Pulse chat's window, off-screen and without running any agent, in light/dark and English/Arabic. It shows the owner's gallery example: a hand-off, pictures to approve, a card to allow a command and the limit card. It also draws the window while an agent works after Allow once, a one-to-one chat, the empty window and New chat.
 - `ColourTests` (Core): the colour picker's codes (all eight, also on an Arabic system), reading HEX, WCAG contrast and grades, OKLCH both ways, the nine steps, the nearest CSS name, the history (newest first, each colour once, 10–30) and the settings it keeps.
 - `PdfEditTests` (Processing): the viewer's and editor's PDF engine on generated files, rendered back with PDFium and checked pixel by pixel. It covers the dark copy with photos kept or inverted (also a picture inside a form XObject) and still searchable; the editor's Save (reorder, turn, merge, cover, ink, picture, text, on plain and rotated pages, Arabic kept as text, never overwriting); picture boxes; page maps under rotation; search with and without case; outline; page and web links.
 - `SensitiveTextTests` (Processing): finding personal info in recognised lines. It covers e-mails (also with spaces round @), phone numbers in five shapes (Arabic digits included), dates, amounts, order numbers and versions that must not count, Luhn-checked cards, checksum-checked IBANs, keys, tokens, labelled passwords (English and Arabic), IP addresses, one hit per thing, boxes trimmed to the characters, and dotted-out text.
@@ -131,4 +148,13 @@ Install by right-clicking `artifacts/publish/install.ps1` > Run with PowerShell 
 14. **Longshot video:** point at a window and press **Alt+Shift+V**: the frame and the Video panel appear. Try **Region** and **Screen**, then **Record**. After 3, 2, 1, click around and type in the window: the pill and the red frame must not be in the video, and the pointer and click rings must be. Pause, resume, then **Stop**. In the result window, drag the trim handles, **Save trimmed copy** and **Save as GIF**, and paste the copied file into a chat. Try once at 60 fps on a large area and say if it stutters.
 15. **Longshot on a page with sections that scroll:** open a page like the Salla order editor. Point at the product list and press Alt+Shift+S: the frame fits the list, and Auto captures the whole list while the page stays still. Drag the marker onto the page (not on a list): the page lights up as "Page", and dropping it captures the whole page. Click around on the panel while Auto runs: no text on the page gets highlighted. Drag and resize the frame: it follows smoothly.
 16. **Video blur:** record a video that scrolls past an e-mail address (a mail or chat page). In the result window press **Hide personal info**: the address gets a box from the frame it appears, and the box follows it. Then pause elsewhere, drag a box over something, press **Follow it**, play it through, and **Save blurred copy**. Open the copy and check nothing private shows.
-17. Uninstall from Settings > Apps > Installed apps → the shortcut, the folder and any Explorer entries are gone; your results are still where they were saved.
+17. **Pulse chat:**
+    1. Click the **Chats** tile, then **New chat**, and choose Claude and Codex, Builder + Artist, and a test folder.
+    2. Write "@claude make a one-page gallery for 3 garments and ask Codex for a front picture of each".
+    3. Check that Claude answers and hands over (the "to Codex" chip), and that Codex works next.
+    4. Check that the pictures show with Approve and Redo.
+    5. Allow a command Claude asks for.
+    6. After 4 hand-offs, press **Keep going**.
+    7. Press **Stop** while one of them works.
+    8. On the board, press the terminal button: the same session opens in Claude Code.
+18. Uninstall from Settings > Apps > Installed apps → the shortcut, the folder and any Explorer entries are gone; your results are still where they were saved.

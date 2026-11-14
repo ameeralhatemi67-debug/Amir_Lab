@@ -506,6 +506,34 @@ The second half of idea 2: blur for videos. As agreed, **keys are the data and a
   - The right-click menu fell behind the dock (the dock puts itself back on top every few seconds, above the menu's own window). The menu is now a glass card drawn inside the dock's window, beside the dock, so it can never be under it; it closes when the pointer leaves it and the dock.
   - A check on the real dock window, shown far off-screen, now guards both: its size must stay the same across several glass refreshes, its empty side must let clicks through, and tile clicks and the menu must work.
 
+## Pulse chat: Claude and Codex in one room (15 Nov 2026, 0.7.0)
+
+- **Owner's idea (14 Nov):** once Claude and Codex are connected, chat with either one or with both in a group where they talk to each other. @ names one or both. Many chats, each in a project folder (picking up where the agents left off there) or folder-less. The example: a 2D gallery for a clothing brand, where Claude builds the site and Codex makes front, back and side pictures of each garment. Designed on the canvas first ("Pulse chat: Claude and Codex in one room": the window, New chat, states and problems); the owner said "start building".
+- **Researched first:** agentchattr (types into terminals), OpenAI's codex-plugin-cc (Claude calls Codex, one way), CCB, AionUi, Agor and others. None is a native Windows chat with project chats, and the terminal-typing ones are fragile. Coder's agentapi is archived and `codex mcp-server` was removed (Codex 0.154).
+- **How the agents run (the user's own programs, as signed in):**
+  - **Claude Code:** one run per turn: `claude -p --output-format stream-json --verbose --permission-prompts none`. The message goes in on standard input. Later turns use `--resume <session>`; continuing an earlier session adds `--fork-session`, so the original is untouched. The room's rules go in through `--append-system-prompt`.
+  - **Codex:** `codex exec --json -c sandbox_mode=… -c approval_policy="never" -`, with `exec resume <thread>` and `exec fork <thread>`. Its rules go at the top of its first message.
+  - **Finding them:** the program the user chose in Pulse's settings (`ClaudeProgram`, `CodexProgram`), else PATH, npm's copy, or the installer's. For Codex it can be the copy the Codex app keeps in `~/.codex/.sandbox-bin`; on the owner's PC `codex` is not on the PATH.
+  - **Not the app-server or ACP:** `codex app-server` is marked experimental, and ACP needs Node adapters; the plain JSONL turns cover what the chat needs. The app-server is the way to go if Codex should ever ask for approvals mid-turn.
+- **Terms:** Anthropic allows a user to sign in to the unmodified Claude Code program with their own plan, and forbids apps that offer claude.ai login, route requests through plan credentials, or handle its tokens. So Amir Lap only starts the programs and never reads, stores or passes on a sign-in. The hand-off limit keeps a person in the loop: plan limits assume ordinary individual use, and loops between the agents spend them fast. Amir Lap itself still sends nothing over the network; the agents it starts go online as they always do.
+- **The room (`ChatHub`, `ChatRules`):**
+  - **Who answers:** the @ names, else the To switch, else the chat's lead. One agent works at a time per chat.
+  - **The digest:** each agent gets only what is new since its last turn (the user's words, the other agent's reply and pictures, approvals). When the only new thing is the user's message, it gets just that message.
+  - **Hand-offs:** a reply that names the other agent with @ (outside code) is passed on. After `HopLimit` hand-offs without the user (4 by default), a "Keep going / Pause" card holds the next one. The user writing again resets the count.
+- **Approvals, without stopping the agents:**
+  - **Claude:** `-p` runs refuse anything that needs approval and list it in the result (`permission_denials`). Pulse turns that list into a card: Allow once re-runs Claude with `--allowedTools` for exactly that command and "the user allowed this, carry on"; Always adds a prefix rule (`Bash(npm install:*)`) to the chat; or Don't allow.
+  - **Codex** can't stop mid-turn, so "Ask first" lets it only read. "Can edit" gives it the workspace-write sandbox (inside the folder only).
+  - **Who owns what:** enforced for Claude with `--disallowedTools Edit(<other's folder>/**)`; for Codex it is in its rules.
+- **Pictures:** files with picture extensions written in the folder during a turn are attached to the reply as thumbnails, plus, for Codex, new ones in `~/.codex/generated_images`. Approve adds a small line the maker reads on its next turn; Redo puts "@codex redo <file>: " in the message box.
+- **Earlier sessions:**
+  - **Claude Code:** read from `~/.claude/projects/<folder with every non-alphanumeric as ->/*.jsonl`. The title is the session's `customTitle`/`aiTitle`, else its first real message.
+  - **Codex:** read from the first line of each rollout (its `cwd`), named from `session_index.jsonl`.
+  - The board's terminal button continues a chat's session in Claude Code or Codex (`--resume` / `resume`).
+- **Saved:** one JSON file per chat in `%LOCALAPPDATA%\AmirLap\pulse\chats`, written to a temporary file and moved into place. Quick chats run in a `<id>-files` folder next to their file, read-only.
+- **The dock:** a Chats tile, added once after Codex (or Claude) in existing sets (`ChatsTileAdded`). It circles while an agent works, shows an amber count when chats need an answer, and a check for new replies. Its card lists the chats that need you first.
+- **Checked live:** `LiveChatTests` (opt-in) ran a real group chat on the owner's PC. Claude answered and handed over with "@codex …", and Codex replied "pong", in 30 s.
+- **Messages keep their own direction:** in the Arabic layout, an English reply reads left to right (punctuation stays in place), decided by each line's first letter.
+
 ## File Toolbox wheel in glass, Share, no shortcut (8 Nov 2026)
 
 - **Owner's notes:** make the wheel match Amir Lap: more transparent, light at the edges, a texture so it looks like glass or ice rather than a ghost, the chosen option lit from behind with a splash of blue, and animated hover, click and transitions. Remove Ctrl+Alt+F: File Toolbox should only answer while a file is being dragged and Shift is tapped. Add sharing ("Quick Share").

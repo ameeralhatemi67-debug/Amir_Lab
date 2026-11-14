@@ -97,6 +97,7 @@ public partial class HomeWindowTests
                 RenderWelcome(snapshots, theme, lang);
                 if (lang == "en") RenderWheel(snapshots, theme);
                 RenderPulse(snapshots, theme, lang, host);
+                RenderChats(snapshots, theme, lang);
                 RenderColour(snapshots, theme, lang);
                 RenderViewer(snapshots, theme, lang, dispatcher);
                 if (lang == "en") RenderBlur(snapshots, theme);

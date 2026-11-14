@@ -67,6 +67,8 @@ internal sealed partial class PulseTool : ToolModule
 
     protected override void OnStart()
     {
+        // 0.7.0 brings the Chats tile: add it once, before the dock is built, so it shows straight away.
+        if (!S.ChatsTileAdded) Save(p => p.AddChatsTileOnce());
         _pulseKey = Key(S);
         _monitor = new PulseMonitor(ClaudeStateStore.DefaultPath, CodexUsageReader.DefaultHome, () => _host.Settings.Current.Pulse.ReadCodex);
         _monitor.Changed += Update;
@@ -78,6 +80,7 @@ internal sealed partial class PulseTool : ToolModule
         _dock.TileClicked += OnTile;
         _dock.FilesDropped += (_, files) => App.ShowPalette(files);
         _dock.Show();
+        StartChats();
         _host.Settings.Changed += OnSettingsChanged;
         _monitor.Start();
         _clock.Start();
@@ -100,6 +103,7 @@ internal sealed partial class PulseTool : ToolModule
         _clock.Stop();
         _monitor?.Dispose();
         _monitor = null;
+        StopChats();
         _dock?.Close();
         _dock = null;
         _note?.Close();
@@ -165,6 +169,7 @@ internal sealed partial class PulseTool : ToolModule
         }
         foreach (var (id, tile) in _dock.Tiles)
             if (id is not (PulseTiles.Claude or PulseTiles.Codex or PulseTiles.System or PulseTiles.Timer)) tile.SetLabel(ShortName(id));
+        UpdateChatsTile();
         Tick();
         _dock.RefreshCard();
 
@@ -226,6 +231,7 @@ internal sealed partial class PulseTool : ToolModule
     {
         PulseTiles.Claude => "Claude",
         PulseTiles.Codex => "Codex",
+        PulseTiles.Chats => Lang.T("Chats", "محادثات"),
         PulseTiles.ChatGpt => "ChatGPT",
         PulseTiles.Longshot => Lang.T("Longshot", "لقطة"),
         PulseTiles.Toolbox => Lang.T("Toolbox", "الملفات"),
@@ -242,6 +248,7 @@ internal sealed partial class PulseTool : ToolModule
     {
         PulseTiles.Claude => "Claude",
         PulseTiles.Codex => "Codex",
+        PulseTiles.Chats => Lang.T("Chats with Claude and Codex", "محادثات Claude وCodex"),
         PulseTiles.ChatGpt => "ChatGPT",
         PulseTiles.Longshot => Lang.T("Longshot", "اللقطة الطويلة"),
         PulseTiles.Toolbox => Lang.T("File Toolbox", "أدوات الملفات"),
@@ -258,6 +265,7 @@ internal sealed partial class PulseTool : ToolModule
     {
         PulseTiles.Claude => Lang.T("Session and weekly limits · opens Claude", "حدود الجلسة والأسبوع · يفتح Claude"),
         PulseTiles.Codex => Lang.T("5-hour and weekly limits · opens Codex", "حدود الساعات الخمس والأسبوع · يفتح Codex"),
+        PulseTiles.Chats => Lang.T("One-to-one or group chats where they hand work to each other", "محادثات فردية أو جماعية يتبادلان فيها العمل"),
         PulseTiles.ChatGpt => Lang.T("Opens ChatGPT", "يفتح ChatGPT"),
         PulseTiles.Longshot => Lang.T("Starts a capture · shows the last one", "يبدأ لقطة · ويعرض آخرها"),
         PulseTiles.Toolbox => Lang.T("Drop a file on it, or click for the File Toolbox window", "أسقِط ملفًا عليه، أو انقر لنافذة أدوات الملفات"),
@@ -289,6 +297,7 @@ internal sealed partial class PulseTool : ToolModule
                 _monitor?.Refresh();
                 break;
             case PulseTiles.Codex: PulseLaunch.Codex(); break;
+            case PulseTiles.Chats: OpenChats(); break;
             case PulseTiles.ChatGpt: PulseLaunch.ChatGpt(); break;
             case PulseTiles.Longshot:
                 if (App.FindTool(LongshotTool.ToolId) is LongshotTool longshot && App.IsToolEnabled(LongshotTool.ToolId)) longshot.Capture();
@@ -412,6 +421,8 @@ internal sealed partial class PulseTool : ToolModule
                 }
                 return PulseCards.Card([.. parts]);
             }
+            case PulseTiles.Chats:
+                return ChatsCard();
             case PulseTiles.ChatGpt:
                 return PulseCards.Card(PulseCards.Head("lap-chat", "ChatGPT"),
                     PulseCards.Body(Lang.T("Opens the ChatGPT app (or chatgpt.com). ChatGPT keeps no usage numbers on this PC, so this is a shortcut only.", "يفتح تطبيق ChatGPT (أو chatgpt.com). لا يحتفظ ChatGPT بأرقام استخدام على هذا الحاسوب، لذا هذا اختصار فقط.")));

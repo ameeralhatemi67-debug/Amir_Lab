@@ -437,6 +437,7 @@ internal sealed partial class DockWindow : Window
     {
         PulseTiles.Claude => "lap-claude",
         PulseTiles.Codex => "lap-codex",
+        PulseTiles.Chats => "lap-chats",
         PulseTiles.ChatGpt => "lap-chat",
         PulseTiles.Longshot => "lap-longshot",
         PulseTiles.Toolbox => "lap-toolbox",
