@@ -61,7 +61,8 @@ public partial class HomeWindowTests
             var fileToolbox = new FileToolboxTool(host, dispatcher, new DiagnosticsChannel(false));
             var longshot = new LongshotTool(host);
             var pulse = new PulseTool(host);
-            using var registry = new ToolRegistry(host.Settings, [fileToolbox, longshot, pulse]); // never applied: nothing starts
+            var studio = new ImpStudioTool(host);
+            using var registry = new ToolRegistry(host.Settings, [fileToolbox, longshot, pulse, studio]); // never applied: nothing starts
 
             foreach (var (theme, lang) in new[] { ("light", "en"), ("dark", "en"), ("light", "ar"), ("dark", "ar") })
             {
@@ -75,11 +76,11 @@ public partial class HomeWindowTests
                     ? new LinearGradientBrush(Color.FromRgb(0x10, 0x16, 0x2C), Color.FromRgb(0x24, 0x10, 0x22), 30)
                     : new LinearGradientBrush(Color.FromRgb(0xD6, 0xE0, 0xF6), Color.FromRgb(0xF4, 0xE4, 0xEC), 30) };
 
-                foreach (var page in new[] { AmirLapWindow.DashboardPage, FileToolboxTool.ToolId, LongshotTool.ToolId, PulseTool.ToolId, AmirLapWindow.GeneralPage, AmirLapWindow.AboutPage })
+                foreach (var page in new[] { AmirLapWindow.DashboardPage, FileToolboxTool.ToolId, LongshotTool.ToolId, PulseTool.ToolId, ImpStudioTool.ToolId, AmirLapWindow.GeneralPage, AmirLapWindow.AboutPage })
                 {
                     window.ShowPage(page);
                     Assert.Equal(page, window.CurrentPage);
-                    double height = page switch { FileToolboxTool.ToolId => 1900, LongshotTool.ToolId => 1500, PulseTool.ToolId => 2700, AmirLapWindow.GeneralPage => 1150, AmirLapWindow.DashboardPage => 1500, _ => 790 };
+                    double height = page switch { FileToolboxTool.ToolId => 1900, LongshotTool.ToolId => 1500, PulseTool.ToolId => 2700, ImpStudioTool.ToolId => 1300, AmirLapWindow.GeneralPage => 1150, AmirLapWindow.DashboardPage => 1700, _ => 790 };
                     Layout(frame, 1180, height);
                     var scroll = FindScroll(content);
                     Assert.NotNull(scroll?.Content);
@@ -98,6 +99,7 @@ public partial class HomeWindowTests
                 if (lang == "en") RenderWheel(snapshots, theme);
                 RenderPulse(snapshots, theme, lang, host);
                 RenderChats(snapshots, theme, lang);
+                RenderSound(snapshots, theme, lang);
                 RenderColour(snapshots, theme, lang);
                 RenderViewer(snapshots, theme, lang, dispatcher);
                 if (lang == "en") RenderBlur(snapshots, theme);

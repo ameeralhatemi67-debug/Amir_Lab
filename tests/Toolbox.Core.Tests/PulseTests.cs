@@ -322,7 +322,7 @@ public sealed class PulseTests : IDisposable
     {
         var s = new AppSettings();
         Assert.Equal("right", s.Pulse.Edge);
-        Assert.Equal(["claude", "codex", "chats", "chatgpt", "longshot", "toolbox"], s.Pulse.ActiveTiles);
+        Assert.Equal(["claude", "codex", "chats", "chatgpt", "longshot", "sound", "toolbox"], s.Pulse.ActiveTiles);
         s.Pulse.CurrentSet = "study";
         s.Pulse.Active.Tiles = ["note", "nonsense", "note", "claude"];
         Assert.Equal(["note", "claude"], s.Pulse.ActiveTiles);

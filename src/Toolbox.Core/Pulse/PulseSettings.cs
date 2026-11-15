@@ -98,9 +98,34 @@ public sealed class PulseSettings
         return true;
     }
 
+    /// <summary>The Sound tile (Imp Studio) was added to the sets once (0.8.0); after that the user decides.</summary>
+    public bool SoundTileAdded { get; set; }
+
+    /// <summary>
+    /// Adds the Sound tile, once, right after Longshot in every set that has it (or at the end of
+    /// the first set when none has). True when anything changed.
+    /// </summary>
+    public bool AddSoundTileOnce()
+    {
+        if (SoundTileAdded) return false;
+        SoundTileAdded = true;
+        if (Sets.Count == 0) return true; // the default sets already hold it
+        bool added = false;
+        foreach (var set in Sets)
+        {
+            if (set.Tiles.Contains(PulseTiles.Sound)) { added = true; continue; }
+            int at = set.Tiles.IndexOf(PulseTiles.Longshot);
+            if (at < 0) continue;
+            set.Tiles.Insert(at + 1, PulseTiles.Sound);
+            added = true;
+        }
+        if (!added) Sets[0].Tiles.Add(PulseTiles.Sound);
+        return true;
+    }
+
     public static List<PulseTileSet> DefaultSets() =>
     [
-        new() { Id = "work", Tiles = [PulseTiles.Claude, PulseTiles.Codex, PulseTiles.Chats, PulseTiles.ChatGpt, PulseTiles.Longshot, PulseTiles.Toolbox] },
+        new() { Id = "work", Tiles = [PulseTiles.Claude, PulseTiles.Codex, PulseTiles.Chats, PulseTiles.ChatGpt, PulseTiles.Longshot, PulseTiles.Sound, PulseTiles.Toolbox] },
         new() { Id = "study", Tiles = [PulseTiles.Claude, PulseTiles.ChatGpt, PulseTiles.Timer, PulseTiles.Note, PulseTiles.Folder] },
     ];
 
@@ -149,8 +174,11 @@ public static class PulseTiles
     public const string Link = "link";
     public const string System = "system";
 
+    /// <summary>Imp Studio: the volume of everything as a ring, the wheel changes it, the card is a quick mixer.</summary>
+    public const string Sound = "sound";
+
     /// <summary>Every tile, in the order the gallery offers them.</summary>
-    public static readonly IReadOnlyList<string> All = [Claude, Codex, Chats, ChatGpt, Longshot, Toolbox, Timer, Note, Colour, Folder, Link, System];
+    public static readonly IReadOnlyList<string> All = [Claude, Codex, Chats, ChatGpt, Longshot, Sound, Toolbox, Timer, Note, Colour, Folder, Link, System];
 
     /// <summary>Tiles that show a usage ring.</summary>
     public static bool HasRing(string id) => id is Claude or Codex or System;

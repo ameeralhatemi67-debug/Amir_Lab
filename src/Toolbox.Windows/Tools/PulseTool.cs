@@ -69,6 +69,8 @@ internal sealed partial class PulseTool : ToolModule
     {
         // 0.7.0 brings the Chats tile: add it once, before the dock is built, so it shows straight away.
         if (!S.ChatsTileAdded) Save(p => p.AddChatsTileOnce());
+        // 0.8.0 brings Imp Studio's Sound tile: add it once, the same way.
+        if (!S.SoundTileAdded) Save(p => p.AddSoundTileOnce());
         _pulseKey = Key(S);
         _monitor = new PulseMonitor(ClaudeStateStore.DefaultPath, CodexUsageReader.DefaultHome, () => _host.Settings.Current.Pulse.ReadCodex);
         _monitor.Changed += Update;
@@ -81,6 +83,7 @@ internal sealed partial class PulseTool : ToolModule
         _dock.FilesDropped += (_, files) => App.ShowPalette(files);
         _dock.Show();
         StartChats();
+        StartSound();
         _host.Settings.Changed += OnSettingsChanged;
         _monitor.Start();
         _clock.Start();
@@ -104,6 +107,7 @@ internal sealed partial class PulseTool : ToolModule
         _monitor?.Dispose();
         _monitor = null;
         StopChats();
+        StopSound();
         _dock?.Close();
         _dock = null;
         _note?.Close();
@@ -168,8 +172,9 @@ internal sealed partial class PulseTool : ToolModule
             codex.SetLabel(w is null ? "Codex" : $"{w.UsedAt(now):0}%");
         }
         foreach (var (id, tile) in _dock.Tiles)
-            if (id is not (PulseTiles.Claude or PulseTiles.Codex or PulseTiles.System or PulseTiles.Timer)) tile.SetLabel(ShortName(id));
+            if (id is not (PulseTiles.Claude or PulseTiles.Codex or PulseTiles.System or PulseTiles.Timer or PulseTiles.Sound)) tile.SetLabel(ShortName(id));
         UpdateChatsTile();
+        UpdateSoundTile();
         Tick();
         _dock.RefreshCard();
 
@@ -234,6 +239,7 @@ internal sealed partial class PulseTool : ToolModule
         PulseTiles.Chats => Lang.T("Chats", "محادثات"),
         PulseTiles.ChatGpt => "ChatGPT",
         PulseTiles.Longshot => Lang.T("Longshot", "لقطة"),
+        PulseTiles.Sound => Lang.T("Sound", "الصوت"),
         PulseTiles.Toolbox => Lang.T("Toolbox", "الملفات"),
         PulseTiles.Timer => Lang.T("Timer", "مؤقت"),
         PulseTiles.Note => Lang.T("Note", "ملاحظة"),
@@ -251,6 +257,7 @@ internal sealed partial class PulseTool : ToolModule
         PulseTiles.Chats => Lang.T("Chats with Claude and Codex", "محادثات Claude وCodex"),
         PulseTiles.ChatGpt => "ChatGPT",
         PulseTiles.Longshot => Lang.T("Longshot", "اللقطة الطويلة"),
+        PulseTiles.Sound => Lang.T("Sound (Imp Studio)", "الصوت (استوديو إمب)"),
         PulseTiles.Toolbox => Lang.T("File Toolbox", "أدوات الملفات"),
         PulseTiles.Timer => Lang.T("Focus timer", "مؤقت التركيز"),
         PulseTiles.Note => Lang.T("Quick note", "ملاحظة سريعة"),
@@ -268,6 +275,7 @@ internal sealed partial class PulseTool : ToolModule
         PulseTiles.Chats => Lang.T("One-to-one or group chats where they hand work to each other", "محادثات فردية أو جماعية يتبادلان فيها العمل"),
         PulseTiles.ChatGpt => Lang.T("Opens ChatGPT", "يفتح ChatGPT"),
         PulseTiles.Longshot => Lang.T("Starts a capture · shows the last one", "يبدأ لقطة · ويعرض آخرها"),
+        PulseTiles.Sound => Lang.T("Volume of everything · wheel to change · each app in the card", "مستوى صوت كل شيء · العجلة للتغيير · كل تطبيق في البطاقة"),
         PulseTiles.Toolbox => Lang.T("Drop a file on it, or click for the File Toolbox window", "أسقِط ملفًا عليه، أو انقر لنافذة أدوات الملفات"),
         PulseTiles.Timer => Lang.T("A focus countdown, shown as a ring", "عدّ تنازلي للتركيز يظهر كحلقة"),
         PulseTiles.Note => Lang.T("Jot something down", "دوّن شيئًا بسرعة"),
@@ -304,6 +312,7 @@ internal sealed partial class PulseTool : ToolModule
                 else App.ShowHome(LongshotTool.ToolId);
                 break;
             case PulseTiles.Toolbox: App.ShowPalette(); break;
+            case PulseTiles.Sound: OnSoundTile(); break;
             case PulseTiles.Timer:
                 _timerEnds = _timerEnds is null ? DateTimeOffset.UtcNow.AddMinutes(Math.Clamp(S.TimerMinutes, 1, 180)) : null;
                 Tick();
@@ -423,6 +432,8 @@ internal sealed partial class PulseTool : ToolModule
             }
             case PulseTiles.Chats:
                 return ChatsCard();
+            case PulseTiles.Sound:
+                return SoundCardFor();
             case PulseTiles.ChatGpt:
                 return PulseCards.Card(PulseCards.Head("lap-chat", "ChatGPT"),
                     PulseCards.Body(Lang.T("Opens the ChatGPT app (or chatgpt.com). ChatGPT keeps no usage numbers on this PC, so this is a shortcut only.", "يفتح تطبيق ChatGPT (أو chatgpt.com). لا يحتفظ ChatGPT بأرقام استخدام على هذا الحاسوب، لذا هذا اختصار فقط.")));

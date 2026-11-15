@@ -107,7 +107,7 @@ public partial class App : Application
         _dispatcher.Editors = new EditorLauncher(_dispatcher);
 
         _fileToolbox = new FileToolboxTool(_host, _dispatcher, diagnostics);
-        _tools = new ToolRegistry(_host.Settings, [_fileToolbox, new LongshotTool(_host), new PulseTool(_host)]);
+        _tools = new ToolRegistry(_host.Settings, [_fileToolbox, new LongshotTool(_host), new PulseTool(_host), new ImpStudioTool(_host)]);
 
         _channel = new InstanceChannel();
         _channel.Start(args => Dispatcher.BeginInvoke(() => HandleArguments(args, fromAnotherInstance: true)));
@@ -232,6 +232,12 @@ public partial class App : Application
                     tips.Add(new(tool.Icon, tool.Name, Lang.T(
                         "The dock on the edge of your screen: your Claude and Codex limits, and your shortcuts.",
                         "الشريط على حافة الشاشة: حدود Claude وCodex واختصاراتك."), []));
+                    break;
+                case ImpStudioTool.ToolId:
+                    var soundKeys = new[] { ShortcutText(tool.Id, "louder"), ShortcutText(tool.Id, "quieter") }.OfType<string>().ToList();
+                    tips.Add(new(tool.Icon, tool.Name, Lang.T(
+                        "Every app's volume in one mixer, and louder or quieter for the app in front, even in a game.",
+                        "مستوى صوت كل تطبيق في مازج واحد، ورفع أو خفض صوت التطبيق الأمامي، حتى داخل لعبة."), soundKeys));
                     break;
             }
         }

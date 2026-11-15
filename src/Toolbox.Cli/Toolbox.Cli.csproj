@@ -21,6 +21,7 @@
     <ProjectReference Include="..\Toolbox.Core\Toolbox.Core.csproj" />
     <ProjectReference Include="..\Toolbox.Processing\Toolbox.Processing.csproj" />
     <ProjectReference Include="..\Toolbox.Windows.Ocr\Toolbox.Windows.Ocr.csproj" />
+    <ProjectReference Include="..\Toolbox.Windows.Audio\Toolbox.Windows.Audio.csproj" />
   </ItemGroup>
 
 </Project>

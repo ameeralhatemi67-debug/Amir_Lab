@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Windows' sound system (Core Audio) for Imp Studio: the outputs, every app's volume and level.
+       No UI and no library: COM through .NET's source-generated interop. Shared by the app and the CLI. -->
+  <PropertyGroup>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <RootNamespace>Toolbox.Windows.Audio</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Toolbox.Windows.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Toolbox.Core\Toolbox.Core.csproj" />
+  </ItemGroup>
+
+</Project>

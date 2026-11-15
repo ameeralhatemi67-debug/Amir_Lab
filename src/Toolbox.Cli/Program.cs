@@ -17,6 +17,7 @@ namespace Toolbox.Cli;
 ///   ftb features                               show runtime features detected on this computer
 ///   ftb probe &lt;files...&gt;                       show what each file really contains
 ///   ftb run &lt;action&gt; [--set key=value]... [--out folder] [--json] &lt;files...&gt;
+///   ftb sound                                  Imp Studio's sound check: outputs, apps, levels (reads only)
 /// </summary>
 internal static class Program
 {
@@ -38,7 +39,8 @@ internal static class Program
                 "features" => Features(),
                 "probe" => Probe(args[1..]),
                 "run" => Run(args[1..]),
-                _ => Fail($"Unknown command '{args[0]}'. Run 'ftb help'."),
+                "sound" => Sound(),
+                _ =>Fail($"Unknown command '{args[0]}'. Run 'ftb help'."),
             };
         }
         catch (Exception ex) when (ex is ProcessingException or FormatException or KeyNotFoundException)
@@ -194,13 +196,20 @@ internal static class Program
         return 1;
     }
 
-    private static void PrintHelp() => Console.WriteLine("""
+    private static int Sound()
+    {
+        Console.Write(Toolbox.Windows.Audio.SoundCheck.Run());
+        return 0;
+    }
+
+    private static void PrintHelp() =>Console.WriteLine("""
         File Toolbox command line (local processing only)
 
           ftb caps [--markdown]          List every action with its meaning, limitations and status
           ftb features                   Show codecs/engines detected on this computer
           ftb probe <files...>           Show what each file really contains
           ftb run <action> [--set key=value]... [--out folder] [--json] <files...>
+          ftb sound                      Imp Studio's sound check: outputs, apps and their levels (changes nothing)
 
         Examples
           ftb run pdf.render-jpg --set pages=1-3 --set dpi=150 report.pdf

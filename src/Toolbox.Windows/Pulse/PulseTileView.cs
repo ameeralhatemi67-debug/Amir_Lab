@@ -93,7 +93,7 @@ internal sealed class PulseTileView : Grid
         _hover.SetResourceReference(Border.BackgroundProperty, "Brush.Line");
         Children.Add(_hover);
 
-        if (PulseTiles.HasRing(id) || id == PulseTiles.Timer)
+        if (PulseTiles.HasRing(id) || id is PulseTiles.Timer or PulseTiles.Sound)
         {
             _ring = new UsageRing();
             _ring.Track = Application.Current?.TryFindResource("Brush.LapTrack") as Brush

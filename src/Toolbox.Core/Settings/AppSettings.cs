@@ -46,6 +46,9 @@ public sealed class AppSettings
     /// <summary>Pulse (the edge dock with Claude and Codex usage and shortcuts).</summary>
     public Pulse.PulseSettings Pulse { get; set; } = new();
 
+    /// <summary>Imp Studio (every app's sound).</summary>
+    public Sound.SoundSettings Sound { get; set; } = new();
+
     // ---- File Toolbox: activation & wheel ----------------------------------------------------
     /// <summary>Key tapped during a file drag to open the wheel: Shift, Ctrl, Alt or CapsLock.</summary>
     public string ActivationKey { get; set; } = "Shift";

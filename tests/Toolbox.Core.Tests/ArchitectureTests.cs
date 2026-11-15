@@ -29,6 +29,7 @@ public class ArchitectureTests
             Path.Combine("src", "Toolbox.Cli", "bin"),
             Path.Combine("src", "Toolbox.Windows", "bin"),
             Path.Combine("src", "Toolbox.Windows.Ocr", "bin"),
+            Path.Combine("src", "Toolbox.Windows.Audio", "bin"),
         })
         {
             var bin = Path.Combine(root, pattern);
@@ -37,7 +38,7 @@ public class ArchitectureTests
                          .Concat(Directory.EnumerateFiles(bin, "*.exe", SearchOption.AllDirectories)))
             {
                 var fileName = Path.GetFileName(file);
-                if (fileName is "Toolbox.Processing.dll" or "ftb.dll" or "AmirLap.dll" or "Toolbox.Windows.Ocr.dll")
+                if (fileName is "Toolbox.Processing.dll" or "ftb.dll" or "AmirLap.dll" or "Toolbox.Windows.Ocr.dll" or "Toolbox.Windows.Audio.dll")
                     yield return [file];
             }
         }

@@ -119,10 +119,21 @@ internal sealed partial class DockWindow : Window
         Content = _root;
 
         _keepUp.Tick += (_, _) => KeepUp();
-        _hideTimer.Tick += (_, _) => { _hideTimer.Stop(); _hideTimer.Interval = TimeSpan.FromMilliseconds(900); if (_drag is null && _menu is null && AutoHide && !_dock.IsMouseOver) SlideAway(true); };
+        _hideTimer.Tick += (_, _) => { _hideTimer.Stop(); _hideTimer.Interval = TimeSpan.FromMilliseconds(900); if (_drag is null && _menu is null && AutoHide && !_dock.IsMouseOver && !CardHeld) SlideAway(true); };
         _springTimer.Tick += (_, _) => { _springTimer.Stop(); if (_hidden) OpenFromLine(); };
-        _fadeTimer.Tick += (_, _) => { _fadeTimer.Stop(); if (FadeMode && !_dock.IsMouseOver && _drag is null) Motion.To(_dock, OpacityProperty, 0.4, 600); };
+        _fadeTimer.Tick += (_, _) => { _fadeTimer.Stop(); if (FadeMode && !_dock.IsMouseOver && !CardHeld && _drag is null) Motion.To(_dock, OpacityProperty, 0.4, 600); };
         _cardTimer.Tick += (_, _) => { _cardTimer.Stop(); if (_hovered is not null && _drag is null) ShowCard(_hovered); };
+        // A card that can be used (Imp Studio's quick mixer) stays while the pointer crosses the gap to it and while it is on it.
+        _cardGrace.Tick += (_, _) =>
+        {
+            _cardGrace.Stop();
+            if (_hovered is not null || CardHeld) return;
+            HideCard();
+            if (AutoHide && !_dock.IsMouseOver) _hideTimer.Start();
+            if (FadeMode && !_dock.IsMouseOver) _fadeTimer.Start();
+        };
+        _layer.MouseLeave += (_, _) => { if (_cardInteractive) { _cardGrace.Stop(); _cardGrace.Start(); } };
+        _layer.MouseEnter += (_, _) => { if (_cardInteractive) { _cardGrace.Stop(); _hideTimer.Stop(); _fadeTimer.Stop(); } };
         ThemeResources.Changed += OnThemeChanged;
         Closed += (_, _) =>
         {
@@ -132,6 +143,7 @@ internal sealed partial class DockWindow : Window
             _hideTimer.Stop();
             _fadeTimer.Stop();
             _cardTimer.Stop();
+            _cardGrace.Stop();
             _springTimer.Stop();
         };
         DpiChanged += (_, _) => Dispatcher.BeginInvoke(Layout, DispatcherPriority.Background);
@@ -139,6 +151,25 @@ internal sealed partial class DockWindow : Window
 
     /// <summary>A tile was clicked (its id, or "+" for the add tile).</summary>
     public event Action<string>? TileClicked;
+
+    /// <summary>The mouse wheel turned over a tile (its id and the wheel's delta, 120 a notch).</summary>
+    public event Action<string, int>? TileWheel;
+
+    private static readonly object InteractiveTag = new();
+    private readonly DispatcherTimer _cardGrace = new() { Interval = TimeSpan.FromMilliseconds(380) };
+    private bool _cardInteractive;
+
+    /// <summary>
+    /// Marks a card as one that can be used (sliders, buttons): it takes the pointer, stays open while
+    /// the pointer is on it, and updates itself instead of being rebuilt.
+    /// </summary>
+    public static void MarkInteractive(FrameworkElement card) => card.Tag = InteractiveTag;
+
+    /// <summary>The open card is one that can be used and the pointer is on it (or holds one of its sliders).</summary>
+    private bool CardHeld => _card is not null && _cardInteractive && (_layer.IsMouseOver || _layer.IsMouseCaptureWithin);
+
+    /// <summary>The tile whose card is open, if any (tests).</summary>
+    internal string? CardTile => _cardFor;
 
     /// <summary>Files were dropped on a tile.</summary>
     public event Action<string, string[]>? FilesDropped;
@@ -239,7 +270,11 @@ internal sealed partial class DockWindow : Window
         _sliver.Effect = new DropShadowEffect { BlurRadius = 12, ShadowDepth = 0, Color = ThemeResources.Lap.Accent, Opacity = 0.9 };
         _dock.Children.Add(_sliver);
 
-        foreach (var f in _fillets) _layer.Children.Add(f);
+        foreach (var f in _fillets)
+        {
+            f.IsHitTestVisible = false; // the layer takes the pointer while a card that can be used is open
+            _layer.Children.Add(f);
+        }
 
         _dock.MouseEnter += (_, _) =>
         {
@@ -403,17 +438,29 @@ internal sealed partial class DockWindow : Window
         tile.MouseLeave += (_, _) =>
         {
             if (_hovered == tile) _hovered = null;
-            Dispatcher.BeginInvoke(() => { if (_hovered is null) HideCard(); }, DispatcherPriority.Input);
+            if (_cardInteractive && _cardFor == id)
+            {
+                _cardGrace.Stop();
+                _cardGrace.Start(); // time to reach the card
+                return;
+            }
+            Dispatcher.BeginInvoke(() => { if (_hovered is null && !CardHeld) HideCard(); }, DispatcherPriority.Input);
         };
         tile.MouseLeftButtonDown += (_, e) => { _pressed = tile; e.Handled = true; };
         tile.MouseLeftButtonUp += (_, e) =>
         {
             if (_pressed == tile && _drag is null)
             {
-                HideCard(immediate: true);
+                if (!(_cardInteractive && _cardFor == id)) HideCard(immediate: true); // a card that can be used stays and shows the result
                 TileClicked?.Invoke(id);
             }
             _pressed = null;
+            e.Handled = true;
+        };
+        tile.MouseWheel += (_, e) =>
+        {
+            if (TileWheel is not { } wheel || _drag is not null) return;
+            wheel(id, e.Delta);
             e.Handled = true;
         };
         if (id == PulseTiles.Toolbox)
@@ -440,6 +487,7 @@ internal sealed partial class DockWindow : Window
         PulseTiles.Chats => "lap-chats",
         PulseTiles.ChatGpt => "lap-chat",
         PulseTiles.Longshot => "lap-longshot",
+        PulseTiles.Sound => "lap-sound",
         PulseTiles.Toolbox => "lap-toolbox",
         PulseTiles.Timer => "lap-timer",
         PulseTiles.Note => "lap-note",
@@ -906,8 +954,18 @@ internal sealed partial class DockWindow : Window
             return;
         }
         if (_card is not null) _layer.Children.Remove(_card);
-        _card = content as Border ?? PulseCards.Card(content);
+        _cardGrace.Stop();
+        var next = content as Border ?? PulseCards.Card(content);
+        if (next.Parent == _layer)
+        {
+            // The same card again while its fade-out runs (a card that updates itself is reused).
+            next.BeginAnimation(OpacityProperty, null);
+            _layer.Children.Remove(next);
+        }
+        _card = next;
         _cardFor = tile.Id;
+        _cardInteractive = ReferenceEquals(_card.Tag, InteractiveTag);
+        _layer.IsHitTestVisible = _cardInteractive;
         _card.FlowDirection = Lang.Flow;
         _layer.Children.Add(_card);
         _card.Measure(new Size(PulseCards.Width, double.PositiveInfinity));
@@ -939,9 +997,10 @@ internal sealed partial class DockWindow : Window
         Motion.To(move, TranslateTransform.YProperty, 0, 320, Motion.Settle);
     }
 
-    /// <summary>Rebuilds the open card (its numbers changed).</summary>
+    /// <summary>Rebuilds the open card (its numbers changed). A card that can be used updates itself instead.</summary>
     public void RefreshCard()
     {
+        if (_cardInteractive) return;
         if (_cardFor is not null && _tiles.TryGetValue(_cardFor, out var tile) && _card is not null)
             ShowCard(tile, animate: false);
     }
@@ -949,16 +1008,19 @@ internal sealed partial class DockWindow : Window
     private void HideCard(bool immediate = false)
     {
         _cardTimer.Stop();
+        _cardGrace.Stop();
         if (_card is not { } card) return;
         _card = null;
         _cardFor = null;
+        _cardInteractive = false;
+        _layer.IsHitTestVisible = false;
         if (immediate || Motion.IsReduced)
         {
             _layer.Children.Remove(card);
             return;
         }
         var fade = new DoubleAnimation(0, TimeSpan.FromMilliseconds(140));
-        fade.Completed += (_, _) => _layer.Children.Remove(card);
+        fade.Completed += (_, _) => { if (!ReferenceEquals(_card, card)) _layer.Children.Remove(card); };
         card.BeginAnimation(OpacityProperty, fade);
     }
 

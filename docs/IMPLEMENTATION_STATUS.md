@@ -115,6 +115,17 @@ _Last updated: 8 Nov 2026 — Amir Lap phases 1 and 2 complete: the multi-tool s
 | Colour picker: magnifier, Basic / Pro, colour window (codes, steps, contrast, saved, recent), placement beside the pick | **Working** (live picking: **Partial**) | `ColourTests` (maths, history, settings), `ColourPlacementTests` (edges and corners), `HomeWindowTests` (the window and the magnifier off-screen, light/dark, English/Arabic; snapshots reviewed). Picking on the real screen with the real mouse needs a live try. |
 | Chats (0.7.0): one-to-one and group chats with Claude Code and Codex; @ names, hand-offs with a limit, cards to allow refused commands, pictures to approve, folder chats that continue earlier sessions as a copy, quick chats | **Working** (in the app: **Partial**) | `PulseChatTests` (rules, digest, command lines, both agents' output on real lines, earlier sessions, the room with stand-in agents), `LiveChatTests` (a real Claude → Codex hand-off on this PC, opt-in), `HomeWindowTests` (the window, its states and New chat off-screen, light/dark, English/Arabic; snapshots reviewed). Not yet used by the owner in the installed app. |
 
+## Imp Studio (0.8.0)
+
+| Capability | State | Evidence / notes |
+|---|---|---|
+| Engine: outputs, main output's volume and mute, every app's sessions with level, mute and live meter, kept up to date by Windows' notifications | **Working** | `SoundEngineTests` (reads this PC; changes nothing) and the opt-in live test (`AMIRLAP_LIVE_SOUND=1`): a new sound found through Windows' notification, its level read, set to 50% and confirmed by a second engine, muted, unmuted, put back. `ftb sound` on the owner's PC lists the Realtek speaker and FxSound's output. |
+| Who a sound belongs to, grouping, names, steps, remembered levels per app and output | **Working** | `SoundTests` (identifiers from real formats, version folders, Windows' sounds, grouping, steps, memory saved and reloaded, a broken file, the Sound tile added once). |
+| Mixer window, Pulse's quick mixer card, level bar, Imp Studio page and Dashboard card, light/dark, English/Arabic | **Working** | `HomeWindowTests` with a stand-in engine (rows in the right groups, a slider and the mute ask the engine, meters only while shown); snapshots reviewed. |
+| Hotkeys for the app in front, level bar on screen | **Partial** | Built; the foreground lookup and the bar need a live try (in a game too). |
+| The dock card that can be used (stays under the pointer, sliders work), wheel over the Sound tile | **Partial** | Built; needs a live try with the real mouse. |
+| Switching the main output | **Partial** | Available on this PC (`ftb sound`); not switched in a test, so the owner's setup stays as it is. |
+
 ## Desktop interaction
 
 | Capability | State | Evidence / notes |

@@ -492,6 +492,7 @@ internal sealed partial class AmirLapWindow : GlassWindow
         {
             FileToolboxTool.ToolId => new WheelPreview(),
             PulseTool.ToolId => new Pulse.PulsePreview(132).With(p => p.Update(_host.Settings.Current.Pulse)),
+            ImpStudioTool.ToolId => new Sound.SoundPreview(),
             _ => new LongshotPreview(),
         };
         if (preview is IIdleMotion motion) _pageMotion.Add(motion);
@@ -505,7 +506,7 @@ internal sealed partial class AmirLapWindow : GlassWindow
         buttons.Children.Add(SettingsPage.Button(Lang.T("Settings", "الإعدادات"), () => ShowPage(tool.Id), ghost: true));
         if (on)
         {
-            var open = SettingsPage.Button(tool.Id switch { LongshotTool.ToolId => Lang.T("Capture", "التقاط"), PulseTool.ToolId => Lang.T("Show dock", "إظهار الشريط"), _ => Lang.T("Open", "فتح") }, tool.Open, accent: true);
+            var open = SettingsPage.Button(tool.Id switch { LongshotTool.ToolId => Lang.T("Capture", "التقاط"), PulseTool.ToolId => Lang.T("Show dock", "إظهار الشريط"), ImpStudioTool.ToolId => Lang.T("Open mixer", "فتح المازج"), _ => Lang.T("Open", "فتح") }, tool.Open, accent: true);
             open.Margin = new Thickness(8, 0, 0, 0);
             buttons.Children.Add(open);
         }

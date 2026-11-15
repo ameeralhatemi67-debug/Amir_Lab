@@ -120,6 +120,13 @@ internal static class Icons
         ["lap-bolt"] = "M13,3 L5,13 H11 L10,21 L18,11 H12 Z",
         ["lap-trash"] = "M4,7 H20 M9,7 V4.5 H15 V7 M6.5,7 L7.5,20 H16.5 L17.5,7 M10,11 V16 M14,11 V16",
         ["lap-terminal"] = RoundRect(3, 4.5, 18, 15, 2.5) + " M7,9.5 L10,12 L7,14.5 M12,15 H16",
+        // Imp Studio
+        ["lap-mixer"] = "M5,10 V14 M9.5,6 V18 M14,8.5 V15.5 M18.5,4.5 V19.5",
+        ["lap-sound"] = "M4,9.5 H7.5 L12,5.5 V18.5 L7.5,14.5 H4 Z M15.5,9 A4,4 0 0 1 15.5,15 M18,6.5 A7.5,7.5 0 0 1 18,17.5",
+        ["lap-mute"] = "M4,9.5 H7.5 L12,5.5 V18.5 L7.5,14.5 H4 Z M15.5,9.5 L20.5,14.5 M20.5,9.5 L15.5,14.5",
+        ["lap-headphones"] = "M4,15 V12 A8,8 0 0 1 20,12 V15" + RoundRect(3, 14, 4.5, 6.5, 1.8) + RoundRect(16.5, 14, 4.5, 6.5, 1.8),
+        ["lap-speaker"] = RoundRect(6, 3, 12, 18, 3) + Circle(12, 14, 3.2) + " M12,7 V7.1",
+        ["lap-monitor"] = RoundRect(3, 4.5, 18, 12, 2) + " M9,20 H15 M12,16.5 V20",
     };
 
     private static string F(double v) => v.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture);
