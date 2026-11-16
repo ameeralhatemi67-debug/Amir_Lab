@@ -28,7 +28,9 @@ powershell -ExecutionPolicy Bypass -File tools/publish.ps1
 powershell -ExecutionPolicy Bypass -File artifacts/publish/install.ps1 -Quiet -Launch
 ```
 
-From the release zip: extract it, right-click `install.ps1` > Run with PowerShell. A window shows the steps, then Amir Lap opens a welcome (installed or updated, where it lives, what to try) and the window closes by itself.
+From the release zip: right-click it > Extract All, then double-click **Install Amir Lap** in the new folder (`START HERE.txt` says the same in four lines). A window shows the steps, then Amir Lap opens a welcome (installed or updated, where it lives, what to try) and the window closes by itself. Everything the window showed is also saved in `%TEMP%\AmirLap-install-log.txt`, for anyone who needs help. `tools/test-package.ps1 -Zip <zip>` tests this path: a downloaded, extracted zip, the launcher, an unblocked install, all four tools starting, and uninstall.
+
+Why a `.cmd` and not just `install.ps1`: double-clicking a `.ps1` opens it in Notepad, Windows 11 hides "Run with PowerShell" under "Show more options", and a script-policy error closes the window before anyone can read it. The launcher runs the script with the policy bypassed for that one run and waits for a key if anything fails.
 
 - **Where it goes:** Amir Lap installs to `%LOCALAPPDATA%\Programs\AmirLap`, with a Start Menu shortcut and an entry in Settings > Apps > Installed apps.
 - **Coming from File Toolbox:** the installer replaces it: the old program folder, shortcut and Installed apps entry are removed. Your settings, history, recipes and brand styles are copied into Amir Lap the first time it starts, and the old data folder is left untouched. Explorer menu, Send to and start-with-Windows carry over if you had them on.

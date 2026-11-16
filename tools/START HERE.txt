@@ -1,0 +1,23 @@
+AMIR LAP - HOW TO INSTALL
+=========================
+
+1. Right-click the zip you downloaded and choose "Extract All", then Extract.
+   (Do not run anything from inside the zip: extract it first.)
+
+2. In the folder that opens, double-click:   Install Amir Lap
+
+3. If Windows says "Windows protected your PC" or "Open File - Security Warning":
+   click "More info", then "Run anyway" (or just "Run"). Amir Lap is new and is not
+   code-signed yet, so Windows asks about every new program.
+
+4. A window shows the steps. Amir Lap then opens a welcome and sits in the
+   notification area by the clock. You can also start it from the Start Menu.
+
+It installs for you only. No administrator rights, no account, nothing is uploaded.
+Needs Windows 10 (1809 or later) or Windows 11, 64-bit.
+
+If it does not install:
+  - Send Amir a photo of the installer window, or the file
+    %TEMP%\AmirLap-install-log.txt  (paste that into the File Explorer address bar).
+
+To remove it: Settings > Apps > Installed apps > Amir Lap > Uninstall.

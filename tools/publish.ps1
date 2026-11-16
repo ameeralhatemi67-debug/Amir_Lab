@@ -76,7 +76,9 @@ foreach ($doc in 'README.md', 'docs\CAPABILITIES.md', 'docs\OCR_EVALUATION.md', 
     Copy-Item (Join-Path $root $doc) $docs
 }
 
-foreach ($script in 'install.ps1', 'uninstall.ps1') {
+# "Install Amir Lap.cmd" is what people double-click (a .ps1 opens in Notepad, and Windows 11 hides "Run with
+# PowerShell" under "Show more options"); START HERE.txt says what to do in four lines.
+foreach ($script in 'install.ps1', 'uninstall.ps1', 'Install Amir Lap.cmd', 'START HERE.txt') {
     Copy-Item (Join-Path $PSScriptRoot $script) $Output -Force
 }
 Copy-Item (Join-Path $PSScriptRoot 'uninstall.ps1') $app -Force
@@ -116,6 +118,26 @@ Write-Host ("Amir Lap {0}: {1:N0} files, {2:N0} MB in {3}" -f $version, (Get-Chi
 if (-not $NoZip) {
     $zip = Join-Path $Output "AmirLap-$version-win-x64.zip"
     if (Test-Path $zip) { Remove-Item $zip -Force }
-    Compress-Archive -Path $app, (Join-Path $Output 'install.ps1'), (Join-Path $Output 'uninstall.ps1') -DestinationPath $zip -CompressionLevel Optimal
+    # Not Compress-Archive: Windows PowerShell 5.1 writes "AmirLap\file.dll" with backslashes, which is not a
+    # valid zip path and unpacks as files literally named that way in many tools. Entries here use "/".
+    Add-Type -AssemblyName System.IO.Compression, System.IO.Compression.FileSystem
+    $stream = [IO.File]::Open($zip, [IO.FileMode]::Create)
+    $archive = New-Object IO.Compression.ZipArchive($stream, [IO.Compression.ZipArchiveMode]::Create)
+    try {
+        # Everything sits in one folder named for the version. Extracting a newer zip over an older one (the
+        # same "AmirLap-latest-win-x64" folder) kept the old program and old installer and added only a few
+        # new files: a mix that did not install. With a folder per version, versions can never mix.
+        $top = "AmirLap-$version"
+        $loose = 'Install Amir Lap.cmd', 'START HERE.txt', 'install.ps1', 'uninstall.ps1'
+        foreach ($name in $loose) {
+            [void][IO.Compression.ZipFileExtensions]::CreateEntryFromFile($archive, (Join-Path $Output $name), "$top/$name", [IO.Compression.CompressionLevel]::Optimal)
+        }
+        $appRoot = $app.TrimEnd('\') + '\'
+        foreach ($file in Get-ChildItem $app -Recurse -File) {
+            $entry = "$top/AmirLap/" + $file.FullName.Substring($appRoot.Length).Replace('\', '/')
+            [void][IO.Compression.ZipFileExtensions]::CreateEntryFromFile($archive, $file.FullName, $entry, [IO.Compression.CompressionLevel]::Optimal)
+        }
+    }
+    finally { $archive.Dispose(); $stream.Dispose() }
     Write-Host ("Zip: {0} ({1:N0} MB)" -f $zip, ((Get-Item $zip).Length / 1MB))
 }

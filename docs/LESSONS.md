@@ -91,3 +91,22 @@ Mistakes that cost a release, what caused them, and the rule that keeps them fro
 **Fix (0.6.1):** `SeeThrough`. They are ordinary windows whose frame is extended over the whole window, with no backdrop, so the desktop compositor draws their see-through pixels with no copy back. A window region (`WindowShape`) makes the inside of the frame a hole, so clicks go to the app below.
 
 **Rule:** a see-through window bigger than a panel uses `SeeThrough` with a shape, not AllowsTransparency.
+
+## A new zip extracted over an old folder is a mix, not an update
+
+**Seen:** 16 Nov 2026. The owner and a friend could not install 0.8.0. Their `Downloads\AmirLap-latest-win-x64` folder still held 0.5.3: the new zip had been extracted over it, the old files with the same names were kept, and only new names (such as `Toolbox.Windows.Audio.dll`) were added. The old `install.ps1` (flash and close, no steps) and the old `AmirLap.exe` (3 tools, no Imp Studio) ran, so it looked as if the new zip "did not work".
+
+**Cause:** every release used the same top-level names (`AmirLap\`, `install.ps1`) and the same zip name (`AmirLap-latest-win-x64`), so Explorer's "Extract All" put it in the old folder. A `.ps1` was also the only way in: double-clicking it opens Notepad, and Windows 11 hides "Run with PowerShell" under "Show more options".
+
+**Fix (0.8.0 package):**
+- The zip holds one folder named for the version (`AmirLap-0.8.0\`), so versions cannot mix.
+- `install.ps1` stops with a plain message when the program folder holds files from two versions.
+- `Install Amir Lap.cmd` is the double-click entry; it bypasses the script policy for that run and waits for a key on failure.
+- The installer's window is saved to `%TEMP%\AmirLap-install-log.txt`.
+- Zip paths use `/` (Windows PowerShell 5.1's `Compress-Archive` writes `\`).
+
+**Rules:**
+- Anything people unpack must carry its version in its path.
+- Give a person one thing to double-click, and make a failure stay on screen and into a file.
+- Test the package the way it is met: a downloaded zip (every file marked), extracted, launched by the `.cmd`: `tools/test-package.ps1`.
+- `Start-Process -Wait` also waits for the app the script started; use `WaitForExit` with a timeout.

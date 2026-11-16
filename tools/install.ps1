@@ -33,6 +33,8 @@ param(
     [switch]$Launch,
     # For scripts and tests: plain output, errors thrown, no countdown, no welcome window.
     [switch]$Quiet,
+    # Set by "Install Amir Lap.cmd": that window waits for a key when something goes wrong, so this one need not.
+    [switch]$Launcher,
     # The following exist so the installer can be tested without touching the real Start Menu and registry.
     [string]$StartMenuDir = [Environment]::GetFolderPath('Programs'),
     [string]$UninstallKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\AmirLap',
@@ -46,6 +48,11 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $friendly = -not $Quiet
+
+# Everything the window shows is also saved here, so a person who could not install can send it.
+$installLog = Join-Path $env:TEMP 'AmirLap-install-log.txt'
+if ($friendly) { try { Start-Transcript -Path $installLog -Force | Out-Null } catch { } }
+function Stop-Log { if ($friendly) { try { Stop-Transcript | Out-Null } catch { } } }
 
 # ---- what the person running it sees -------------------------------------------------------------
 # (ASCII only: Windows PowerShell 5.1 reads a script without a byte-order mark as the local code page.)
@@ -101,7 +108,14 @@ function Install-AmirLap {
     if (-not $Source) { $script:Source = Join-Path $PSScriptRoot 'AmirLap' }
     $sourceExe = Join-Path $Source 'AmirLap.exe'
     if (-not (Test-Path $sourceExe)) {
-        throw "AmirLap.exe was not found in '$Source'. Extract the whole zip first (right-click it, then Extract All), and run install.ps1 from the extracted folder."
+        throw "AmirLap.exe was not found in '$Source'. Extract the whole zip first (right-click it, then Extract All), and run the installer from the extracted folder."
+    }
+    # A folder that mixes two versions cannot work (a new zip extracted over an old folder keeps the old
+    # files that have the same name). Say so instead of installing a half-updated program.
+    $versions = @(Get-ChildItem $Source -File | Where-Object { $_.Name -match '^(AmirLap\.(exe|dll)|ftb\.(exe|dll)|Toolbox\..+\.dll)$' } |
+        ForEach-Object { $_.VersionInfo.ProductVersion } | Sort-Object -Unique)
+    if ($versions.Count -gt 1) {
+        throw "The folder '$Source' mixes files from two versions of Amir Lap ($($versions -join ' and ')). That happens when a new zip is extracted over an old folder. Delete the old folder, then extract the new zip again (right-click it, then Extract All) into a new place."
     }
     $dest = [IO.Path]::GetFullPath($Destination)
     $exe = Join-Path $dest 'AmirLap.exe'
@@ -245,6 +259,7 @@ function Install-AmirLap {
 
 try {
     Install-AmirLap
+    Stop-Log
 }
 catch {
     if (-not $friendly) { throw }
@@ -253,7 +268,10 @@ catch {
     Write-Host '  Amir Lap could not be installed.' -ForegroundColor Red
     Write-Host ("  " + $_.Exception.Message) -ForegroundColor Red
     Write-Host ''
-    Write-Host '  Fix the above and run install.ps1 again.'
+    Write-Host '  Fix the above and run the installer again.'
+    Write-Host "  If it keeps failing, send this file to Amir: $installLog"
+    Stop-Log
+    if ($Launcher) { exit 1 }   # the launcher's window waits for a key
     Write-Host '  Press Enter to close this window.'
     [void](Read-Host)
     exit 1
