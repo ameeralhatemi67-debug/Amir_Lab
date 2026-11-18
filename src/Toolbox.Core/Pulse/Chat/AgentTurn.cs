@@ -51,6 +51,7 @@ public sealed class ProcessAgentRunner : IAgentRunner
             };
             foreach (var a in launch.Args) info.ArgumentList.Add(a);
             info.Environment["NO_COLOR"] = "1";
+            foreach (var (key, value) in launch.Env) info.Environment[key] = value;
             _process = new Process { StartInfo = info, EnableRaisingEvents = true };
             Completion = Run(launch, onEvent);
         }

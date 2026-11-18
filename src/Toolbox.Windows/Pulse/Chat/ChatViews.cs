@@ -84,7 +84,38 @@ internal static class ChatLook
     }
 
     public static FrameworkElement Faces(ChatInfo chat, double size = 30) =>
-        chat.IsGroup ? Pair(size) : Avatar(chat.Agents.FirstOrDefault() ?? Agent.Claude, size * 0.93);
+        chat.Members.Count > 1 ? Pair(size) : Avatar(chat.Agents.FirstOrDefault() ?? Agent.Claude, size * 0.93);
+
+    private static readonly Dictionary<string, (DateTime At, IReadOnlyList<AgentModel> List)> ModelCache = [];
+
+    /// <summary>An agent's models (Codex's are read from its own files, so they are kept for a minute).</summary>
+    public static IReadOnlyList<AgentModel> Models(string agent)
+    {
+        if (ModelCache.TryGetValue(agent, out var hit) && DateTime.UtcNow - hit.At < TimeSpan.FromMinutes(1)) return hit.List;
+        var list = AgentModels.For(agent);
+        ModelCache[agent] = (DateTime.UtcNow, list);
+        return list;
+    }
+
+    /// <summary>A drop-down of an agent's models; <paramref name="picked"/> gets the id ("" for its default).</summary>
+    public static ComboBox ModelPicker(string agent, string current, Action<string> picked)
+    {
+        var box = new ComboBox { MinWidth = 170, MaxWidth = 240, ToolTip = Lang.T($"{Agent.Name(agent)}'s model", $"نموذج {Agent.Name(agent)}") };
+        var list = Models(agent).ToList();
+        if (current.Length > 0 && !list.Any(m => string.Equals(m.Id, current, StringComparison.OrdinalIgnoreCase))) list.Add(new AgentModel(current, current));
+        foreach (var m in list)
+        {
+            var name = m.Id.Length == 0 ? Lang.T(m.Name, m.Name.Replace("Default", "الافتراضي", StringComparison.Ordinal)) : m.Name;
+            box.Items.Add(new ComboBoxItem { Content = name, Tag = m.Id, IsSelected = string.Equals(m.Id, current, StringComparison.OrdinalIgnoreCase) });
+        }
+        if (box.SelectedIndex < 0 && box.Items.Count > 0) box.SelectedIndex = 0;
+        box.SelectionChanged += (_, _) => { if (box.SelectedItem is ComboBoxItem { Tag: string id }) picked(id); };
+        return box;
+    }
+
+    /// <summary>A model's name for showing ("Opus", "GPT-6.2-Sol", "Default").</summary>
+    public static string ModelName(string agent, string id) =>
+        id.Length == 0 ? Lang.T("Default", "الافتراضي") : Models(agent).FirstOrDefault(m => string.Equals(m.Id, id, StringComparison.OrdinalIgnoreCase))?.Name ?? id;
 
     /// <summary>A small turning arc (still when motion is reduced).</summary>
     public static FrameworkElement Spinner(double size = 12)
@@ -264,7 +295,8 @@ internal sealed record ChatActions(
     Action<string> Copy,
     Func<string, bool> IsExpanded,
     Action<string> ToggleSteps,
-    Func<string, ImageSource?> Thumbnail);
+    Func<string, ImageSource?> Thumbnail,
+    Action<string, string>? SetModel = null);
 
 /// <summary>Draws each kind of message: the user's bubble, an agent's reply, cards and notes.</summary>
 internal static class ChatViews
@@ -273,6 +305,7 @@ internal static class ChatViews
     {
         ChatKind.Denied => Denied(m, act),
         ChatKind.Limit => Limit(chat, m, act),
+        ChatKind.Consent => Consent(chat, m, act),
         ChatKind.Approval => Approval(m),
         ChatKind.Note => Note(m),
         _ => m.Author == ChatAuthor.User ? User(m, act) : AgentReply(chat, m, act),
@@ -319,6 +352,15 @@ internal static class ChatViews
         var body = new StackPanel();
         var head = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 2) };
         head.Children.Add(new TextBlock { Text = Agent.Name(agent), FontSize = 12.5, FontWeight = FontWeights.SemiBold, Foreground = ChatLook.Ink(agent), VerticalAlignment = VerticalAlignment.Center });
+        if (chat.Info.IsDirected && agent == chat.Info.Director)
+        {
+            var role = new Border { CornerRadius = new CornerRadius(9), Padding = new Thickness(7, 1, 7, 1), Margin = new Thickness(7, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center, Background = ChatLook.Soft(agent) };
+            role.Child = new TextBlock { Text = Lang.T("directs", "يوجّه"), FontSize = 10.5, FontWeight = FontWeights.SemiBold, Foreground = ChatLook.Ink(agent) };
+            role.ToolTip = chat.Info.DirectorInPulse
+                ? Lang.T("Directs this chat. Pulse carries it on from a copy of its session.", "يوجّه هذه المحادثة. يتابعه نبض من نسخة من جلسته.")
+                : Lang.T("Directs this chat from its own session with you.", "يوجّه هذه المحادثة من جلسته الخاصة معك.");
+            head.Children.Add(role);
+        }
         if (m.To is { } to)
         {
             var chip = new Border { CornerRadius = new CornerRadius(9), Padding = new Thickness(7, 1, 7, 1), Margin = new Thickness(7, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
@@ -497,6 +539,19 @@ internal static class ChatViews
         var title = new StackPanel { Orientation = Orientation.Horizontal };
         title.Children.Add(SettingsPage.Glyph("lap-loop", 16, stroke: 2, brush: ChatLook.Mention).With(g => g.Margin = new Thickness(0, 0, 8, 0)));
         int n = int.TryParse(m.Text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var hops) ? hops : chat.Info.HopLimit;
+        var info = chat.Info;
+        if (info.DirectorOutside)
+        {
+            string director = Agent.Name(info.Director), guest = Agent.Name(info.Guest ?? Agent.Other(info.Director));
+            title.Children.Add(ChatLook.Text(Lang.T($"{director} wrote to {guest} {n} times without you", $"كتب {director} إلى {guest} {n} مرات دونك"), 13.5, "Brush.Text", FontWeights.SemiBold));
+            stack.Children.Add(title);
+            stack.Children.Add(ChatLook.Text(Lang.T($"Its next message is waiting. Let {director} go on, or write below to steer them both.", $"رسالته التالية تنتظر. دع {director} يتابع، أو اكتب في الأسفل لتوجيههما معًا."), 12.5, "Brush.Text2").With(t => t.Margin = new Thickness(0, 4, 0, 8)));
+            var go = new WrapPanel();
+            go.Children.Add(ChatLook.Small(Lang.T($"Let {director} go on ({info.DirectorBudget} more)", $"دع {director} يتابع ({info.DirectorBudget} أخرى)"), () => act.Answer(m, CardState.More), accent: true));
+            go.Children.Add(ChatLook.Small(Lang.T("Pause here", "توقف هنا"), () => act.Answer(m, CardState.Paused), ghost: true));
+            stack.Children.Add(go);
+            return new Border { Child = stack, Background = ChatLook.WashSoft, BorderBrush = ChatLook.WashLine, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(14), Padding = new Thickness(14, 12, 14, 12) };
+        }
         title.Children.Add(ChatLook.Text(Lang.T($"Claude and Codex handed work to each other {n} times without you", $"تبادل Claude وCodex العمل {n} مرات دونك"), 13.5, "Brush.Text", FontWeights.SemiBold));
         stack.Children.Add(title);
         stack.Children.Add(ChatLook.Text(Lang.T($"{Agent.Name(m.About ?? Agent.Codex)} is next. Let them keep going, or write below to steer them.", $"الدور التالي لـ {Agent.Name(m.About ?? Agent.Codex)}. دعهما يتابعان، أو اكتب في الأسفل لتوجيههما."), 12.5, "Brush.Text2").With(t => t.Margin = new Thickness(0, 4, 0, 8)));
@@ -505,6 +560,85 @@ internal static class ChatViews
         row.Children.Add(ChatLook.Small(Lang.T("Pause here", "توقف هنا"), () => act.Answer(m, CardState.Paused), ghost: true));
         stack.Children.Add(row);
         return new Border { Child = stack, Background = ChatLook.WashSoft, BorderBrush = ChatLook.WashLine, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(14), Padding = new Thickness(14, 12, 14, 12) };
+    }
+
+    /// <summary>
+    /// An agent opened this chat from its own session: what it asks for (who, where, what the
+    /// guest may change, its model and the director's budget), and the owner's answer.
+    /// </summary>
+    private static FrameworkElement Consent(ChatFile chat, ChatMessage m, ChatActions act)
+    {
+        var info = chat.Info;
+        var directorId = info.IsDirected ? info.Director : info.TakenFrom ?? Agent.Claude;
+        var guestId = m.About ?? info.Guest ?? Agent.Other(directorId);
+        string director = Agent.Name(directorId), guest = Agent.Name(guestId);
+        if (m.State != CardState.Open)
+        {
+            return m.State switch
+            {
+                CardState.AllowRead => Done(Lang.T($"You allowed this chat. {guest} reads only.", $"سمحت بهذه المحادثة. {guest} يقرأ فقط."), true),
+                CardState.AllowEdit => Done(Lang.T($"You allowed this chat. {guest} can edit files in this folder.", $"سمحت بهذه المحادثة. يمكن لـ {guest} تعديل الملفات في هذا المجلد."), true),
+                CardState.Paused => Done(Lang.T("You took over this chat.", "توليت هذه المحادثة."), true),
+                _ => Done(Lang.T("You didn't allow this chat.", "لم تسمح بهذه المحادثة."), false),
+            };
+        }
+        var stack = new StackPanel();
+        var title = new DockPanel();
+        var faces = ChatLook.Pair(30);
+        faces.Margin = new Thickness(0, 0, 10, 0);
+        DockPanel.SetDock(faces, Dock.Left);
+        title.Children.Add(faces);
+        var words = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+        words.Children.Add(ChatLook.Text(Lang.T($"{director} wants to work with {guest} here", $"يريد {director} العمل مع {guest} هنا"), 14, "Brush.Text", FontWeights.SemiBold));
+        words.Children.Add(ChatLook.Text(Lang.T($"{director} opened this chat from its own session with you. {guest} starts when you allow it.", $"فتح {director} هذه المحادثة من جلسته الخاصة معك. يبدأ {guest} عندما تسمح."), 12, "Brush.Text2"));
+        title.Children.Add(words);
+        stack.Children.Add(title);
+
+        var facts = new StackPanel { Margin = new Thickness(0, 10, 0, 4) };
+        void Fact(string key, UIElement value)
+        {
+            var row = new DockPanel { Margin = new Thickness(0, 0, 0, 6) };
+            var k = ChatLook.Text(key, 12, "Brush.Text3", FontWeights.SemiBold);
+            k.Width = 120;
+            k.VerticalAlignment = VerticalAlignment.Center;
+            DockPanel.SetDock(k, Dock.Left);
+            row.Children.Add(k);
+            row.Children.Add(value);
+            facts.Children.Add(row);
+        }
+        TextBlock Value(string text, bool ltr = false)
+        {
+            var t = ChatLook.Text(text, 12, "Brush.Text");
+            t.VerticalAlignment = VerticalAlignment.Center;
+            if (ltr) t.FlowDirection = FlowDirection.LeftToRight;
+            return t;
+        }
+        Fact(Lang.T("Folder", "المجلد"), Value(info.Folder ?? "", ltr: true));
+        Fact(Lang.T($"{guest} would", $"ما سيفعله {guest}"), Value(m.Text == ChatPermission.Edit
+            ? Lang.T("change files in this folder (asked for)", "يغيّر الملفات في هذا المجلد (مطلوب)")
+            : Lang.T("read only (asked for)", "يقرأ فقط (مطلوب)")));
+        if (info.Outputs is { Length: > 0 } outputs) Fact(Lang.T("Saves to", "يحفظ في"), Value(outputs.TrimEnd('/') + "/", ltr: true));
+        if (act.SetModel is { } setModel)
+        {
+            var picker = ChatLook.ModelPicker(guestId, info.ModelOf(guestId), id => setModel(guestId, id));
+            picker.HorizontalAlignment = HorizontalAlignment.Left;
+            Fact(Lang.T($"{guest}'s model", $"نموذج {guest}"), picker);
+        }
+        else Fact(Lang.T($"{guest}'s model", $"نموذج {guest}"), Value(ChatLook.ModelName(guestId, info.ModelOf(guestId))));
+        Fact(Lang.T("Without you", "دونك"), Value(Lang.T($"{director} may write {info.DirectorBudget} times, then Pulse asks you", $"يمكن لـ {director} الكتابة {info.DirectorBudget} مرات، ثم يسألك نبض")));
+        Fact(Lang.T($"{guest} gets", $"يحصل {guest} على"), Value(info.DirectorNotes is null
+            ? Lang.T($"{director}'s brief", $"موجز {director}")
+            : Lang.T($"{director}'s brief, and a copy of your conversation to read if needed", $"موجز {director}، ونسخة من محادثتكما ليقرأها عند الحاجة")));
+        stack.Children.Add(facts);
+
+        var buttons = new WrapPanel { Margin = new Thickness(0, 4, 0, 0) };
+        bool wantsEdit = m.Text == ChatPermission.Edit;
+        buttons.Children.Add(ChatLook.Small(wantsEdit ? Lang.T($"Allow, {guest} can edit", $"اسمح، يمكن لـ {guest} التعديل") : Lang.T("Allow, read only", "اسمح، قراءة فقط"), () => act.Answer(m, wantsEdit ? CardState.AllowEdit : CardState.AllowRead), accent: true));
+        buttons.Children.Add(ChatLook.Small(wantsEdit ? Lang.T("Allow, read only", "اسمح، قراءة فقط") : Lang.T($"Allow, {guest} can edit", $"اسمح، يمكن لـ {guest} التعديل"), () => act.Answer(m, wantsEdit ? CardState.AllowRead : CardState.AllowEdit)));
+        buttons.Children.Add(ChatLook.Small(Lang.T("Don't allow", "لا تسمح"), () => act.Answer(m, CardState.Skipped), ghost: true));
+        stack.Children.Add(buttons);
+        stack.Children.Add(ChatLook.Text(Lang.T("Commands still ask you first. You can write to both of them below, take the chat over, or stop it any time.", "الأوامر تسألك أولًا دائمًا. يمكنك الكتابة لكليهما في الأسفل، أو تولّي المحادثة، أو إيقافها في أي وقت."), 11.5, "Brush.Text3").With(t => t.Margin = new Thickness(0, 6, 0, 0)));
+        return new Border { Child = stack, Background = ChatLook.AmberSoft, BorderBrush = ChatLook.AmberLine, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(14), Padding = new Thickness(16, 14, 16, 14) };
     }
 
     private static FrameworkElement Done(string text, bool positive)

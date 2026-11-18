@@ -18,6 +18,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- The skill 'ftb chat setup' installs for Claude Code and Codex (one source, in the repo's skills folder). -->
+    <EmbeddedResource Include="..\..\skills\pulse-group-chat\SKILL.md" LogicalName="SKILL.md" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\Toolbox.Core\Toolbox.Core.csproj" />
     <ProjectReference Include="..\Toolbox.Processing\Toolbox.Processing.csproj" />
     <ProjectReference Include="..\Toolbox.Windows.Ocr\Toolbox.Windows.Ocr.csproj" />

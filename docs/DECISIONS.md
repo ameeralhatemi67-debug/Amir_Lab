@@ -566,6 +566,62 @@ The second half of idea 2: blur for videos. As agreed, **keys are the data and a
 - **Checked live:** `LiveChatTests` (opt-in) ran a real group chat on the owner's PC. Claude answered and handed over with "@codex …", and Codex replied "pong", in 30 s.
 - **Messages keep their own direction:** in the Arabic layout, an English reply reads left to right (punctuation stays in place), decided by each line's first letter.
 
+## Group chats directed from a session: CLI, MCP and a skill (18 Nov 2026, 0.9.0)
+
+- **Owner's idea (18 Nov):** make the group chat a general feature for any task where Claude and Codex complement each other, not only key frames. Three kinds of director:
+  - Claude;
+  - Codex;
+  - the owner.
+
+  The director is fixed when the chat starts.
+  - **From Pulse** (New chat), the chat starts fresh and the owner directs and picks each agent's model.
+  - **From inside a Claude Code or Codex session** ("start a group chat with Codex and both of you …"), that session directs. Its context reaches the other agent, the guest works in the director's own folder, and the director says where outputs go.
+  - **Fable 5.2 was the advisor** and agreed on the shape below.
+- **Owner's answers:**
+  - The owner's messages go to both agents.
+  - "Take over" is allowed.
+  - A session-started chat starts read-only, and the consent card can upgrade it.
+  - The guest's model can be chosen; from Pulse, both models can be.
+- **The director is an author Pulse never runs.** Pulse runs only the guest (`ChatInfo.Agents = [guest]`, `Director = claude|codex`). This avoids a second copy of the director with none of its context and double the usage.
+  - The director writes with `ChatHub.Direct`. Every guest reply is marked "to" the director and returned to it.
+  - The director has its own budget (`DirectorBudget`, 8). The old hop limit only counts @ hand-offs between two agents Pulse runs. The owner writing, or "Let it go on", resets the budget.
+- **The owner allows each chat:** a consent card shows:
+  - the folder;
+  - what the guest would do (read only, or edit, as asked);
+  - where outputs go;
+  - the guest's model (a drop-down);
+  - the director's budget;
+  - what the guest gets.
+
+  Its buttons are Allow read only, Allow can edit, and Don't allow. Nothing runs until the owner answers (`Consent`).
+- **Context is a copy, in layers:**
+  1. **The director's brief** (required).
+  2. **A readable copy of the director's conversation** (`DirectorNotes`), found from its session id. Claude Code exports `CLAUDE_CODE_SESSION_ID` to its commands; Codex's `CODEX_SESSION_ID`/`CODEX_THREAD_ID` is used when present, or `--session`. The copy keeps what was said and one line per action, and leaves out tool output and anything past 300 KB from the start. A Claude guest gets `--add-dir` to read it.
+  3. **Codex's own import of Claude sessions** (`externalAgentConfig/import` on its app-server). Not built: it is undocumented, one-way and costly on long sessions.
+- **When the director's session is gone:**
+  - **Resume director:** Pulse adds the director to the chat with `ForkFrom = DirectorSession`, a copy, so its own window is untouched. The same agent still directs, and every guest reply goes back to it without @.
+  - **Take over:** the owner directs, and the old session gets `taken_over`. A closed chat can be taken over too.
+- **One way in, two front doors:**
+  - **The way in:** `ChatPipe` is a second per-user named pipe (`AmirLap.<user>.chat`, current user only). It takes one JSON line in and gives one JSON line back, and each connection is answered on its own so a long wait never blocks. `ChatDoor` handles the requests on the hub's thread: open, say, wait, read, list, close, models and ping.
+  - **The command line:** `ftb chat …` answers fast because it loads no engines.
+  - **The MCP server:** `ftb mcp` (stdio JSON-RPC) offers the tools `pulse_open`, `pulse_say`, `pulse_wait`, `pulse_read`, `pulse_list`, `pulse_close` and `pulse_models`. It answers in order, except tool calls, which run on their own. It tells Claude from Codex by the client's name.
+  - **`wait`** blocks up to its timeout (45 s from the CLI, 50 s from MCP, up to 900 s). It returns as soon as there's news: the guest's reply, the owner's words (even while the guest works), or a card. Each message is given to the director once (`ToldDirector`).
+- **One skill for both agents:**
+  - `skills/pulse-group-chat/SKILL.md` is embedded in ftb, so there is one source.
+  - `ftb chat setup` writes it to `~/.claude/skills` and `~/.codex/skills` (Codex reads the same SKILL.md format), with ftb.exe's full path filled in.
+  - `--mcp` also runs each agent's own `mcp add`.
+  - Setup is the owner's step, because it changes their agents' settings.
+- **Guard rails:**
+  - Every agent Pulse starts carries `AMIRLAP_CHAT=<chat id>`. The CLI refuses open, say, wait and close when it sees it, and the door refuses open, so a guest can't open or direct chats.
+  - Only the agent that directs, and with a known session only that session, may say, wait or close.
+  - Outputs must be inside the folder. Model ids are matched to the agent's list or must look like an id.
+- **Models:** Claude Code takes `--model fable|opus|sonnet|haiku`. Codex takes `-c model="…"`, and its list comes from `~/.codex/models_cache.json` (only the ones it shows, in its order), with its default from `config.toml`.
+- **Which Codex engine:** Pulse now runs the Codex app's own engine (`…\WindowsApps\OpenAI.Codex_…\app\resources\codex.exe`, found through Windows' package record), before the older copy in `.sandbox-bin`. Any engine without the code-mode host beside it runs with `features.code_mode_host=false`. Without this the guest couldn't run a single command (see LESSONS.md, "The Codex copy in .sandbox-bin falls behind the Codex app").
+- **Checked:**
+  - `PulseDirectorTests` covers the room, the door, the pipe, models and the conversation copy.
+  - `HomeWindowTests` covers the consent card, a directed chat and New chat with models, as snapshots.
+  - `LiveDirectorTests` (opt-in) runs the real ftb as the director's CLI and MCP, with the real Codex reading a file in the director's folder.
+
 ## File Toolbox wheel in glass, Share, no shortcut (8 Nov 2026)
 
 - **Owner's notes:** make the wheel match Amir Lap: more transparent, light at the edges, a texture so it looks like glass or ice rather than a ghost, the chosen option lit from behind with a splash of blue, and animated hover, click and transitions. Remove Ctrl+Alt+F: File Toolbox should only answer while a file is being dragged and Shift is tapped. Add sharing ("Quick Share").

@@ -45,6 +45,7 @@ internal sealed class NewChatWindow : GlassWindow
     private readonly Button _create;
     private readonly TextBlock _problem = new() { TextWrapping = TextWrapping.Wrap, FontSize = 12, Margin = new Thickness(0, 0, 12, 0), VerticalAlignment = VerticalAlignment.Center };
     private readonly Dictionary<string, string?> _versions = [];
+    private readonly Dictionary<string, string> _models = new() { [Agent.Claude] = "", [Agent.Codex] = "" };
     private List<PastSession> _found = [];
     private string _who = "both";
     private bool _quick;
@@ -169,6 +170,25 @@ internal sealed class NewChatWindow : GlassWindow
             _left.Children.Add(Option("who", _who == key, row, () => { _who = key; _pick = null; ApplyRecipeDefaults(); Refresh(); }));
         }
 
+        // Models: one for each agent in the chat
+        _left.Children.Add(Heading(Agents.Count > 1 ? Lang.T("Models", "النماذج") : Lang.T("Model", "النموذج")));
+        foreach (var agent in Agents)
+        {
+            var row = new DockPanel { Margin = new Thickness(0, 0, 0, 8) };
+            var face = ChatLook.Avatar(agent, 24);
+            face.Margin = new Thickness(0, 0, 9, 0);
+            face.VerticalAlignment = VerticalAlignment.Center;
+            DockPanel.SetDock(face, Dock.Left);
+            row.Children.Add(face);
+            var a = agent;
+            var picker = ChatLook.ModelPicker(agent, _models[agent], id => _models[a] = id);
+            picker.MinWidth = 200;
+            DockPanel.SetDock(picker, Dock.Right);
+            row.Children.Add(picker);
+            row.Children.Add(ChatLook.Text(Agent.Name(agent), 12.5, "Brush.Text2", FontWeights.SemiBold).With(t => t.VerticalAlignment = VerticalAlignment.Center));
+            _left.Children.Add(row);
+        }
+
         // Where
         _left.Children.Add(Heading(Lang.T("Where", "أين")));
         _left.Children.Add(SettingsPage.Choice(["folder", "quick"], _quick ? "quick" : "folder", v => { _quick = v == "quick"; _pick = null; Refresh(); }, v => v == "folder" ? Lang.T("In a folder", "في مجلد") : Lang.T("Quick chat, no folder", "محادثة سريعة بلا مجلد")));
@@ -246,7 +266,7 @@ internal sealed class NewChatWindow : GlassWindow
     {
         if (_program(agent) is not { } exe) return Lang.T("Not found on this PC", "غير موجود على هذا الحاسوب");
         var version = AgentLocator.VersionNumber(_versions.GetValueOrDefault(agent));
-        var from = exe.Contains(".sandbox-bin", StringComparison.OrdinalIgnoreCase) ? Lang.T(" · from the Codex app", " · من تطبيق Codex") : "";
+        var from = exe.Contains(".sandbox-bin", StringComparison.OrdinalIgnoreCase) || exe.Contains(@"\WindowsApps\OpenAI.Codex_", StringComparison.OrdinalIgnoreCase) ? Lang.T(" · from the Codex app", " · من تطبيق Codex") : "";
         return (version is null ? Lang.T("Ready", "جاهز") : $"{Agent.Name(agent)} {version}") + from;
     }
 
@@ -396,6 +416,7 @@ internal sealed class NewChatWindow : GlassWindow
             Lead = group ? _lead : _who,
             HopLimit = _hops,
             Permission = _quick ? ChatPermission.Read : Permission,
+            Models = Agents.Where(a => _models.GetValueOrDefault(a) is { Length: > 0 }).ToDictionary(a => a, a => _models[a]),
         };
         if (group && !_quick && _recipe == ChatRecipe.Builder)
         {

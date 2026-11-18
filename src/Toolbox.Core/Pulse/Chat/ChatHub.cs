@@ -19,6 +19,7 @@ public sealed class ChatHub : IDisposable
     private readonly List<ChatFile> _chats;
     private readonly Dictionary<string, Running> _running = [];
     private readonly Dictionary<string, Queue<Job>> _queues = [];
+    private readonly HashSet<string> _directorWaiting = [];
 
     public ChatHub(ChatStore store, IAgentRunner runner, Func<string, string?> program, Action<Action> post)
     {
@@ -52,7 +53,34 @@ public sealed class ChatHub : IDisposable
     /// <summary>Chats with a card waiting for the user (something to allow, or the turn limit).</summary>
     public int NeedsYou => _chats.Count(NeedsAnswer);
 
-    public static bool NeedsAnswer(ChatFile chat) => chat.Messages.Any(m => m.Kind is ChatKind.Denied or ChatKind.Limit && m.State == CardState.Open);
+    public static bool NeedsAnswer(ChatFile chat) => chat.Messages.Any(m => m.Kind is ChatKind.Denied or ChatKind.Limit or ChatKind.Consent && m.State == CardState.Open);
+
+    /// <summary>A director working from its own session is waiting for a reply right now (through Amir Lap's command line or MCP).</summary>
+    public bool DirectorWaiting(string id) => _directorWaiting.Contains(id);
+
+    /// <summary>Said by the door when a director starts or stops waiting for a reply.</summary>
+    public void MarkDirectorWaiting(string id, bool on)
+    {
+        if (Get(id) is not { } chat) return;
+        bool changed = on ? _directorWaiting.Add(id) : _directorWaiting.Remove(id);
+        chat.Info.DirectorSeen = DateTimeOffset.UtcNow;
+        if (changed) Changed?.Invoke(id);
+    }
+
+    /// <summary>Whether the director's program is still running: true or false when its process is known, else null.</summary>
+    public static bool? DirectorAlive(ChatInfo info)
+    {
+        if (info.DirectorPid is not { } pid || pid <= 0) return null;
+        try
+        {
+            using var p = System.Diagnostics.Process.GetProcessById(pid);
+            return !p.HasExited;
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or System.ComponentModel.Win32Exception)
+        {
+            return false;
+        }
+    }
 
     public int UnreadCount => _chats.Count(c => c.Info.Unread);
 
@@ -79,6 +107,20 @@ public sealed class ChatHub : IDisposable
         _chats.Insert(0, chat);
         Save(chat);
         Changed?.Invoke("");
+        return chat;
+    }
+
+    /// <summary>
+    /// A chat an agent opened from its own session: it waits for the owner to allow it (the consent
+    /// card), and the director's brief is its first message to the guest.
+    /// </summary>
+    public ChatFile CreateDirected(ChatInfo info, string brief)
+    {
+        info.Consent = ChatConsent.Open;
+        info.Lead = info.Agents.FirstOrDefault() ?? Agent.Other(info.Director);
+        var chat = Create(info);
+        chat.Messages.Add(new ChatMessage { Author = ChatAuthor.Pulse, Kind = ChatKind.Consent, About = info.Guest, State = CardState.Open, At = DateTimeOffset.UtcNow, Text = info.Permission });
+        Direct(info.Id, brief);
         return chat;
     }
 
@@ -111,11 +153,12 @@ public sealed class ChatHub : IDisposable
     /// <summary>The user's message: who answers follows its @ names, else <paramref name="to"/>, else the chat's lead.</summary>
     public void Send(string id, string text, string? to = null)
     {
-        if (Get(id) is not { } chat || string.IsNullOrWhiteSpace(text)) return;
+        if (Get(id) is not { } chat || string.IsNullOrWhiteSpace(text) || chat.Info.Closed) return;
         var info = chat.Info;
         if (info.Title.Length == 0) info.Title = ChatRules.TitleFrom(text);
         // The user is back: the agents get a fresh set of hand-offs, and an open limit card is moot.
         info.Hops = 0;
+        info.DirectorTurns = 0;
         info.Held = null;
         foreach (var card in chat.Messages.Where(m => m.Kind == ChatKind.Limit && m.State == CardState.Open)) card.State = CardState.Paused;
         chat.Messages.Add(new ChatMessage { Author = ChatAuthor.User, Text = text.Trim(), At = DateTimeOffset.UtcNow });
@@ -166,12 +209,155 @@ public sealed class ChatHub : IDisposable
             if (state == CardState.More && held is not null)
             {
                 info.Hops = 0;
+                info.DirectorTurns = 0;
                 Enqueue(id, new Job(held, null, null));
+            }
+        }
+        else if (card.Kind == ChatKind.Consent)
+        {
+            if (state is CardState.AllowRead or CardState.AllowEdit)
+            {
+                info.Permission = state == CardState.AllowEdit ? ChatPermission.Edit : ChatPermission.Read;
+                info.Consent = ChatConsent.Allowed;
+                // What the director wrote while it waited goes to the guest now.
+                if (info.Guest is { } guest && chat.Messages.Skip(info.Seen.GetValueOrDefault(guest)).Any(m => m.Kind == ChatKind.Text && m.Author != guest))
+                    Enqueue(id, new Job(guest, null, null));
+            }
+            else
+            {
+                info.Consent = ChatConsent.Declined;
+                info.Closed = true;
+                if (_queues.TryGetValue(id, out var q)) q.Clear();
             }
         }
         Save(chat);
         Changed?.Invoke(id);
+        Changed?.Invoke("");
         Pump(id);
+    }
+
+    /// <summary>The guest's model, changed on the consent card before the chat starts.</summary>
+    public void SetModel(string id, string agent, string model)
+    {
+        if (Get(id) is not { } chat) return;
+        chat.Info.Models[agent] = model;
+        Save(chat);
+        Changed?.Invoke(id);
+    }
+
+    // ---- a chat an agent directs -----------------------------------------------------------------
+
+    /// <summary>
+    /// The director (an agent working from its own session) writes to the guest. The guest runs
+    /// unless the owner hasn't allowed the chat yet, or the director has used its messages without
+    /// the owner (then Pulse shows the limit card and waits for the owner).
+    /// </summary>
+    public DirectResult Direct(string id, string text)
+    {
+        if (Get(id) is not { } chat) return DirectResult.NotFound;
+        var info = chat.Info;
+        if (info.Closed || info.Consent == ChatConsent.Declined) return DirectResult.Closed;
+        if (!info.DirectorOutside || info.Guest is not { } guest) return DirectResult.NotDirector;
+        if (string.IsNullOrWhiteSpace(text)) return DirectResult.Empty;
+        var now = DateTimeOffset.UtcNow;
+        chat.Messages.Add(new ChatMessage { Author = info.Director, Text = text.Trim(), To = guest, At = now, ToldDirector = true });
+        if (info.Title.Length == 0) info.Title = ChatRules.TitleFrom(text);
+        info.Updated = now;
+        info.DirectorSeen = now;
+        DirectResult result;
+        if (info.DirectorTurns >= Math.Max(1, info.DirectorBudget))
+        {
+            info.Held = guest;
+            if (!chat.Messages.Any(m => m.Kind == ChatKind.Limit && m.State == CardState.Open))
+                chat.Messages.Add(new ChatMessage { Author = ChatAuthor.Pulse, Kind = ChatKind.Limit, About = guest, State = CardState.Open, At = now, Text = info.DirectorTurns.ToString(System.Globalization.CultureInfo.InvariantCulture) });
+            result = DirectResult.WaitingForOwner;
+        }
+        else
+        {
+            info.DirectorTurns++;
+            Enqueue(id, new Job(guest, null, null));
+            result = info.Consent == ChatConsent.Open ? DirectResult.WaitingForOwner : DirectResult.Sent;
+        }
+        Save(chat);
+        Changed?.Invoke(id);
+        Changed?.Invoke("");
+        Pump(id);
+        return result;
+    }
+
+    /// <summary>Ends a chat: the guest stops and nothing more runs. The owner can take it over later.</summary>
+    public void Close(string id, string? by = null)
+    {
+        if (Get(id) is not { } chat || chat.Info.Closed) return;
+        Stop(id);
+        chat.Info.Closed = true;
+        var who = Agent.IsAgent(by) ? Agent.Name(by!) : "You";
+        Note(chat, by ?? ChatAuthor.User, $"{who} closed this chat.");
+        Changed?.Invoke("");
+    }
+
+    /// <summary>
+    /// The owner directs from now on (the director's session is gone or the owner wants the wheel).
+    /// The director's own session can't write here any more. A closed chat opens again.
+    /// </summary>
+    public bool TakeOver(string id)
+    {
+        if (Get(id) is not { } chat || !chat.Info.IsDirected) return false;
+        var info = chat.Info;
+        var was = info.Director;
+        info.TakenFrom = was;
+        info.Director = ChatDirector.User;
+        info.DirectorInPulse = false;
+        info.Closed = false;
+        info.Held = null;
+        info.Consent = ChatConsent.Allowed;
+        foreach (var card in chat.Messages.Where(m => m.State == CardState.Open && m.Kind is ChatKind.Consent or ChatKind.Limit)) card.State = CardState.Paused;
+        if (info.Guest is null && info.Agents.Count > 0) info.Lead = info.Agents.Count > 1 ? "both" : info.Agents[0];
+        _directorWaiting.Remove(id);
+        Note(chat, was, $"You took over from {Agent.Name(was)}. Its own session can't write here any more; you direct this chat now.");
+        Changed?.Invoke("");
+        return true;
+    }
+
+    /// <summary>
+    /// Pulse carries the director on with a copy of its own session (its window stays as it was),
+    /// when that session stopped answering. The same agent still directs; Pulse now runs it, and
+    /// every reply of the guest goes back to it.
+    /// </summary>
+    public bool ResumeDirector(string id)
+    {
+        if (Get(id) is not { } chat || !chat.Info.DirectorOutside || chat.Info.Consent == ChatConsent.Declined) return false;
+        var info = chat.Info;
+        var director = info.Director;
+        if (_program(director) is null)
+        {
+            Note(chat, director, $"Pulse can't find {Agent.Name(director)} on this PC, so it can't carry it on.");
+            return false;
+        }
+        info.DirectorInPulse = true;
+        info.Agents.Insert(0, director);
+        if (info.DirectorSession is { Length: > 0 } session) info.ForkFrom[director] = session;
+        info.Lead = director;
+        info.Closed = false;
+        // Its copy already knows everything it was given before; it gets only what came after.
+        int told = chat.Messages.FindLastIndex(m => m.ToldDirector || m.Author == director);
+        info.Seen[director] = told + 1;
+        _directorWaiting.Remove(id);
+        chat.Messages.Add(new ChatMessage
+        {
+            Author = ChatAuthor.Pulse,
+            Kind = ChatKind.Note,
+            About = director,
+            At = DateTimeOffset.UtcNow,
+            Text = $"Pulse carries {Agent.Name(director)} on from a copy of its session, so its own window stays as it was. {Agent.Name(director)} still directs this chat.",
+        });
+        var guest = info.Agents.FirstOrDefault(a => a != director) ?? Agent.Other(director);
+        Enqueue(id, new Job(director, $"The owner asked Pulse to carry you on as this chat's director, because your own session stopped answering. Read what's new and carry on directing. To ask {Agent.Name(guest)} for something, end your reply with @{guest} and your request.", null));
+        Save(chat);
+        Changed?.Invoke(id);
+        Changed?.Invoke("");
+        Pump(id);
+        return true;
     }
 
     /// <summary>Stops the agent working in a chat and drops what was waiting.</summary>
@@ -205,11 +391,13 @@ public sealed class ChatHub : IDisposable
     private void Pump(string id)
     {
         if (_running.ContainsKey(id) || !_queues.TryGetValue(id, out var q) || q.Count == 0) return;
-        if (Get(id) is not { } chat)
+        if (Get(id) is not { } chat || chat.Info.Closed)
         {
             q.Clear();
             return;
         }
+        // A chat an agent opened waits until the owner allows it.
+        if (chat.Info.Consent == ChatConsent.Open) return;
         Run(chat, q.Dequeue());
     }
 
@@ -330,7 +518,12 @@ public sealed class ChatHub : IDisposable
             });
         }
 
-        if (!running.Stopped && reply.Error is null && ChatRules.HandoffFrom(info, running.Agent, reply.Text) is { } next)
+        // In a chat an agent directs, the guest always answers the director.
+        if (info.IsDirected && running.Agent != info.Director)
+            reply.To = info.Director;
+        var next = ChatRules.HandoffFrom(info, running.Agent, reply.Text);
+        if (info.IsDirected && info.DirectorInPulse && running.Agent != info.Director) next = info.Director;
+        if (!running.Stopped && reply.Error is null && next is not null)
         {
             reply.To = next;
             if (ChatRules.MayHandOff(info))
@@ -359,6 +552,9 @@ public sealed class ChatHub : IDisposable
         Save(chat);
         Changed?.Invoke(chat.Info.Id);
     }
+
+    /// <summary>Saves a chat whose messages changed outside the hub (the door marking what the director was given).</summary>
+    internal void Persist(ChatFile chat) => Save(chat);
 
     private void Save(ChatFile chat)
     {
@@ -426,4 +622,24 @@ public sealed class ChatHub : IDisposable
         public DoneEvent? Done { get; set; }
         public bool Stopped { get; set; }
     }
+}
+
+/// <summary>What happened to a director's message.</summary>
+public enum DirectResult
+{
+    /// <summary>The guest is working on it (or will, after the turn it is on).</summary>
+    Sent,
+
+    /// <summary>Saved, but the guest waits for the owner: to allow the chat, or to let the director go on.</summary>
+    WaitingForOwner,
+
+    /// <summary>The chat is closed, or the owner didn't allow it.</summary>
+    Closed,
+
+    /// <summary>The caller doesn't direct this chat (any more): the owner took over, or Pulse carries the director on.</summary>
+    NotDirector,
+
+    NotFound,
+
+    Empty,
 }

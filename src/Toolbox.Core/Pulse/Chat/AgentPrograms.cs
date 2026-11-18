@@ -4,7 +4,18 @@ using System.Text.RegularExpressions;
 namespace Toolbox.Core.Pulse.Chat;
 
 /// <summary>How to start one agent turn: the program, its arguments, where, and what it reads.</summary>
-public sealed record AgentLaunch(string Agent, string Exe, IReadOnlyList<string> Args, string WorkingDir, string Input);
+public sealed record AgentLaunch(string Agent, string Exe, IReadOnlyList<string> Args, string WorkingDir, string Input)
+{
+    /// <summary>Extra environment for the program (the chat it runs in, so it can't open chats of its own).</summary>
+    public IReadOnlyDictionary<string, string> Env { get; init; } = new Dictionary<string, string>();
+}
+
+/// <summary>The environment variable an agent Pulse runs carries: the chat it is in.</summary>
+public static class ChatEnvironment
+{
+    /// <summary>Set for every agent turn Pulse starts. Amir Lap's command line refuses to open or direct chats when it sees it.</summary>
+    public const string InsideChat = "AMIRLAP_CHAT";
+}
 
 /// <summary>
 /// Finds Claude Code and Codex on this PC. Pulse only starts the programs the user installed and
@@ -26,13 +37,45 @@ public static partial class AgentLocator
         () => Path.Combine(RoamingData, "npm", "node_modules", "@anthropic-ai", "claude-code", "bin", "claude.exe"),
         () => Path.Combine(UserProfile, ".local", "bin", "claude.exe"));
 
-    /// <summary>Codex's program: the chosen one, then codex.exe on the PATH, then npm's copy, then the one the Codex app keeps.</summary>
+    /// <summary>
+    /// Codex's program: the chosen one, then codex.exe on the PATH, then npm's copy, then the
+    /// Codex app's own engine (current, with its helpers beside it), then the older copy the app
+    /// leaves in <c>~/.codex/.sandbox-bin</c>.
+    /// </summary>
     public static string? FindCodex(string? chosen = null) => First(
         chosen,
         () => OnPath("codex.exe"),
         () => ShimTarget(OnPath("codex.cmd")),
         () => Path.Combine(RoamingData, "npm", "node_modules", "@openai", "codex", "vendor", "x86_64-pc-windows-msvc", "codex", "codex.exe"),
+        CodexAppEngine,
         () => Path.Combine(CodexUsageReader.DefaultHome, ".sandbox-bin", "codex.exe"));
+
+    /// <summary>
+    /// The engine inside the Codex desktop app (<c>…\WindowsApps\OpenAI.Codex_…\app\resources\codex.exe</c>).
+    /// The WindowsApps folder can't be listed, so its place comes from Windows' own record of
+    /// installed app packages for this user (the newest Codex package wins).
+    /// </summary>
+    internal static string? CodexAppEngine()
+    {
+        if (!OperatingSystem.IsWindows()) return null;
+        try
+        {
+            using var packages = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\Classes\Local Settings\Software\Microsoft\Windows\CurrentVersion\AppModel\Repository\Packages");
+            if (packages is null) return null;
+            var found = new List<(System.Version Version, string Exe)>();
+            foreach (var name in packages.GetSubKeyNames().Where(n => n.StartsWith("OpenAI.Codex_", StringComparison.OrdinalIgnoreCase)))
+            {
+                using var key = packages.OpenSubKey(name);
+                if (key?.GetValue("PackageRootFolder") is not string root) continue;
+                var exe = Path.Combine(root, "app", "resources", "codex.exe");
+                if (!File.Exists(exe)) continue;
+                var parts = name.Split('_');
+                found.Add((parts.Length > 1 && System.Version.TryParse(parts[1], out var v) ? v : new System.Version(0, 0), exe));
+            }
+            return found.OrderByDescending(f => f.Version).Select(f => f.Exe).FirstOrDefault();
+        }
+        catch (Exception ex) when (ex is System.Security.SecurityException or IOException or UnauthorizedAccessException) { return null; }
+    }
 
     public static string? Find(string agent, string? chosen = null) => agent == Agent.Codex ? FindCodex(chosen) : FindClaude(chosen);
 
@@ -128,6 +171,17 @@ public static class AgentCommands
             args.Add(from);
             args.Add("--fork-session");
         }
+        if (chat.ModelOf(Agent.Claude) is { Length: > 0 } model)
+        {
+            args.Add("--model");
+            args.Add(model);
+        }
+        // The director's notes live in Pulse's own folder: let Claude read them without asking.
+        if (NotesFolder(chat, workDir) is { } notes)
+        {
+            args.Add("--add-dir");
+            args.Add(notes);
+        }
         args.Add("--append-system-prompt");
         args.Add(ChatRules.Preamble(chat, Agent.Claude));
         var denied = DeniedRules(chat, Agent.Claude);
@@ -142,7 +196,27 @@ public static class AgentCommands
             args.Add("--allowedTools");
             args.AddRange(allowed);
         }
-        return new AgentLaunch(Agent.Claude, exe, args, workDir, prompt);
+        return new AgentLaunch(Agent.Claude, exe, args, workDir, prompt) { Env = EnvFor(chat) };
+    }
+
+    private static Dictionary<string, string> EnvFor(ChatInfo chat) => new() { [ChatEnvironment.InsideChat] = chat.Id };
+
+    internal static bool HasCodeModeHost(string exe)
+    {
+        try { return Path.GetDirectoryName(Path.GetFullPath(exe)) is { } dir && File.Exists(Path.Combine(dir, "codex-code-mode-host.exe")); }
+        catch (Exception ex) when (ex is ArgumentException or IOException or NotSupportedException) { return false; }
+    }
+
+    /// <summary>The folder holding the director's notes, when they are outside the working folder.</summary>
+    internal static string? NotesFolder(ChatInfo chat, string workDir)
+    {
+        if (chat.DirectorNotes is not { Length: > 0 } notes || Path.GetDirectoryName(notes) is not { Length: > 0 } dir) return null;
+        try
+        {
+            var rel = Path.GetRelativePath(workDir, dir);
+            return rel == "." || (!rel.StartsWith("..", StringComparison.Ordinal) && !Path.IsPathRooted(rel)) ? null : dir;
+        }
+        catch (ArgumentException) { return dir; }
     }
 
     public static AgentLaunch Codex(string exe, ChatInfo chat, string workDir, string prompt)
@@ -160,9 +234,15 @@ public static class AgentCommands
             args.Add("fork");
             args.Add(from);
         }
-        args.AddRange(["--json", "--skip-git-repo-check", "-c", $"sandbox_mode=\"{CodexSandbox(chat)}\"", "-c", "approval_policy=\"never\"", "-"]);
+        args.AddRange(["--json", "--skip-git-repo-check", "-c", $"sandbox_mode=\"{CodexSandbox(chat)}\"", "-c", "approval_policy=\"never\""]);
+        // The Codex app turns on "code mode", whose host program sits beside the app's own engine.
+        // An engine without it beside it (the older copy in .sandbox-bin) can't run a single
+        // command that way, so it runs them the plain way instead.
+        if (!HasCodeModeHost(exe)) args.AddRange(["-c", "features.code_mode_host=false"]);
+        if (chat.ModelOf(Agent.Codex) is { Length: > 0 } model) args.AddRange(["-c", $"model=\"{model.Replace("\"", "", StringComparison.Ordinal)}\""]);
+        args.Add("-");
         var input = first ? ChatRules.Preamble(chat, Agent.Codex) + "\n\n---\n\n" + prompt : prompt;
-        return new AgentLaunch(Agent.Codex, exe, args, workDir, input);
+        return new AgentLaunch(Agent.Codex, exe, args, workDir, input) { Env = EnvFor(chat) };
     }
 
     /// <summary>

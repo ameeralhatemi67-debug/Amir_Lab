@@ -110,3 +110,18 @@ Mistakes that cost a release, what caused them, and the rule that keeps them fro
 - Give a person one thing to double-click, and make a failure stay on screen and into a file.
 - Test the package the way it is met: a downloaded zip (every file marked), extracted, launched by the `.cmd`: `tools/test-package.ps1`.
 - `Start-Process -Wait` also waits for the app the script started; use `WaitForExit` with a timeout.
+
+## The Codex copy in .sandbox-bin falls behind the Codex app
+
+**Seen:** 18 Nov 2026, in the first live run of a chat directed from a session. Codex, as the guest, was asked to read a file in the director's folder. It answered that "the command host is missing" and read nothing; it had tried its `js` tool three times.
+
+**Cause:** Pulse ran the Codex engine in `~/.codex/.sandbox-bin` (0.160.1, from October). The Codex app had moved on to 0.169 and turned on its "code mode" (`code_mode_host`) in the shared `~/.codex/config.toml`. Code mode needs `codex-code-mode-host.exe`, which sits only beside the app's own engine in `…\WindowsApps\OpenAI.Codex_…\app\resources`. So the old engine read the new settings, but had no host to run a command with. Pulse chat 0.7.0 was only checked live with a "pong" answer, which needs no command, so nothing showed it.
+
+**Fix (0.9.0):**
+- `AgentLocator.FindCodex` finds the app's own engine from Windows' record of installed packages, because the WindowsApps folder itself can't be listed. It comes after PATH and npm, and before `.sandbox-bin`.
+- Any engine without `codex-code-mode-host.exe` beside it gets `-c features.code_mode_host=false`, so it runs commands the plain way.
+
+**Rules:**
+- A live check of an agent must make it run a command in the folder (read a file and answer with what's in it), not only reply with a word.
+- Several programs share Codex's settings, so a setting the app turns on can reach an older engine. Run the app's own engine when it is there.
+- Guarded by `PulseDirectorTests.EachAgentRunsWithItsModelAndKnowsTheChatItIsIn` and the live `LiveDirectorTests`.

@@ -105,6 +105,54 @@ public partial class HomeWindowTests
             hub.Stop(gallery.Info.Id);
             window.Select(one.Info.Id);
             SnapshotChat(snapshots, window, 1160, 780, $"pulse-chat-one-{theme}-{lang}");
+
+            // A chat Claude opened from its own session to direct Codex: first the card the owner
+            // answers, then the same kind of chat under way (frames, the owner's word, the director's bar).
+            var film = System.IO.Path.Combine(dir, "imp-film");
+            var frames = System.IO.Path.Combine(film, "assets", "frames");
+            System.IO.Directory.CreateDirectory(frames);
+            var asked = hub.CreateDirected(new ChatInfo
+            {
+                Title = "Imp wave key frames",
+                Folder = film,
+                Agents = [Agent.Codex],
+                Director = Agent.Claude,
+                DirectorSession = "7c86793b-00bd-4621-8064-b68d8434e9a2",
+                Permission = ChatPermission.Edit,
+                Outputs = "assets/frames",
+                Models = new() { [Agent.Codex] = "gpt-6.2-sol" },
+            }, "Brief: six key frames of the pixel imp waving, 1024×1024 PNG, in assets/frames as 01.png to 06.png. Start with 01 (arm down) and wait for my notes.");
+            Assert.DoesNotContain(runner.Started, l => l.WorkingDir == film);
+            window.Select(asked.Info.Id);
+            SnapshotChat(snapshots, window, 1160, 780, $"pulse-chat-consent-{theme}-{lang}");
+
+            var flow = hub.Create(new ChatInfo
+            {
+                Title = "Imp wave, frames 1–2",
+                Folder = film,
+                Agents = [Agent.Codex],
+                Director = Agent.Claude,
+                DirectorSession = "7c86793b-00bd-4621-8064-b68d8434e9a2",
+                DirectorSeen = DateTimeOffset.UtcNow.AddMinutes(-3),
+                Permission = ChatPermission.Edit,
+                Outputs = "assets/frames",
+                Consent = ChatConsent.Allowed,
+                DirectorTurns = 2,
+                Models = new() { [Agent.Codex] = "gpt-6.2-sol" },
+                Sessions = new() { [Agent.Codex] = "01a1dba0-b3e3-7ff1-b94c-56bd8c3fbad4" },
+            });
+            var f = flow.Messages;
+            var t0 = DateTimeOffset.UtcNow.AddMinutes(-9);
+            f.Add(new ChatMessage { Author = ChatAuthor.Pulse, Kind = ChatKind.Consent, About = Agent.Codex, State = CardState.AllowEdit, Text = ChatPermission.Edit, At = t0 });
+            f.Add(new ChatMessage { Author = Agent.Claude, To = Agent.Codex, At = t0, Text = "Six key frames of the pixel imp waving, 1024×1024 PNG, in `assets/frames/`. Keep the owner's exact design: pixel head and body, smooth face. Start with **01** (arm down)." });
+            f.Add(new ChatMessage { Author = Agent.Codex, To = Agent.Claude, At = t0.AddMinutes(3), Text = "01 and 02 are in `assets/frames/`. 02 has the arm at shoulder height.", Images = [KeyFrame(frames, "01", 0), KeyFrame(frames, "02", -60)], Steps = [new() { Kind = "image", Text = "Made a picture" }, new() { Kind = "edit", Text = "Created assets/frames/01.png" }, new() { Kind = "edit", Text = "Created assets/frames/02.png" }] });
+            f.Add(new ChatMessage { Author = ChatAuthor.User, At = t0.AddMinutes(4), Text = "Keep the head exactly as it is, only the arm moves." });
+            f.Add(new ChatMessage { Author = Agent.Claude, To = Agent.Codex, At = t0.AddMinutes(5), Text = "Good. For 03, raise the arm above the head, same squash on the body as 02. Don't touch the head." });
+            hub.Approve(flow.Info.Id, f[2].Images[0], Agent.Codex, true);
+            flow.Info.Updated = DateTimeOffset.UtcNow;
+            window.Select(flow.Info.Id);
+            SnapshotChat(snapshots, window, 1160, 780, $"pulse-chat-directed-{theme}-{lang}");
+            Assert.True(flow.Info.DirectorOutside);
             window.Close();
 
             var empty = new ChatHub(new ChatStore(System.IO.Path.Combine(dir, "none")), runner, _ => null, a => a());
@@ -133,6 +181,30 @@ public partial class HomeWindowTests
         Save(snapshots, frame, width, height, name);
         frame.Child = null;
         window.Content = content;
+    }
+
+    /// <summary>A stand-in key frame: a blocky figure with one arm at an angle.</summary>
+    private static string KeyFrame(string root, string name, double arm)
+    {
+        var path = System.IO.Path.Combine(root, name + ".png");
+        var visual = new DrawingVisual();
+        using (var dc = visual.RenderOpen())
+        {
+            dc.DrawRectangle(new SolidColorBrush(Color.FromRgb(0xEE, 0xF0, 0xF6)), null, new Rect(0, 0, 240, 240));
+            var body = new SolidColorBrush(Color.FromRgb(0x7C, 0x3A, 0xED));
+            dc.DrawRectangle(body, null, new Rect(90, 50, 60, 60));
+            dc.DrawRectangle(body, null, new Rect(80, 112, 80, 80));
+            dc.PushTransform(new RotateTransform(arm, 160, 124));
+            dc.DrawRectangle(body, null, new Rect(160, 116, 50, 16));
+            dc.Pop();
+        }
+        var bmp = new RenderTargetBitmap(240, 240, 96, 96, PixelFormats.Pbgra32);
+        bmp.Render(visual);
+        var encoder = new PngBitmapEncoder();
+        encoder.Frames.Add(BitmapFrame.Create(bmp));
+        using var stream = System.IO.File.Create(path);
+        encoder.Save(stream);
+        return path;
     }
 
     /// <summary>A made-up garment picture (a shirt shape in a colour) saved as front.png in its own folder.</summary>

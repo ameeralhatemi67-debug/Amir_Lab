@@ -17,6 +17,7 @@ internal sealed partial class PulseTool
 {
     private ChatHub? _chats;
     private ChatWindow? _chatWindow;
+    private ChatPipeServer? _chatPipe;
 
     internal ChatHub? Chats => _chats;
 
@@ -31,10 +32,17 @@ internal sealed partial class PulseTool
         _chats = new ChatHub(new ChatStore(ChatStore.DefaultDir), new ProcessAgentRunner(), ProgramFor, a => dispatcher.BeginInvoke(a));
         _chats.Changed += _ => UpdateChatsTile();
         UpdateChatsTile();
+        // Claude Code and Codex open and direct chats from their own sessions through this line
+        // (Amir Lap's command line and its MCP server). The owner allows each chat in the window.
+        var door = new ChatDoor(_chats, a => dispatcher.BeginInvoke(a), ProgramFor, id => dispatcher.BeginInvoke(() => OpenChats(id)));
+        _chatPipe = new ChatPipeServer(door.HandleAsync);
+        _chatPipe.Start();
     }
 
     private void StopChats()
     {
+        _chatPipe?.Dispose();
+        _chatPipe = null;
         _chatWindow?.Close();
         _chatWindow = null;
         _chats?.Dispose();

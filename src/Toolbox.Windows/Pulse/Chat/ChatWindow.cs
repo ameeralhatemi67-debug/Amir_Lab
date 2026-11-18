@@ -385,8 +385,15 @@ internal sealed partial class ChatWindow : GlassWindow
         title.TextTrimming = TextTrimming.CharacterEllipsis;
         words.Children.Add(title);
         var line = new List<string> { info.Folder ?? Lang.T("Quick chat · no folder", "محادثة سريعة · بلا مجلد") };
-        line.Add(info.IsGroup ? "Claude + Codex" : Agent.Name(info.Agents[0]));
-        if (info.IsGroup && RecipeName(info.Recipe) is { Length: > 0 } recipe) line.Add(recipe);
+        if (info.IsDirected)
+        {
+            string director = Agent.Name(info.Director), guest = Agent.Name(info.Guest ?? Agent.Other(info.Director));
+            line.Add(info.DirectorInPulse
+                ? Lang.T($"{director} directs (carried on by Pulse) · with {guest}", $"{director} يوجّه (يتابعه نبض) · مع {guest}")
+                : Lang.T($"{director} directs from its session · with {guest}", $"{director} يوجّه من جلسته · مع {guest}"));
+        }
+        else line.Add(info.IsGroup ? "Claude + Codex" : Agent.Name(info.Agents[0]));
+        if (info.IsGroup && !info.IsDirected && RecipeName(info.Recipe) is { Length: > 0 } recipe) line.Add(recipe);
         var sub = ChatLook.Text(string.Join(" · ", line), 11.5, "Brush.Text3");
         sub.TextWrapping = TextWrapping.NoWrap;
         sub.TextTrimming = TextTrimming.CharacterEllipsis;
@@ -445,7 +452,8 @@ internal sealed partial class ChatWindow : GlassWindow
             text => { try { Clipboard.SetText(text); } catch (System.Runtime.InteropServices.COMException) { } },
             _expanded.Contains,
             msg => { if (!_expanded.Remove(msg)) _expanded.Add(msg); RenderThread(); },
-            Thumb);
+            Thumb,
+            (agent, model) => _hub.SetModel(chat.Info.Id, agent, model));
         if (chat.Messages.Count == 0)
         {
             _thread.Children.Add(ChatLook.Text(chat.Info.IsGroup
@@ -506,7 +514,82 @@ internal sealed partial class ChatWindow : GlassWindow
             hops.Margin = new Thickness(4, 0, 0, 0);
             _status.Children.Add(hops);
         }
+        if (_hub.Get(id) is { } d) DirectorStatus(d);
         _status.Visibility = _status.Children.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
+    }
+
+    /// <summary>
+    /// In a chat an agent directs from its own session: whether it is waiting for the guest or
+    /// hasn't checked in for a while, its budget, and the owner's two ways on when its session is
+    /// gone: Pulse carries it on (Resume director) or the owner directs (Take over).
+    /// </summary>
+    private void DirectorStatus(ChatFile chat)
+    {
+        var info = chat.Info;
+        if (!info.DirectorOutside && !(info.Closed && info.IsDirected)) return;
+        if (info.Consent == ChatConsent.Open) return; // the card says it all
+        string director = Agent.Name(info.Director), guest = Agent.Name(info.Guest ?? Agent.Other(info.Director));
+        var chip = new Border { CornerRadius = new CornerRadius(14), Padding = new Thickness(6, 3, 4, 3), Margin = new Thickness(0, 0, 6, 0) };
+        chip.Background = ChatLook.Soft(info.Director);
+        var row = new StackPanel { Orientation = Orientation.Horizontal };
+        row.Children.Add(ChatLook.Avatar(info.Director, 18).With(a => { a.Margin = new Thickness(0, 0, 7, 0); a.VerticalAlignment = VerticalAlignment.Center; }));
+        string text;
+        bool offer = false, resumeFirst = false;
+        if (info.Closed)
+        {
+            text = info.Consent == ChatConsent.Declined ? Lang.T("You didn't allow this chat", "لم تسمح بهذه المحادثة") : Lang.T($"{director} closed this chat", $"أغلق {director} هذه المحادثة");
+        }
+        else if (_hub.DirectorWaiting(info.Id))
+        {
+            text = _hub.WorkingIn(info.Id) is not null
+                ? Lang.T($"{director} waits for {guest}'s reply", $"{director} ينتظر رد {guest}")
+                : Lang.T($"{director} is reading what's new", $"{director} يقرأ الجديد");
+        }
+        else
+        {
+            var alive = ChatHub.DirectorAlive(info);
+            var seen = info.DirectorSeen is { } at ? Lang.Ago(at, DateTimeOffset.UtcNow) : Lang.T("a while", "مدة");
+            text = alive == false
+                ? Lang.T($"{director}'s session is closed", $"جلسة {director} مغلقة")
+                : _hub.WorkingIn(info.Id) is not null
+                    ? Lang.T($"{guest} is working for {director}", $"{guest} يعمل لـ {director}")
+                    : Lang.T($"Waiting for {director} · last heard {seen}", $"بانتظار {director} · آخر تواصل {seen}");
+            offer = _hub.WorkingIn(info.Id) is null;
+            resumeFirst = alive == false;
+        }
+        var t = ChatLook.Text(text, 11.5, "Brush.Text2", FontWeights.SemiBold);
+        t.Foreground = ChatLook.Ink(info.Director);
+        t.VerticalAlignment = VerticalAlignment.Center;
+        t.Margin = new Thickness(0, 0, 6, 0);
+        row.Children.Add(t);
+        Button Mini(string label, Action click, bool accent)
+        {
+            var b = new Button { Style = SettingsPage.Res(accent ? "Lap.Button.Accent" : "Lap.Button"), Content = label, Height = 24, Padding = new Thickness(10, 0, 10, 0), FontSize = 11.5, Margin = new Thickness(4, 0, 0, 0) };
+            b.Click += (_, _) => click();
+            return b;
+        }
+        var id = info.Id;
+        if (offer && info.DirectorSession is { Length: > 0 } && !info.Closed)
+        {
+            var resume = Mini(Lang.T("Resume director", "استئناف الموجّه"), () => _hub.ResumeDirector(id), resumeFirst);
+            resume.ToolTip = Lang.T($"Pulse carries {director} on from a copy of its session (its own window stays as it was). {director} still directs.", $"يتابع نبض {director} من نسخة من جلسته (تبقى نافذته كما هي). يبقى {director} الموجّه.");
+            row.Children.Add(resume);
+        }
+        if (offer || info.Closed)
+        {
+            var take = Mini(Lang.T("Take over", "تولَّ المحادثة"), () => _hub.TakeOver(id), false);
+            take.ToolTip = Lang.T($"You direct this chat from now on. {director}'s session can't write here any more.", $"توجّه هذه المحادثة من الآن. لا تستطيع جلسة {director} الكتابة هنا بعد ذلك.");
+            row.Children.Add(take);
+        }
+        chip.Child = row;
+        _status.Children.Add(chip);
+        if (!info.Closed && info.DirectorTurns > 0)
+        {
+            var budget = ChatLook.Text(Lang.T($"{director} wrote {info.DirectorTurns} of {info.DirectorBudget} times without you", $"كتب {director} {info.DirectorTurns} من {info.DirectorBudget} مرات دونك"), 11.5, "Brush.Text3");
+            budget.VerticalAlignment = VerticalAlignment.Center;
+            budget.Margin = new Thickness(4, 0, 0, 0);
+            _status.Children.Add(budget);
+        }
     }
 
     private static string ClaudeTrim(string text) => text.Length <= 60 ? text : text[..60] + "…";
@@ -568,7 +651,13 @@ internal sealed partial class ChatWindow : GlassWindow
         var stack = new StackPanel();
         if (_box.Parent is Panel old) old.Children.Remove(_box);
         if (_hint.Parent is Panel oldHint) oldHint.Children.Remove(_hint);
-        _hint.Text = chat.Info.IsGroup ? Lang.T("Message Claude and Codex. Type @ to pick one", "راسل Claude وCodex. اكتب @ لاختيار أحدهما") : Lang.T($"Message {Agent.Name(chat.Info.Agents[0])}", $"راسل {Agent.Name(chat.Info.Agents[0])}");
+        var info = chat.Info;
+        _hint.Text = info.Closed
+            ? Lang.T("This chat is closed. Take over to carry on.", "هذه المحادثة مغلقة. تولَّها للمتابعة.")
+            : info.DirectorOutside
+                ? Lang.T($"Write to {Agent.Name(info.Guest ?? "")} and {Agent.Name(info.Director)}. Your word comes first", $"اكتب إلى {Agent.Name(info.Guest ?? "")} و{Agent.Name(info.Director)}. كلمتك أولًا")
+                : info.IsGroup ? Lang.T("Message Claude and Codex. Type @ to pick one", "راسل Claude وCodex. اكتب @ لاختيار أحدهما") : Lang.T($"Message {Agent.Name(info.Agents[0])}", $"راسل {Agent.Name(info.Agents[0])}");
+        _box.IsEnabled = !info.Closed;
         _hint.Visibility = _box.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
         var field = new Grid { Children = { _box, _hint } };
         stack.Children.Add(field);
@@ -708,6 +797,28 @@ internal sealed partial class ChatWindow : GlassWindow
         stack.Children.Add(folder);
         stack.Children.Add(ChatLook.Small(Lang.T("Open folder", "فتح المجلد"), () => PulseLaunch.Open(_hub.Store.WorkFolder(info))).With(b => { b.Margin = new Thickness(0, 8, 0, 0); b.HorizontalAlignment = HorizontalAlignment.Left; }));
 
+        if (info.IsDirected || info.TakenFrom is not null)
+        {
+            var directorId = info.IsDirected ? info.Director : info.TakenFrom!;
+            string director = Agent.Name(directorId);
+            Section(Lang.T("Director", "الموجّه"));
+            var who = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 6) };
+            who.Children.Add(ChatLook.Avatar(directorId, 22).With(a => a.Margin = new Thickness(0, 0, 8, 0)));
+            who.Children.Add(ChatLook.Text(info.IsDirected
+                ? info.DirectorInPulse
+                    ? Lang.T($"{director}, carried on by Pulse from a copy of its session", $"{director}، يتابعه نبض من نسخة من جلسته")
+                    : Lang.T($"{director}, from its own session with you", $"{director}، من جلسته الخاصة معك")
+                : Lang.T($"You (taken over from {director})", $"أنت (توليتها من {director})"), 12, "Brush.Text").With(t => { t.VerticalAlignment = VerticalAlignment.Center; t.MaxWidth = 200; }));
+            stack.Children.Add(who);
+            if (info.DirectorSession is { Length: > 0 } ds)
+                stack.Children.Add(ChatLook.Text(ds, 11, "Brush.Text3").With(t => { t.FontFamily = ChatLook.Mono; t.FlowDirection = FlowDirection.LeftToRight; t.TextTrimming = TextTrimming.CharacterEllipsis; t.TextWrapping = TextWrapping.NoWrap; t.ToolTip = ds; }));
+            // A path reads left to right in either language (the marks keep its slashes in place).
+            if (info.Outputs is { Length: > 0 } outputs) Line(Lang.T("Outputs go to", "تُحفظ المخرجات في"), "‎" + outputs.TrimEnd('/') + "/‎");
+            if (info.IsDirected) Line(Lang.T("Messages without you", "رسائل دونك"), $"{info.DirectorTurns} / {info.DirectorBudget}");
+            if (info.DirectorNotes is { Length: > 0 } notes && File.Exists(notes))
+                stack.Children.Add(ChatLook.Small(Lang.T("Read the conversation copy", "قراءة نسخة المحادثة"), () => PulseLaunch.Open(notes)).With(b => { b.Margin = new Thickness(0, 6, 0, 0); b.HorizontalAlignment = HorizontalAlignment.Left; b.ToolTip = Lang.T($"What {director} and you said before it opened this chat, as the guest can read it", $"ما قلتماه أنت و{director} قبل فتح هذه المحادثة، كما يقرؤه الضيف"); }));
+        }
+
         if (info.IsGroup)
         {
             Section(Lang.T("Who owns what", "من يملك ماذا"));
@@ -736,7 +847,9 @@ internal sealed partial class ChatWindow : GlassWindow
         Section(Lang.T("Rules", "القواعد"));
         Line(Lang.T("Changes on your PC", "التغييرات على حاسوبك"), PermissionName(info.Permission));
         Line(Lang.T("Commands", "الأوامر"), Lang.T("Ask me", "اسألني"));
-        if (info.IsGroup)
+        foreach (var agent in info.Agents)
+            Line(Lang.T($"{Agent.Name(agent)}'s model", $"نموذج {Agent.Name(agent)}"), ChatLook.ModelName(agent, info.ModelOf(agent)));
+        if (info.IsGroup && !info.IsDirected)
         {
             Line(Lang.T("Answers without @", "يجيب دون @"), info.Lead == "both" ? Lang.T("Both", "كلاهما") : Agent.Name(info.Lead));
             Line(Lang.T("Hand-offs before asking you", "مرات التبادل قبل سؤالك"), info.HopLimit.ToString(System.Globalization.CultureInfo.InvariantCulture));

@@ -10,7 +10,7 @@
     installed copy is unblocked, starts, and runs all four tools. Finally it uninstalls.
     The real Start Menu, registry and Amir Lap data are not touched.
 .EXAMPLE
-    powershell -ExecutionPolicy Bypass -File tools\test-package.ps1 -Zip artifacts\publish\AmirLap-0.8.0-win-x64.zip
+    powershell -ExecutionPolicy Bypass -File tools\test-package.ps1 -Zip artifacts\publish\AmirLap-0.9.0-win-x64.zip
 #>
 [CmdletBinding()]
 param([Parameter(Mandatory)][string]$Zip)

@@ -44,6 +44,30 @@ public static class ChatKind
 
     /// <summary>Pulse says something: stopped, picked up from elsewhere, an error.</summary>
     public const string Note = "note";
+
+    /// <summary>An agent opened this chat from its own session: the owner allows it (read only or editing) or not.</summary>
+    public const string Consent = "consent";
+}
+
+/// <summary>
+/// Who directs a chat, fixed when it is made: the owner (from Pulse, where Pulse runs every agent),
+/// or Claude or Codex working from its own session (which opened the chat and talks to it through
+/// Amir Lap's command line or its MCP server; Pulse runs only the other agent, the guest).
+/// </summary>
+public static class ChatDirector
+{
+    public const string User = "user";
+}
+
+/// <summary>Where a chat an agent opened stands with the owner.</summary>
+public static class ChatConsent
+{
+    /// <summary>Waiting for the owner to allow it in Pulse; the guest doesn't start until then.</summary>
+    public const string Open = "open";
+
+    public const string Allowed = "allowed";
+
+    public const string Declined = "declined";
 }
 
 /// <summary>What the agents may change on the PC.</summary>
@@ -85,6 +109,12 @@ public static class CardState
     public const string Skipped = "skipped";
     public const string More = "more";
     public const string Paused = "paused";
+
+    /// <summary>A chat an agent opened is allowed, with the guest only reading.</summary>
+    public const string AllowRead = "allow-read";
+
+    /// <summary>A chat an agent opened is allowed, with the guest changing files in the folder.</summary>
+    public const string AllowEdit = "allow-edit";
 }
 
 /// <summary>A chat: who is in it, where it works, its rules, and the agents' own sessions.</summary>
@@ -140,7 +170,62 @@ public sealed class ChatInfo
     /// <summary>An agent replied since the user last looked at this chat.</summary>
     public bool Unread { get; set; }
 
+    /// <summary>Each agent's model (an alias such as "opus", or a model id); missing or empty means the agent's own default.</summary>
+    public Dictionary<string, string> Models { get; set; } = [];
+
+    // ---- a chat an agent directs ----------------------------------------------------------------
+
+    /// <summary><see cref="ChatDirector.User"/>, or the agent that directs it from its own session. Set when the chat is made.</summary>
+    public string Director { get; set; } = ChatDirector.User;
+
+    /// <summary>The director's own session (a Claude Code session id or a Codex thread id), when known.</summary>
+    public string? DirectorSession { get; set; }
+
+    /// <summary>The process of the director's program, when known (to tell whether its session is still open).</summary>
+    public int? DirectorPid { get; set; }
+
+    /// <summary>A readable copy of the director's conversation when it opened the chat, for the guest to read if the brief isn't enough.</summary>
+    public string? DirectorNotes { get; set; }
+
+    /// <summary>When the director last talked to Pulse (said something, waited or read).</summary>
+    public DateTimeOffset? DirectorSeen { get; set; }
+
+    /// <summary>True after the owner had Pulse carry the director on (a copy of its session, run by Pulse).</summary>
+    public bool DirectorInPulse { get; set; }
+
+    /// <summary>The agent that directed the chat before the owner took over (shown in the chat), else null.</summary>
+    public string? TakenFrom { get; set; }
+
+    /// <summary>Where the guest saves what it makes, relative to <see cref="Folder"/>, when the director said.</summary>
+    public string? Outputs { get; set; }
+
+    /// <summary>How many messages the director may send without the owner before Pulse waits for the owner.</summary>
+    public int DirectorBudget { get; set; } = 8;
+
+    /// <summary>Messages the director sent since the owner last wrote or said keep going.</summary>
+    public int DirectorTurns { get; set; }
+
+    /// <summary><see cref="ChatConsent"/> for a chat an agent opened; empty for a chat the owner made.</summary>
+    public string Consent { get; set; } = "";
+
+    /// <summary>The chat is over (its director or the owner closed it): nothing more runs in it.</summary>
+    public bool Closed { get; set; }
+
     public bool IsGroup => Agents.Count > 1;
+
+    /// <summary>An agent directs this chat (from its own session, or carried on by Pulse).</summary>
+    public bool IsDirected => Agent.IsAgent(Director);
+
+    /// <summary>The director works from its own session, outside Pulse (Pulse runs only the guest).</summary>
+    public bool DirectorOutside => IsDirected && !Agents.Contains(Director);
+
+    /// <summary>The agent the director works with, in a chat an agent directs.</summary>
+    public string? Guest => IsDirected ? Agents.FirstOrDefault(a => a != Director) : null;
+
+    /// <summary>Everyone in the chat besides the owner: the agents Pulse runs, and a director working from outside.</summary>
+    public IReadOnlyList<string> Members => DirectorOutside ? [Director, .. Agents] : Agents;
+
+    public string ModelOf(string agent) => Models.GetValueOrDefault(agent) ?? "";
 
     public bool IsQuick => Folder is null;
 
@@ -187,6 +272,9 @@ public sealed class ChatMessage
 
     /// <summary>What went wrong, when the turn failed.</summary>
     public string? Error { get; set; }
+
+    /// <summary>In a chat an agent directs: the director has been given this message (so it isn't given twice).</summary>
+    public bool ToldDirector { get; set; }
 
     public bool IsAgent => Agent.IsAgent(Author);
 }

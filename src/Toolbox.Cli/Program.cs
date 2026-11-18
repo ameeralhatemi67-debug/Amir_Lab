@@ -18,6 +18,8 @@ namespace Toolbox.Cli;
 ///   ftb probe &lt;files...&gt;                       show what each file really contains
 ///   ftb run &lt;action&gt; [--set key=value]... [--out folder] [--json] &lt;files...&gt;
 ///   ftb sound                                  Imp Studio's sound check: outputs, apps, levels (reads only)
+///   ftb chat open|say|wait|read|list|close|models|setup   Pulse group chats directed from an agent's session
+///   ftb mcp                                    the same, as an MCP server over standard input/output
 /// </summary>
 internal static class Program
 {
@@ -28,6 +30,20 @@ internal static class Program
         {
             PrintHelp();
             return args.Length == 0 ? 1 : 0;
+        }
+
+        // Pulse's chats only talk to the running Amir Lap: no engines to load, so they answer fast.
+        try
+        {
+            switch (args[0].ToLowerInvariant())
+            {
+                case "chat": return ChatCommand.Run(args[1..]);
+                case "mcp": return McpServer.Run();
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or InvalidOperationException)
+        {
+            return Fail(ex.Message);
         }
 
         try
@@ -210,6 +226,8 @@ internal static class Program
           ftb probe <files...>           Show what each file really contains
           ftb run <action> [--set key=value]... [--out folder] [--json] <files...>
           ftb sound                      Imp Studio's sound check: outputs, apps and their levels (changes nothing)
+          ftb chat <command>             Pulse group chats, opened and directed by Claude Code or Codex ('ftb chat help')
+          ftb mcp                        The same chat commands as an MCP server for Claude Code and Codex
 
         Examples
           ftb run pdf.render-jpg --set pages=1-3 --set dpi=150 report.pdf

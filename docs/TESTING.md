@@ -40,6 +40,25 @@ set AMIRLAP_LIVE_LONGSHOT=1 && dotnet test tests/Toolbox.Windows.Tests --filter 
 ```bash
 set AMIRLAP_LIVE_CHAT=1 && dotnet test tests/Toolbox.Core.Tests --filter LiveChatTests
 ```
+- `PulseDirectorTests` (Core): chats an agent opens and directs from its own session, with stand-in agents. It covers:
+  - Codex's models from its cache and its default from `config.toml`;
+  - each agent's `--model` / `-c model=`;
+  - the chat id every agent carries;
+  - what the guest is told (who directs, the shared folder, where outputs go, the owner first);
+  - the consent card (nothing runs before it);
+  - only the guest running;
+  - the director's budget and its card;
+  - the owner's words reaching the guest;
+  - Don't allow, Close and Take over;
+  - Resume director (a copy of its session, replies going back to it);
+  - the door (open, wait, say, read, list, close, models, and every refusal);
+  - the pipe (round trip, several at once, Arabic text);
+  - the copy of the director's conversation from real Claude Code and Codex lines.
+- `LiveDirectorTests` (Core, **off unless `AMIRLAP_LIVE_CHAT=1`**, needs `Toolbox.Cli` built in Debug) runs a stand-in Pulse under a test pipe name. The real `ftb.exe chat open/wait/close` and `ftb mcp` are the director's command line and MCP server, and the Codex on this PC is the guest. It must read a file in the director's folder and answer with what's in it. It uses one short Codex turn:
+
+```bash
+set AMIRLAP_LIVE_CHAT=1 && dotnet test tests/Toolbox.Core.Tests --filter LiveDirectorTests
+```
 - `HomeWindowTests` also draws Pulse chat's window, off-screen and without running any agent, in light/dark and English/Arabic. It shows the owner's gallery example: a hand-off, pictures to approve, a card to allow a command and the limit card. It also draws the window while an agent works after Allow once, a one-to-one chat, the empty window and New chat.
 - `ColourTests` (Core): the colour picker's codes (all eight, also on an Arabic system), reading HEX, WCAG contrast and grades, OKLCH both ways, the nine steps, the nearest CSS name, the history (newest first, each colour once, 10–30) and the settings it keeps.
 - `PdfEditTests` (Processing): the viewer's and editor's PDF engine on generated files, rendered back with PDFium and checked pixel by pixel. It covers the dark copy with photos kept or inverted (also a picture inside a form XObject) and still searchable; the editor's Save (reorder, turn, merge, cover, ink, picture, text, on plain and rotated pages, Arabic kept as text, never overwriting); picture boxes; page maps under rotation; search with and without case; outline; page and web links.

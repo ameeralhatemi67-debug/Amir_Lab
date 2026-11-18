@@ -84,6 +84,25 @@ public static partial class ChatRules
         var me = Agent.Name(agent);
         var sb = new StringBuilder();
         sb.Append("You are ").Append(me).Append(" in a Pulse chat. Pulse is part of Amir Lap, an app on the user's Windows PC.");
+        if (chat.IsDirected && agent != chat.Director)
+        {
+            var director = Agent.Name(chat.Director);
+            sb.Append(' ').Append(director).Append(", another AI coding agent (made by ").Append(Agent.Maker(chat.Director)).Append("), directs this chat. ")
+              .Append(director).Append(" works with the owner (the user) in its own session and sends you its requests through Pulse.\n");
+            sb.Append("- Answer ").Append(director).Append(" in your reply: Pulse passes your whole reply back to it. Don't write @").Append(chat.Director).Append(".\n");
+            sb.Append("- The owner watches this chat in Pulse and may write to you too. The owner's word comes first.\n");
+            if (chat.Folder is { } folder)
+                sb.Append("- You and ").Append(director).Append(" work in the same folder: ").Append(folder).Append(".\n");
+            if (chat.Outputs is { Length: > 0 } outputs)
+                sb.Append("- Save what you make in ").Append(outputs.Replace('\\', '/').TrimEnd('/')).Append("/ (inside that folder) unless ").Append(director).Append(" says otherwise, and don't change other files unless asked.\n");
+            if (chat.DirectorNotes is { Length: > 0 } notes)
+                sb.Append("- ").Append(director).Append("'s conversation with the owner, up to the start of this chat, is in ").Append(notes).Append(". Read it only when the request isn't enough.\n");
+            AppendLimits(sb, chat);
+            sb.Append("- Write plainly. Say what you did, where you saved it, and what you need.");
+            return sb.ToString();
+        }
+        if (chat.IsDirected && agent == chat.Director)
+            sb.Append(' ').Append("You direct this chat: you opened it from your own session with the owner, and Pulse now carries you on with a copy of that session.");
         if (chat.IsGroup)
         {
             var otherId = Agent.Other(agent);
@@ -117,12 +136,17 @@ public static partial class ChatRules
             }
         }
         else sb.Append('\n');
+        AppendLimits(sb, chat);
+        sb.Append("- Write for the user: short and plain. Say what you did and what you need.");
+        return sb.ToString();
+    }
+
+    private static void AppendLimits(StringBuilder sb, ChatInfo chat)
+    {
         if (chat.IsQuick)
             sb.Append("- This is a quick chat without a project folder. Your working folder belongs to Pulse; don't change files on the PC outside it.\n");
         if (chat.Permission == ChatPermission.Read)
             sb.Append("- This chat is read-only: read, explain and plan, but don't change files or run commands that change anything.\n");
-        sb.Append("- Write for the user: short and plain. Say what you did and what you need.");
-        return sb.ToString();
     }
 
     public static IReadOnlyList<string> OwnsOf(ChatInfo chat, string agent) =>
@@ -138,7 +162,8 @@ public static partial class ChatRules
         int from = Math.Clamp(chat.Seen.GetValueOrDefault(agent), 0, messages.Count);
         var fresh = messages.Skip(from).Where(m => m.Author != agent && m.Kind is ChatKind.Text or ChatKind.Approval && !m.Working).ToList();
         var sb = new StringBuilder();
-        if (fresh.Count == 1 && fresh[0].Author == ChatAuthor.User && fresh[0].Kind == ChatKind.Text)
+        // In a chat an agent directs, every line says who wrote it (the director or the owner).
+        if (!chat.IsDirected && fresh.Count == 1 && fresh[0].Author == ChatAuthor.User && fresh[0].Kind == ChatKind.Text)
             sb.Append(fresh[0].Text.Trim());
         else if (fresh.Count > 0)
         {
@@ -147,10 +172,11 @@ public static partial class ChatRules
             {
                 if (m.Kind == ChatKind.Approval)
                 {
-                    sb.Append("User approved: ").Append(m.Text.Trim()).Append('\n');
+                    sb.Append(chat.IsDirected ? "The owner approved: " : "User approved: ").Append(m.Text.Trim()).Append('\n');
                     continue;
                 }
-                var who = m.Author == ChatAuthor.User ? "User" : Agent.Name(m.Author) + (m.To == agent ? " (to you)" : "");
+                var who = m.Author == ChatAuthor.User ? (chat.IsDirected ? "Owner" : "User")
+                    : Agent.Name(m.Author) + (chat.IsDirected && m.Author == chat.Director ? " (directs this chat)" : "") + (m.To == agent ? " (to you)" : "");
                 var text = m.Text.Trim();
                 if (text.Length > MaxPassedOn) text = text[..MaxPassedOn] + " […]";
                 sb.Append(who).Append(": ").Append(text.Length == 0 && m.Error is { } e ? "(stopped: " + e + ")" : text).Append('\n');
