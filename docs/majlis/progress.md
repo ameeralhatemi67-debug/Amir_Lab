@@ -29,6 +29,20 @@ Imp Majlis was called **Pulse chat** until 2026-11-19. Entries before that date 
 
 ## Version 1
 
+### 2026-11-19 — 0.9.1 committed and installed; setup run again (Tasks 1.1.6.3, 1.1.6.4)
+
+- **Task reference:** Tasks 1.1.6.3 and 1.1.6.4, with the owner's yes ("Commit and install").
+- **Outcome:**
+  - Committed as `c7ba1e3` on `main` (not pushed).
+  - Published and installed. The installer closed Amir Lap and the two running copies of `ftb.exe` (the agents' MCP servers), copied the app and started Amir Lap 0.9.1. Without the new step the copy would have failed.
+  - `ftb chat setup --mcp` wrote the new skill for Claude Code and Codex and re-added Codex's `pulse` MCP entry. Claude Code's entry already pointed at the same `ftb.exe`, so setup left it and reported that (exit code 1); `claude mcp get pulse` shows it connected.
+- **Checked:**
+  - `ftb chat ping`: "Pulse is ready". Version 0.9.1.
+  - Both installed skills have the Reviewing section, with the real `ftb.exe` path filled in.
+  - The installed MCP server, called directly: the tool list has `pulse_look` and `pulse_diff`; `pulse_look` on `kf08.png` returned the whole and six parts; `pulse_diff` on kf08 v2 → v3 with the arm's box returned its report and structured result. It showed that the "fix the arm only" edit changed 11% of the picture outside the arm.
+  - The publish script's start-up test was skipped (Amir Lap was running); the installed app started instead.
+- **Not done:** the owner's try (Task 1.1.6.5); the sweep of the other 17 frames; pushing.
+
 ### 2026-11-19 — Look before you approve, built as 0.9.1 (Checkpoint 1.1, not committed, not installed)
 
 - **Task reference:** Phases 1.1.1 to 1.1.5 and Tasks 1.1.6.1 (in part) and 1.1.6.3; research Task 0.5.1.11.

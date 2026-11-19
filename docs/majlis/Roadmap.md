@@ -27,7 +27,7 @@ related:
 
 **Active version:** Version 1 (Image jobs you can trust)
 
-**Active checkpoint:** Checkpoint 1.1 (Look before you approve), in progress. On 2026-11-19 the owner put image jobs first, because he is about to work on the promo film's pictures again. The rest of the plan follows in the order below; the owner has not yet approved it as a whole (Task 0.4.2.4).
+**Active checkpoint:** Checkpoint 1.1 (Look before you approve), installed as Amir Lap 0.9.1 on 2026-11-19; the owner's try and the sweep of the other 17 frames remain. On 2026-11-19 the owner put image jobs first, because he is about to work on the promo film's pictures again. The rest of the plan follows in the order below; the owner has not yet approved it as a whole (Task 0.4.2.4).
 
 **Planning state:** Draft, 2026-11-19. Written with Fable 5.2 as an advisor that thinks and never builds, reviewed by it once, and reordered with it when the owner put image jobs first.
 
@@ -315,8 +315,8 @@ Items from `PULSE_REVIEW.md` are marked "(Review P0-1)" and so on in the task th
 
 - [/] **Task 1.1.6.1:** Tests for `look` and `diff`; the sweep of the 18 approved frames with `look` (the exit). Tests done: 5 in `PictureCheckTests`, 2 in `PulseChatTests`; all three test projects pass (529 tests). The sweep: `kfA` checked with `look`, the flat dusk picture is plain in part C1. The other 17 frames are the first job of the next image session (the skill says so).
 - [ ] **Task 1.1.6.2:** The reviewer trial by hand on the real frames (Task 0.5.1.5).
-- [x] **Task 1.1.6.3:** The installer closes the copies of `ftb.exe` that Claude Code and Codex keep running as their chat tools (`ftb mcp`), which would otherwise make the copy fail, and says how to reconnect. Added 2026-11-19, found while answering Task 0.5.1.11. Evidence: `Stop-CommandLine` in `tools/install.ps1` (the script parses; not yet run on a real install).
-- [ ] **Task 1.1.6.4:** Install 0.9.1 and run setup again, so both agents get the new skill and tools (with the owner's yes).
+- [x] **Task 1.1.6.3:** The installer closes the copies of `ftb.exe` that Claude Code and Codex keep running as their chat tools (`ftb mcp`), which would otherwise make the copy fail, and says how to reconnect. Added 2026-11-19, found while answering Task 0.5.1.11. Evidence: `Stop-CommandLine` in `tools/install.ps1`; the real install of 0.9.1 on 2026-11-19 closed the two running copies and the update went through.
+- [x] **Task 1.1.6.4:** Install 0.9.1 and run setup again, so both agents get the new skill and tools (with the owner's yes). Evidence: commit `c7ba1e3`; installed 2026-11-19 (Amir Lap 0.9.1 running, Pulse answers `ftb chat ping`); `ftb chat setup --mcp` wrote the new skill for both agents; the installed MCP server lists `pulse_look` and `pulse_diff`, and both answered on the real frames.
 - [ ] **Task 1.1.6.5:** The owner's try: theme switch with a chat open, and one small image job with the new skill.
 
 ### Checkpoint 1.2: Pick Up Where You Left Off (Review P0-1, P0-2)

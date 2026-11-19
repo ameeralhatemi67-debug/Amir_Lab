@@ -24,7 +24,7 @@ Answers to the research questions in [[projects/ideas/Amir_Lab/docs/majlis/Roadm
 
 **What changed:** `tools/install.ps1` now closes copies of `ftb.exe` from the install folder (and only those), right after Amir Lap itself, and tells the owner to reconnect the chat tools in open sessions (Claude Code: `/mcp`) or start a new session (Roadmap Task 1.1.6.3).
 
-**Not checked yet:** a real install over running copies (it needs the owner's yes to install).
+**Checked (2026-11-19):** the real install of 0.9.1 closed the two running copies, copied the app, and Amir Lap 0.9.1 started. Claude Code reported its `pulse` server connected again afterwards.
 
 ## Task 0.5.1.8 — Thinking-level flags (2026-11-19, partly answered)
 
