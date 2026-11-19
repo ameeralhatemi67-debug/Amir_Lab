@@ -261,6 +261,9 @@ public sealed class ChatMessage
     /// <summary>Pictures made or changed during this turn (full paths).</summary>
     public List<string> Images { get; set; } = [];
 
+    /// <summary>Of <see cref="Images"/>, the ones that already existed and were saved over, instead of saved as a new version.</summary>
+    public List<string>? Overwrote { get; set; }
+
     /// <summary>For a <see cref="ChatKind.Denied"/> card: what was not allowed.</summary>
     public List<DeniedAction> Denied { get; set; } = [];
 

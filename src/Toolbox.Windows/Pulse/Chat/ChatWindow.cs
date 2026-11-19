@@ -127,6 +127,11 @@ internal sealed partial class ChatWindow : GlassWindow
 
     private void Rebuild()
     {
+        // The chat list and the chat area are kept between rebuilds (a theme or language change):
+        // let go of them first, or WPF refuses to place them in the new layout and the window is
+        // left blank (LESSONS: "A window that rebuilds must let go of the parts it reuses").
+        Detach(_list);
+        Detach(_content);
         _root.Children.Clear();
         _root.RowDefinitions.Clear();
         _root.FlowDirection = Lang.Flow;

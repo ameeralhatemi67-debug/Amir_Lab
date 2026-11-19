@@ -4,6 +4,7 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using Toolbox.Core.Pulse.Chat;
 using Toolbox.Windows.Pulse.Chat;
+using Toolbox.Windows.Theme;
 
 namespace Toolbox.Windows.Tests;
 
@@ -163,6 +164,47 @@ public partial class HomeWindowTests
             var dialog = new NewChatWindow(hub, a => a + ".exe", folder);
             SnapshotChat(snapshots, dialog, 880, 700, $"pulse-newchat-{theme}-{lang}");
             dialog.Close();
+        }
+        finally
+        {
+            hub.Dispose();
+            try { System.IO.Directory.Delete(dir, recursive: true); } catch (System.IO.IOException) { }
+        }
+    }
+
+    /// <summary>
+    /// Switching the theme or the language while a chat is open rebuilds the window in place. It
+    /// used to throw (the chat list and chat area were still held by the old layout) and leave the
+    /// window blank while the agents went on working. Twice each way, with a chat selected.
+    /// </summary>
+    private static void CheckChatRebuild(string? snapshots, Application app)
+    {
+        var dir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "amirlap-chatrebuild-" + Guid.NewGuid().ToString("N"));
+        var hub = new ChatHub(new ChatStore(System.IO.Path.Combine(dir, "chats")), new StillRunner(), a => a + ".exe", a => a()) { CodexPictures = null };
+        try
+        {
+            var chat = hub.Create(new ChatInfo { Title = "Theme switch", Agents = [Agent.Codex], Permission = ChatPermission.Read });
+            chat.Messages.Add(new ChatMessage { Author = ChatAuthor.User, Text = "Still here after the switch?", At = DateTimeOffset.UtcNow });
+            chat.Messages.Add(new ChatMessage { Author = Agent.Codex, Text = "Yes.", At = DateTimeOffset.UtcNow });
+            Lang.Set("en");
+            ThemeResources.Apply(app, "light");
+            var window = new ChatWindow(hub, a => a + ".exe");
+            window.Select(chat.Info.Id);
+            var root = (Grid)window.Content;
+            Assert.Equal(2, root.Children.Count); // the tint and the layout
+
+            foreach (var (theme, lang) in new[] { ("dark", "en"), ("light", "en"), ("dark", "ar"), ("light", "en") })
+            {
+                Lang.Set(lang);
+                ThemeResources.Apply(app, theme); // the window rebuilds itself on this event
+                Assert.Equal(2, root.Children.Count);
+                Assert.Equal(lang == "ar" ? FlowDirection.RightToLeft : FlowDirection.LeftToRight, root.FlowDirection);
+                Assert.Equal(chat.Info.Id, window.Current);
+            }
+            Lang.Set("en");
+            ThemeResources.Apply(app, "dark");
+            SnapshotChat(snapshots, window, 1160, 780, "pulse-chat-after-theme-switch");
+            window.Close();
         }
         finally
         {

@@ -103,7 +103,24 @@ internal static class ThemeResources
         r["Bool.IsDark"] = dark;
 
         Lap = Tokens(dark, glassOff, a);
-        Changed?.Invoke();
+        RaiseChanged();
+    }
+
+    /// <summary>
+    /// Tells every window, one at a time: a window that fails to redraw is logged and skipped, so it
+    /// can't stop the others (or the tray icon and Home, which listen after it) from updating.
+    /// </summary>
+    private static void RaiseChanged()
+    {
+        if (Changed is not { } handlers) return;
+        foreach (var handler in handlers.GetInvocationList().Cast<Action>())
+        {
+            try { handler(); }
+            catch (Exception ex) when (ex is InvalidOperationException or ArgumentException or NullReferenceException or System.ComponentModel.Win32Exception)
+            {
+                Toolbox.Core.Diagnostics.Log.Warn($"A window failed to redraw after a theme change: {ex.Message}");
+            }
+        }
     }
 
     private static LapTokens Tokens(bool dark, bool glassOff, Color a) => new(

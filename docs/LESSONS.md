@@ -125,3 +125,21 @@ Mistakes that cost a release, what caused them, and the rule that keeps them fro
 - A live check of an agent must make it run a command in the folder (read a file and answer with what's in it), not only reply with a word.
 - Several programs share Codex's settings, so a setting the app turns on can reach an older engine. Run the app's own engine when it is there.
 - Guarded by `PulseDirectorTests.EachAgentRunsWithItsModelAndKnowsTheChatItIsIn` and the live `LiveDirectorTests`.
+
+## A window that rebuilds must let go of the parts it reuses
+
+**Seen:** 0.9.0, the Pulse chat window (owner's report, 19 Nov 2026). Switching Windows to dark mode with a chat open left the window blank: the agents kept working, but nothing could be seen or clicked.
+
+**Cause:**
+- A theme or language change makes a window rebuild its layout in place (`ThemeResources.Changed` → `ChatWindow.Rebuild()`).
+- `Rebuild()` cleared the root and built a new layout, but the chat list (`_list`) and the chat area (`_content`) are fields kept between rebuilds. They were still children of the old layout, which was dropped but not emptied. WPF refuses to give an element a second parent ("Specified element is already the logical child of another element"), so `Rebuild()` threw after it had put back only the window's tint.
+- The tint covers the whole window, so it looked blank and caught every click.
+- `RenderChat()` already let go of the parts it reuses, but `Rebuild()` didn't. The first build always works (nothing has a parent yet), so only a switch while the window is open shows it.
+- `ThemeResources.Changed` called every listener in one go, so the throw also skipped the listeners after it (the tray icon, Home).
+
+**Fix (0.9.1):** `Rebuild()` detaches `_list` and `_content` before it clears the root, as `MixerWindow.Rebuild` does. `ThemeResources` calls each listener on its own and logs one that fails.
+
+**Rules:**
+- A window that keeps parts between rebuilds detaches every one of them at the top of `Rebuild()`. List them in one place.
+- A window that rebuilds in place needs a test that rebuilds it twice while it shows something: `HomeWindowTests.CheckChatRebuild` (theme and language, a chat selected).
+- An app-wide event calls each listener on its own; one window must never stop the others.

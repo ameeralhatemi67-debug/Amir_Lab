@@ -88,7 +88,8 @@ internal static class McpServer
             ["serverInfo"] = new JsonObject { ["name"] = "amir-lap-pulse", ["version"] = typeof(McpServer).Assembly.GetName().Version?.ToString(3) ?? "0" },
             ["instructions"] = "Pulse (in Amir Lap on this PC) runs a group chat between you and the other AI coding agent here (Claude Code or Codex). " +
                 "You open it from this session and direct it: pulse_open with a full brief, then pulse_wait, then pulse_say for each next request, and pulse_close when done. " +
-                "The other agent works in your folder. The owner allows each chat in Pulse and can write to either of you; the owner's word comes first.",
+                "The other agent works in your folder. The owner allows each chat in Pulse and can write to either of you; the owner's word comes first. " +
+                "Before you approve a picture, open it with pulse_look (whole and in parts at full size) and hunt for faults; after every edit, measure it with pulse_diff.",
         };
     }
 
@@ -129,13 +130,64 @@ internal static class McpServer
             Tool("pulse_list", "List your Pulse chats.", new JsonObject { ["as"] = Who(), ["session"] = Session() }),
             Tool("pulse_close", "End a chat you direct, when the work is done.", new JsonObject { ["chat"] = Chat(), ["as"] = Who(), ["session"] = Session() }, "chat"),
             Tool("pulse_models", "The models the other agent can use in a chat.", new JsonObject { ["agent"] = new JsonObject { ["type"] = "string", ["enum"] = new JsonArray("claude", "codex") } }),
+            Tool("pulse_look", "Look at a picture properly before you approve it: saves it whole (with a labelled grid A1–C2) and in parts at full resolution, and returns their paths. Open the whole and every part, and hunt for faults (perspective, people's size, hands, faces, flat backdrops, light, the brief's hard rules). Works without a chat.", new JsonObject
+            {
+                ["picture"] = Prop("string", "The picture (full path, or relative to folder)."),
+                ["pictures"] = new JsonObject { ["type"] = "array", ["items"] = new JsonObject { ["type"] = "string" }, ["description"] = "Several pictures at once, instead of picture." },
+                ["folder"] = Prop("string", "The folder relative paths start from (default: this server's folder)."),
+                ["columns"] = Prop("integer", "Parts across (default 3)."),
+                ["rows"] = Prop("integer", "Parts down (default 2)."),
+            }),
+            Tool("pulse_diff", "Measure an edit: what changed between two versions of a picture, whether its size changed, and how much changed outside the box that was meant to change, with a heat map. Use after every edit, before you approve it.", new JsonObject
+            {
+                ["old"] = Prop("string", "The version it was made from."),
+                ["new"] = Prop("string", "The new version."),
+                ["box"] = Prop("string", "What was meant to change, in the old picture's pixels: x,y,width,height (several: separate with ;)."),
+                ["threshold"] = Prop("integer", "How far a colour must move (of 255) to count as changed (default 16)."),
+                ["folder"] = Prop("string", "The folder relative paths start from (default: this server's folder)."),
+            }, "old", "new"),
         ];
+    }
+
+    /// <summary>pulse_look and pulse_diff work on files right here; Amir Lap needn't be running.</summary>
+    private static JsonObject Pictures(string name, JsonObject args)
+    {
+        string? Arg(string key) => args[key] is JsonValue v ? v.ToString() : null;
+        var folder = Arg("folder") is { Length: > 0 } f ? f : Directory.GetCurrentDirectory();
+        string Full(string p) => Path.GetFullPath(Path.IsPathFullyQualified(p) ? p : Path.Combine(folder, p));
+        try
+        {
+            if (name == "pulse_look")
+            {
+                var list = (args["pictures"] as JsonArray)?.Select(n => n?.ToString()).Where(s => s is { Length: > 0 }).Select(s => s!).ToList() ?? [];
+                if (Arg("picture") is { Length: > 0 } one) list.Insert(0, one);
+                if (list.Count == 0) return Text("Give a picture (or pictures) to look at.", error: true);
+                int columns = int.TryParse(Arg("columns"), out var c) ? c : Toolbox.Processing.Imaging.PictureCheck.DefaultColumns;
+                int rows = int.TryParse(Arg("rows"), out var r) ? r : Toolbox.Processing.Imaging.PictureCheck.DefaultRows;
+                var looks = list.Take(20).Select(p => Toolbox.Processing.Imaging.PictureCheck.Look(Full(p), null, columns, rows)).ToList();
+                var result = Text(string.Join("\n\n", looks.Select(Toolbox.Processing.Imaging.PictureCheck.Describe)));
+                result["structuredContent"] = new JsonObject { ["looks"] = new JsonArray(looks.Select(l => (JsonNode)PictureJson.Look(l)).ToArray()) };
+                return result;
+            }
+            if (Arg("old") is not { Length: > 0 } old || Arg("new") is not { Length: > 0 } @new) return Text("Give old and new: the version it was made from, and the new one.", error: true);
+            var boxes = Toolbox.Processing.Imaging.PixelBox.ParseMany(Arg("box"));
+            int threshold = int.TryParse(Arg("threshold"), out var th) ? th : Toolbox.Processing.Imaging.PictureCheck.DefaultThreshold;
+            var diff = Toolbox.Processing.Imaging.PictureCheck.Diff(Full(old), Full(@new), boxes, threshold);
+            var answer = Text(Toolbox.Processing.Imaging.PictureCheck.Describe(diff));
+            answer["structuredContent"] = PictureJson.Diff(diff);
+            return answer;
+        }
+        catch (Exception ex) when (ex is IOException or InvalidDataException or FormatException or UnauthorizedAccessException)
+        {
+            return Text(ex.Message, error: true);
+        }
     }
 
     private static JsonObject Call(JsonObject? p)
     {
         var name = p?["name"]?.GetValue<string>() ?? "";
         var args = p?["arguments"] as JsonObject ?? new JsonObject();
+        if (name is "pulse_look" or "pulse_diff") return Pictures(name, args);
         string? Arg(string key) => args[key] is JsonValue v ? v.ToString() : null;
         var who = Agent.IsAgent(Arg("as")) ? Arg("as") : WhoFromClient();
         var caller = new ChatCommand.Caller(who, Arg("session") ?? SessionFor(who), null, Environment.GetEnvironmentVariable(ChatEnvironment.InsideChat) is { Length: > 0 } inside ? inside : null);

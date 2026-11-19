@@ -395,7 +395,11 @@ public sealed class ChatDoor
         var text = m.Text.Trim();
         sb.Append(at).Append(who).Append(": ").Append(text.Length > 0 ? text : m.Error is { } e ? "(stopped: " + e + ")" : "(no answer)").Append('\n');
         if (text.Length > 0 && m.Error is { } error) sb.Append("  (stopped: ").Append(error).Append(")\n");
-        if (m.Images.Count > 0) sb.Append("  Pictures: ").Append(string.Join(", ", m.Images.Select(p => ChatRules.Relative(info, p)))).Append('\n');
+        if (m.Images.Count > 0) sb.Append("  Pictures: ").Append(ChatRules.PictureList(info, m.Images)).Append('\n');
+        if (m.Overwrote is { Count: > 0 } over)
+            sb.Append("  Saved over an earlier version (not a new one): ").Append(ChatRules.PictureList(info, over)).Append(". Check nothing approved was lost.\n");
+        if (m.Author == info.Guest && m.Images.Count > 0)
+            sb.Append("  Before you approve: open each picture with look (whole and every part) and hunt for faults; after an edit, measure it with diff.\n");
         if (m.Steps.Count(s => s.Kind == "edit") is > 0 and var edits) sb.Append("  Changed ").Append(edits).Append(edits == 1 ? " file" : " files").Append(": ")
             .Append(string.Join(", ", m.Steps.Where(s => s.Kind == "edit").Select(s => s.Text).Distinct().Take(12))).Append('\n');
     }

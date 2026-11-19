@@ -104,6 +104,7 @@ public partial class HomeWindowTests
                 RenderViewer(snapshots, theme, lang, dispatcher);
                 if (lang == "en") RenderBlur(snapshots, theme);
             }
+            CheckChatRebuild(snapshots, app);
             Lang.Set("en");
             ThemeResources.Apply(app, "light");
             CheckRealFrame(host, registry);

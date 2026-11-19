@@ -26,6 +26,10 @@ internal static class ChatCommand
 
         if (verb == "setup") return SkillSetup.Run(options);
 
+        // Looking at and comparing pictures works on files alone: no Amir Lap needed, and the
+        // guest inside a chat may use them too (to check its own work before it answers).
+        if (verb is "look" or "diff") return Pictures(verb, options, words, json);
+
         if (Environment.GetEnvironmentVariable(ChatEnvironment.InsideChat) is { Length: > 0 } && verb is "open" or "say" or "wait" or "close")
             return Fail("You are running inside a Pulse chat, so you can't open or direct one. Answer in your reply instead.");
 
@@ -94,6 +98,43 @@ internal static class ChatCommand
             Console.WriteLine(node?["text"]?.GetValue<string>() ?? answer);
         }
         return JsonNode.Parse(answer)?["ok"]?.GetValue<bool>() == true ? 0 : 1;
+    }
+
+    /// <summary><c>look</c> (a picture whole and in parts at full size) and <c>diff</c> (what changed between two versions).</summary>
+    private static int Pictures(string verb, IReadOnlyDictionary<string, string> options, List<string> words, bool json)
+    {
+        try
+        {
+            if (verb == "look")
+            {
+                if (words.Count == 0) return Fail("Usage: ftb chat look <picture> [more pictures] [--columns 3] [--rows 2] [--out folder]");
+                int columns = int.TryParse(options.GetValueOrDefault("columns"), out var c) ? c : Toolbox.Processing.Imaging.PictureCheck.DefaultColumns;
+                int rows = int.TryParse(options.GetValueOrDefault("rows"), out var r) ? r : Toolbox.Processing.Imaging.PictureCheck.DefaultRows;
+                var outFolder = options.GetValueOrDefault("out");
+                var all = new JsonArray();
+                var text = new StringBuilder();
+                foreach (var picture in words)
+                {
+                    var target = outFolder is null ? null : Path.Combine(Path.GetFullPath(outFolder), Path.GetFileNameWithoutExtension(picture));
+                    var look = Toolbox.Processing.Imaging.PictureCheck.Look(picture, target, columns, rows);
+                    all.Add(PictureJson.Look(look));
+                    if (text.Length > 0) text.Append("\n\n");
+                    text.Append(Toolbox.Processing.Imaging.PictureCheck.Describe(look));
+                }
+                Console.WriteLine(json ? new JsonObject { ["ok"] = true, ["looks"] = all }.ToJsonString() : text.ToString());
+                return 0;
+            }
+            if (words.Count < 2) return Fail("Usage: ftb chat diff <old picture> <new picture> [--box x,y,w,h[;x,y,w,h]] [--threshold 16] [--out folder]");
+            var boxes = Toolbox.Processing.Imaging.PixelBox.ParseMany(options.GetValueOrDefault("box"));
+            int threshold = int.TryParse(options.GetValueOrDefault("threshold"), out var th) ? th : Toolbox.Processing.Imaging.PictureCheck.DefaultThreshold;
+            var diff = Toolbox.Processing.Imaging.PictureCheck.Diff(words[0], words[1], boxes, threshold, options.GetValueOrDefault("out") is { } o ? Path.GetFullPath(o) : null);
+            Console.WriteLine(json ? PictureJson.Diff(diff).ToJsonString() : Toolbox.Processing.Imaging.PictureCheck.Describe(diff));
+            return 0;
+        }
+        catch (Exception ex) when (ex is IOException or InvalidDataException or FormatException or UnauthorizedAccessException)
+        {
+            return Fail(ex.Message);
+        }
     }
 
     /// <summary>Who is calling: the agent, its session and its program, from --as/--session or the environment its agent sets.</summary>
@@ -184,10 +225,19 @@ internal static class ChatCommand
                                             Start a chat with the other agent in your folder
           ftb chat say <chat> "…" | --file f | -      Write to the other agent
           ftb chat wait <chat> [--timeout 45]         Wait for its reply, the owner's words or a card
+                                                      (up to 900 s; give your shell tool a longer limit.
+                                                      With MCP, pulse_wait waits up to 900 s for you)
           ftb chat read <chat> [--last 40]            The chat so far (changes nothing)
           ftb chat list                               Your chats
           ftb chat close <chat>                       End a chat
           ftb chat models [claude|codex]              The models the other agent can use
+          ftb chat look <picture>… [--columns 3] [--rows 2] [--out dir]
+                                                      A picture whole (with a grid) and in parts at
+                                                      full size: open them all before approving
+          ftb chat diff <old> <new> [--box x,y,w,h[;…]] [--threshold 16] [--out dir]
+                                                      What changed between two versions, and how much
+                                                      outside the box that was meant to change
+                                                      (look and diff work without Amir Lap running)
           ftb chat setup [--print] [--mcp]            Install the skill for Claude Code and Codex
                                                       (--mcp also adds the MCP server to both)
           ftb mcp                                     The same commands as an MCP server (stdio)

@@ -98,6 +98,12 @@ public static partial class ChatRules
             if (chat.DirectorNotes is { Length: > 0 } notes)
                 sb.Append("- ").Append(director).Append("'s conversation with the owner, up to the start of this chat, is in ").Append(notes).Append(". Read it only when the request isn't enough.\n");
             AppendLimits(sb, chat);
+            AppendWorkRules(sb);
+            sb.Append("- End each reply that delivers work with these lines, one per file:\n")
+              .Append("  Made from: <the file or reference you really used, or \"new\">\n")
+              .Append("  Changed: <what you changed>\n")
+              .Append("  Size: <width x height for pictures>\n")
+              .Append("  Known weaknesses: <what is still wrong or uncertain, or \"none seen\">\n");
             sb.Append("- Write plainly. Say what you did, where you saved it, and what you need.");
             return sb.ToString();
         }
@@ -137,8 +143,17 @@ public static partial class ChatRules
         }
         else sb.Append('\n');
         AppendLimits(sb, chat);
+        AppendWorkRules(sb);
         sb.Append("- Write for the user: short and plain. Say what you did and what you need.");
         return sb.ToString();
+    }
+
+    /// <summary>How every agent in a room works, whoever directs: honest about its tools, never saving over a version, changing only what was asked.</summary>
+    private static void AppendWorkRules(StringBuilder sb)
+    {
+        sb.Append("- If you can't do what is asked with a real tool you have, say so before doing anything. Never use a different method without saying so first (for example, a moving cut-out made with code is not a video model).\n");
+        sb.Append("- Never save over an earlier version: save a new one next to it (-v2, -v3…), using the next number that doesn't exist yet.\n");
+        sb.Append("- When asked to change only part of something, change only that part and keep its size; say if the rest changed too.\n");
     }
 
     private static void AppendLimits(StringBuilder sb, ChatInfo chat)
@@ -182,7 +197,7 @@ public static partial class ChatRules
                 sb.Append(who).Append(": ").Append(text.Length == 0 && m.Error is { } e ? "(stopped: " + e + ")" : text).Append('\n');
                 if (m.Images.Count > 0)
                     sb.Append("  Pictures ").Append(Agent.IsAgent(m.Author) ? Agent.Name(m.Author) + " made" : "attached").Append(": ")
-                      .Append(string.Join(", ", m.Images.Select(p => Relative(chat, p)))).Append('\n');
+                      .Append(PictureList(chat, m.Images)).Append('\n');
             }
         }
         if (!string.IsNullOrWhiteSpace(extra))
@@ -191,6 +206,46 @@ public static partial class ChatRules
             sb.Append(extra.Trim());
         }
         return sb.Length == 0 ? "Go on." : sb.ToString();
+    }
+
+    [GeneratedRegex(@"^(?<head>.*?)(?<digits>\d+)(?<tail>\.[A-Za-z0-9]+)$")]
+    private static partial Regex NumberedName();
+
+    /// <summary>
+    /// Pictures said in one line: a numbered sequence (frame_0001.png … frame_0096.png) becomes one
+    /// entry with its count, and a long list says how many it leaves out, so nothing is cut silently.
+    /// </summary>
+    public static string PictureList(ChatInfo chat, IReadOnlyList<string> pictures, int max = 24)
+    {
+        var groups = new List<(string Key, List<string> Paths, string? Pattern)>();
+        var index = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        foreach (var path in pictures)
+        {
+            var rel = Relative(chat, path);
+            var slash = rel.LastIndexOfAny(['/', '\\']);
+            var dir = slash >= 0 ? rel[..(slash + 1)] : "";
+            var m = NumberedName().Match(rel[(slash + 1)..]);
+            string key = m.Success ? dir + m.Groups["head"].Value + "#" + m.Groups["digits"].Value.Length + m.Groups["tail"].Value : "\0" + rel;
+            string? pattern = m.Success ? dir + m.Groups["head"].Value + "%0" + m.Groups["digits"].Value.Length + "d" + m.Groups["tail"].Value : null;
+            if (!index.TryGetValue(key, out var at))
+            {
+                index[key] = groups.Count;
+                groups.Add((key, [rel], pattern));
+            }
+            else groups[at].Paths.Add(rel);
+        }
+        var parts = new List<string>();
+        foreach (var (_, paths, pattern) in groups)
+        {
+            if (pattern is not null && paths.Count >= 4)
+            {
+                var names = paths.Select(p => Path.GetFileName(p)).OrderBy(n => n, StringComparer.OrdinalIgnoreCase).ToList();
+                parts.Add($"{pattern} ×{paths.Count} ({names[0]} to {names[^1]})");
+            }
+            else parts.AddRange(paths);
+        }
+        if (parts.Count <= max) return string.Join(", ", parts);
+        return string.Join(", ", parts.Take(max)) + $", and {parts.Count - max} more ({pictures.Count} pictures in all)";
     }
 
     /// <summary>A path inside the chat's folder said relative to it (others stay as they are).</summary>

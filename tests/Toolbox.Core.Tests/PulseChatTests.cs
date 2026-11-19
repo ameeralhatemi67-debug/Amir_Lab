@@ -85,6 +85,43 @@ public sealed class PulseChatTests : IDisposable
     }
 
     [Fact]
+    public void EveryAgentIsToldToBeHonestAboutItsToolsAndNeverToSaveOverAVersion()
+    {
+        // Whoever directs: in the key-frame job Codex answered a video request with a moving
+        // cut-out made by code, and saved a v3 because v2 already existed.
+        foreach (var text in new[]
+        {
+            ChatRules.Preamble(Group(), Agent.Codex),
+            ChatRules.Preamble(new ChatInfo { Folder = @"D:\Work\film", Agents = [Agent.Codex], Director = Agent.Claude, Permission = ChatPermission.Edit }, Agent.Codex),
+        })
+        {
+            Assert.Contains("say so before doing anything", text);
+            Assert.Contains("Never save over an earlier version", text);
+            Assert.Contains("change only that part and keep its size", text);
+        }
+        // A guest working for a director ends each delivery with what it was made from and its weaknesses.
+        var guest = ChatRules.Preamble(new ChatInfo { Folder = @"D:\Work\film", Agents = [Agent.Codex], Director = Agent.Claude, Permission = ChatPermission.Edit }, Agent.Codex);
+        Assert.Contains("Made from:", guest);
+        Assert.Contains("Known weaknesses:", guest);
+    }
+
+    [Fact]
+    public void ASequenceOfPicturesIsSaidInOneLineAndALongListSaysWhatItLeavesOut()
+    {
+        var chat = new ChatInfo { Folder = @"D:\Work\film" };
+        var frames = Enumerable.Range(1, 96).Select(i => $@"D:\Work\film\renders\v06\frame_{i:0000}.png").ToList();
+        var list = ChatRules.PictureList(chat, [@"D:\Work\film\renders\v06.mp4.png", .. frames, @"D:\Work\film\keyframes\kf06-v2.png"]);
+        Assert.Equal("renders/v06.mp4.png, renders/v06/frame_%04d.png ×96 (frame_0001.png to frame_0096.png), keyframes/kf06-v2.png", list);
+
+        // Three numbered files are still named one by one (kf01-v1, -v2, -v3 aren't a sequence worth hiding).
+        Assert.Equal("a/kf01-v1.png, a/kf01-v2.png, a/kf01-v3.png", ChatRules.PictureList(chat, [@"D:\Work\film\a\kf01-v1.png", @"D:\Work\film\a\kf01-v2.png", @"D:\Work\film\a\kf01-v3.png"]));
+
+        var many = Enumerable.Range(1, 30).Select(i => $@"D:\Work\film\shots\shot-{(char)('a' + i % 26)}{i}.png").ToList();
+        var cut = ChatRules.PictureList(chat, many, max: 24);
+        Assert.EndsWith("and 6 more (30 pictures in all)", cut);
+    }
+
+    [Fact]
     public void TheDigestHoldsWhatIsNewAndNotTheAgentsOwnWords()
     {
         var chat = Group();

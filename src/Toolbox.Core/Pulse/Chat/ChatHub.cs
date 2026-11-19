@@ -12,6 +12,9 @@ public sealed class ChatHub : IDisposable
 {
     private static readonly string[] ImageExtensions = [".png", ".jpg", ".jpeg", ".webp", ".gif"];
 
+    /// <summary>The most pictures one turn records (a safety limit, far above a real sequence).</summary>
+    internal const int MaxPictures = 2000;
+
     private readonly ChatStore _store;
     private readonly IAgentRunner _runner;
     private readonly Func<string, string?> _program;
@@ -502,6 +505,8 @@ public sealed class ChatHub : IDisposable
         if (running.Stopped) reply.Error = "Stopped.";
         else if (done.Error is { Length: > 0 } error) reply.Error = error;
         reply.Images = NewPictures(workDir, running.Pictures, running.Agent == Agent.Codex ? CodexPictures : null, running.Started);
+        var overwrote = reply.Images.Where(running.Pictures.ContainsKey).ToList();
+        reply.Overwrote = overwrote.Count > 0 ? overwrote : null;
         info.Updated = DateTimeOffset.UtcNow;
         info.Unread = true;
 
@@ -607,7 +612,9 @@ public sealed class ChatHub : IDisposable
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
         }
-        return list.Distinct(StringComparer.OrdinalIgnoreCase).Take(48).ToList();
+        // All of them (a rendered sequence can be hundreds of frames): replies collapse sequences
+        // and the window shows the first few, so nothing is cut without saying so.
+        return list.Distinct(StringComparer.OrdinalIgnoreCase).Take(MaxPictures).ToList();
     }
 
     private sealed record Job(string Agent, string? Extra, IReadOnlyList<string>? AllowOnce);

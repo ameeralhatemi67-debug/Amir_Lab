@@ -301,6 +301,9 @@ internal sealed record ChatActions(
 /// <summary>Draws each kind of message: the user's bubble, an agent's reply, cards and notes.</summary>
 internal static class ChatViews
 {
+    /// <summary>The most picture thumbnails one message shows (the rest are counted).</summary>
+    public const int MaxThumbnails = 24;
+
     public static FrameworkElement For(ChatFile chat, ChatMessage m, ChatActions act) => m.Kind switch
     {
         ChatKind.Denied => Denied(m, act),
@@ -445,7 +448,8 @@ internal static class ChatViews
     private static FrameworkElement Pictures(ChatFile chat, ChatMessage m, ChatActions act)
     {
         var wrap = new WrapPanel { Margin = new Thickness(0, 8, 0, 0) };
-        foreach (var path in m.Images)
+        // A rendered sequence can be hundreds of frames: show the first ones and say how many more.
+        foreach (var path in m.Images.Take(MaxThumbnails))
         {
             bool approved = ChatHub.IsApproved(chat, path);
             var tile = new StackPanel { Width = 140 };
@@ -483,6 +487,13 @@ internal static class ChatViews
         var note = ChatLook.Text(Lang.T("Approve the ones you like. The agent that made them sees your approvals on its next turn and uses them as the reference.", "اعتمد ما يعجبك. يرى الوكيل الذي صنعها اعتمادك في دوره التالي ويستخدمها مرجعًا."), 11.5, "Brush.Text3");
         var stack = new StackPanel();
         stack.Children.Add(wrap);
+        if (m.Images.Count > MaxThumbnails)
+        {
+            int more = m.Images.Count - MaxThumbnails;
+            stack.Children.Add(ChatLook.Text(Lang.T($"And {more} more pictures ({m.Images.Count} in all), in the folder.", $"و{more} صورة أخرى ({m.Images.Count} في المجموع)، في المجلد."), 11.5, "Brush.Text2", FontWeights.SemiBold).With(t => t.Margin = new Thickness(0, 0, 0, 6)));
+        }
+        if (m.Overwrote is { Count: > 0 } over)
+            stack.Children.Add(ChatLook.Text(Lang.T($"Saved over an earlier version instead of a new one: {string.Join(", ", over.Take(4).Select(IOPath.GetFileName))}{(over.Count > 4 ? "…" : "")}", $"حُفظت فوق نسخة سابقة بدل نسخة جديدة: {string.Join("، ", over.Take(4).Select(IOPath.GetFileName))}{(over.Count > 4 ? "…" : "")}"), 11.5, "Brush.Text2", FontWeights.SemiBold).With(t => { t.Foreground = ChatLook.AmberInk; t.Margin = new Thickness(0, 0, 0, 6); }));
         stack.Children.Add(note);
         var card = new Border { Child = stack, CornerRadius = new CornerRadius(14), Padding = new Thickness(10), Margin = new Thickness(0, 8, 0, 0), BorderThickness = new Thickness(1) };
         card.SetResourceReference(Border.BackgroundProperty, "Brush.LapCard");

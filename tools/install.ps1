@@ -103,6 +103,18 @@ function Stop-Running([string]$processName, [string]$label) {
     return $true
 }
 
+function Stop-CommandLine([string]$folder) {
+    # Only copies of ftb.exe from this installation (never another program called ftb).
+    $ftb = [IO.Path]::GetFullPath((Join-Path $folder 'ftb.exe'))
+    $running = @(Get-Process ftb -ErrorAction SilentlyContinue | Where-Object { $_.Path -and [IO.Path]::GetFullPath($_.Path) -eq $ftb })
+    if ($running.Count -eq 0) { return 0 }
+    if (-not $friendly) { Write-Host "Closing $($running.Count) copies of Amir Lap's command line (used by Claude Code or Codex)..." }
+    $running | Stop-Process -Force -ErrorAction SilentlyContinue
+    $deadline = (Get-Date).AddSeconds(10)
+    while ((Get-Process ftb -ErrorAction SilentlyContinue | Where-Object { $_.Path -and [IO.Path]::GetFullPath($_.Path) -eq $ftb }) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 200 }
+    return $running.Count
+}
+
 function Install-AmirLap {
     # (Windows PowerShell 5.1 does not set $PSScriptRoot inside param() defaults.)
     if (-not $Source) { $script:Source = Join-Path $PSScriptRoot 'AmirLap' }
@@ -139,7 +151,10 @@ function Install-AmirLap {
     Step 'Closing Amir Lap if it is running'
     $closed = Stop-Running 'AmirLap' 'Amir Lap'
     $closedLegacy = Stop-Running 'FileToolbox' 'File Toolbox'
-    Done $(if ($closed -or $closedLegacy) { 'done' } else { 'not running' })
+    # Claude Code and Codex keep Amir Lap's command line running as their chat tools (ftb mcp). Its
+    # program files are in use while it runs, so the copy below would fail: close those copies too.
+    $closedChat = Stop-CommandLine $dest
+    Done $(if ($closed -or $closedLegacy -or $closedChat -gt 0) { 'done' } else { 'not running' })
 
     $sizeMb = [int]((Get-ChildItem $Source -Recurse -File | Measure-Object Length -Sum).Sum / 1MB)
     Step "Copying the app ($sizeMb MB)"
@@ -158,6 +173,7 @@ function Install-AmirLap {
     New-Item -ItemType Directory -Force $StartMenuDir | Out-Null
     $shell = New-Object -ComObject WScript.Shell
     $notes = @()
+    if ($closedChat -gt 0) { $notes += "Claude Code or Codex was using Amir Lap's chat tools (the pulse MCP server); they were closed for the update. In a session that is still open, reconnect them (Claude Code: /mcp), or start a new session." }
     try {
         # Replace File Toolbox: its program files, shortcut and Installed apps entry (never its user data).
         $replaced = @()
